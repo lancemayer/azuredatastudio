@@ -28,10 +28,10 @@ describe('Utils Tests', function () {
 		should(utils.getLivyUrl(host, port)).endWith('/gateway/default/livy/v1/');
 	});
 
-	it('mkDir', async () => {
+	it('ensureDir', async () => {
 		const dirPath = path.join(os.tmpdir(), uuid.v4());
 		await should(fs.stat(dirPath)).be.rejected();
-		await utils.mkDir(dirPath, new MockOutputChannel());
+		await utils.ensureDir(dirPath, new MockOutputChannel());
 		should.exist(await fs.stat(dirPath), `Folder ${dirPath} did not exist after creation`);
 	});
 
@@ -45,42 +45,54 @@ describe('Utils Tests', function () {
 		should(utils.getErrorMessage(errMsg)).equal(errMsg);
 	});
 
-	it('getOSPlatform', async () => {
-		should(utils.getOSPlatform()).not.throw();
-	});
-
 	it('getOSPlatformId', async () => {
 		should(utils.getOSPlatformId()).not.throw();
 	});
 
-	describe('comparePackageVersions', () => {
+	describe('compareVersions', () => {
 		const version1 = '1.0.0.0';
 		const version1Revision = '1.0.0.1';
 		const version2 = '2.0.0.0';
 		const shortVersion1 = '1';
 
 		it('same id', () => {
-			should(utils.comparePackageVersions(version1, version1)).equal(0);
+			should(utils.compareVersions(version1, version1)).equal(0);
 		});
 
 		it('first version lower', () => {
-			should(utils.comparePackageVersions(version1, version2)).equal(-1);
+			should(utils.compareVersions(version1, version2)).equal(-1);
 		});
 
 		it('second version lower', () => {
-			should(utils.comparePackageVersions(version2, version1)).equal(1);
+			should(utils.compareVersions(version2, version1)).equal(1);
 		});
 
 		it('short first version is padded correctly', () => {
-			should(utils.comparePackageVersions(shortVersion1, version1)).equal(0);
+			should(utils.compareVersions(shortVersion1, version1)).equal(0);
 		});
 
 		it('short second version is padded correctly when', () => {
-			should(utils.comparePackageVersions(version1, shortVersion1)).equal(0);
+			should(utils.compareVersions(version1, shortVersion1)).equal(0);
 		});
 
 		it('correctly compares version with only minor version difference', () => {
-			should(utils.comparePackageVersions(version1Revision, version1)).equal(1);
+			should(utils.compareVersions(version1Revision, version1)).equal(1);
+		});
+
+		it('equivalent versions with wildcard characters', () => {
+			should(utils.compareVersions('1.*.3', '1.5.3')).equal(0);
+		});
+
+		it('lower version with wildcard characters', () => {
+			should(utils.compareVersions('1.4.*', '1.5.3')).equal(-1);
+		});
+
+		it('higher version with wildcard characters', () => {
+			should(utils.compareVersions('4.5.6', '3.*')).equal(1);
+		});
+
+		it('all wildcard strings should be equal', () => {
+			should(utils.compareVersions('*.*', '*.*.*')).equal(0);
 		});
 	});
 
@@ -135,6 +147,109 @@ describe('Utils Tests', function () {
 			const randomSorted = ['0.1', '1.0.0', '1.0.1', '42', '100.0'];
 			should(utils.sortPackageVersions(random)).deepEqual(randomSorted);
 		});
+
+		it('versions with non-numeric components', () => {
+			const random = ['1.0.1h', '1.0.0', '42', '1.0.1b', '100.0', '0.1', '1.0.1'];
+			const randomSorted = ['0.1', '1.0.0', '1.0.1', '1.0.1b', '1.0.1h', '42', '100.0'];
+			should(utils.sortPackageVersions(random)).deepEqual(randomSorted);
+		});
+	});
+
+	describe('isPackageSupported', () => {
+		it('Constraints have no version specifier', async function (): Promise<void> {
+			let pythonVersion = '3.6';
+			let versionConstraints = ['3.6.*', '3.*'];
+			let result = await utils.isPackageSupported(pythonVersion, versionConstraints);
+			should(result).be.true();
+
+			versionConstraints = ['3.5.*', '3.5'];
+			result = await utils.isPackageSupported(pythonVersion, versionConstraints);
+			should(result).be.false();
+		});
+
+		it('Package is valid for version constraints', async function (): Promise<void> {
+			let pythonVersion = '3.6';
+			let versionConstraints = ['>=3.5,!=3.2,!=3.4.*'];
+			let result = await utils.isPackageSupported(pythonVersion, versionConstraints);
+			should(result).be.true();
+		});
+
+		it('Version constraints string has lots of spaces', async function (): Promise<void> {
+			let pythonVersion = '3.6';
+			let versionConstraints = ['>= 3.5, != 3.2, != 3.4.*'];
+			let result = await utils.isPackageSupported(pythonVersion, versionConstraints);
+			should(result).be.true();
+		});
+
+		it('Strictly greater or less than comparisons', async function (): Promise<void> {
+			let pythonVersion = '3.6';
+			let versionConstraints = ['> 3.5, > 3.4.*', '< 3.8'];
+			let result = await utils.isPackageSupported(pythonVersion, versionConstraints);
+			should(result).be.true();
+		});
+
+		it('Strict equality', async function (): Promise<void> {
+			let pythonVersion = '3.6';
+			let versionConstraints = ['== 3.6', '== 3.6.*'];
+			let result = await utils.isPackageSupported(pythonVersion, versionConstraints);
+			should(result).be.true();
+		});
+
+		it('Package is valid for first set of constraints, but not the second', async function (): Promise<void> {
+			let pythonVersion = '3.6';
+			let versionConstraints = ['>=3.5, !=3.2, !=3.4.*', '!=3.6, >=3.5'];
+			let result = await utils.isPackageSupported(pythonVersion, versionConstraints);
+			should(result).be.true();
+		});
+
+		it('Package is valid for second set of constraints, but not the first', async function (): Promise<void> {
+			let pythonVersion = '3.6';
+			let versionConstraints = ['!=3.6, >=3.5', '>=3.5, !=3.2, !=3.4.*'];
+			let result = await utils.isPackageSupported(pythonVersion, versionConstraints);
+			should(result).be.true();
+		});
+
+		it('Package is not valid for constraints', async function (): Promise<void> {
+			let pythonVersion = '3.6';
+			let versionConstraints = ['>=3.4, !=3.6, >=3.5'];
+			let result = await utils.isPackageSupported(pythonVersion, versionConstraints);
+			should(result).be.false();
+		});
+
+		it('Package is not valid for several sets of constraints', async function (): Promise<void> {
+			let pythonVersion = '3.6';
+			let versionConstraints = ['>=3.7', '!=3.6, >=3.5', '>=3.8'];
+			let result = await utils.isPackageSupported(pythonVersion, versionConstraints);
+			should(result).be.false();
+		});
+
+		it('Constraints are all empty strings', async function (): Promise<void> {
+			let pythonVersion = '3.6';
+			let versionConstraints = ['', '', ''];
+			let result = await utils.isPackageSupported(pythonVersion, versionConstraints);
+			should(result).be.true();
+		});
+
+		it('Constraints are all undefined', async function (): Promise<void> {
+			let pythonVersion = '3.6';
+			let versionConstraints: string[] = [undefined, undefined, undefined];
+			let result = await utils.isPackageSupported(pythonVersion, versionConstraints);
+			should(result).be.true();
+		});
+
+		it('Constraints are a bunch of commas', async function (): Promise<void> {
+			let pythonVersion = '3.6';
+			let versionConstraints: string[] = [',,,', ',,,,', ', , , , , , ,'];
+			let result = await utils.isPackageSupported(pythonVersion, versionConstraints);
+			should(result).be.true();
+		});
+
+		it('Installed python version is an empty string', async function (): Promise<void> {
+			let pythonVersion = '';
+			let versionConstraints = ['>=3.7', '!=3.6, >=3.5', '>=3.8'];
+			let result = await utils.isPackageSupported(pythonVersion, versionConstraints);
+			should(result).be.true();
+		});
 	});
 
 	describe('executeBufferedCommand', () => {
@@ -160,7 +275,7 @@ describe('Utils Tests', function () {
 	});
 
 	describe('isEditorTitleFree', () => {
-		afterEach( async () => {
+		afterEach(async () => {
 			await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
 		});
 
@@ -202,7 +317,9 @@ describe('Utils Tests', function () {
 			isCloud: false,
 			azureVersion: -1,
 			osVersion: '',
-			options: {}
+			options: {},
+			cpuCount: -1,
+			physicalMemoryInMb: -1
 		};
 		it('empty endpoints does not error', () => {
 			const serverInfo = Object.assign({}, baseServerInfo);
@@ -316,6 +433,37 @@ describe('Utils Tests', function () {
 				}
 				new UnsupportedTest();
 			}).throw();
+		});
+	});
+
+	describe('getRandomToken', function (): void {
+		it('Should have default length and be hex only', async function (): Promise<void> {
+
+			let token = await utils.getRandomToken();
+			should(token).have.length(48);
+			let validChars = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'];
+			for (let i = 0; i < token.length; i++) {
+				let char = token.charAt(i);
+				should(validChars.indexOf(char)).be.greaterThan(-1);
+			}
+		});
+	});
+
+	describe('isBookItemPinned', function (): void {
+		it('Should NOT pin an unknown book within a workspace', async function (): Promise<void> {
+
+			let notebookUri = path.join(path.sep, 'randomfolder', 'randomsubfolder', 'content', 'randomnotebook.ipynb');
+			let isNotebookPinned = utils.isBookItemPinned(notebookUri);
+
+			should(isNotebookPinned).be.false('Random notebooks should not be pinned');
+		});
+	});
+
+	describe('getPinnedNotebooks', function (): void {
+		it('Should NOT have any pinned notebooks', async function (): Promise<void> {
+			let pinnedNotebooks: utils.IPinnedNotebook[] = utils.getPinnedNotebooks();
+
+			should(pinnedNotebooks.length).equal(0, 'Should not have any pinned notebooks');
 		});
 	});
 });

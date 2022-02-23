@@ -4,74 +4,45 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { protocol } from 'electron';
-import { Disposable, toDisposable } from 'vs/base/common/lifecycle';
-import { Schemas } from 'vs/base/common/network';
+import { Disposable } from 'vs/base/common/lifecycle';
+import { FileAccess, Schemas } from 'vs/base/common/network';
 import { URI } from 'vs/base/common/uri';
-import { streamToNodeReadable } from 'vs/base/node/stream';
-import { IFileService } from 'vs/platform/files/common/files';
-import { loadLocalResourceStream, WebviewResourceResponse } from 'vs/platform/webview/common/resourceLoader';
+
 
 export class WebviewProtocolProvider extends Disposable {
 
-	private readonly webviewMetadata = new Map<string, {
-		readonly extensionLocation: URI | undefined;
-		readonly localResourceRoots: readonly URI[];
-	}>();
+	private static validWebviewFilePaths = new Map([
+		['/index.html', 'index.html'],
+		['/fake.html', 'fake.html'],
+		['/main.js', 'main.js'],
+		['/service-worker.js', 'service-worker.js'],
+	]);
 
-	constructor(
-		@IFileService private readonly fileService: IFileService,
-	) {
+	constructor() {
 		super();
 
-		protocol.registerStreamProtocol(Schemas.vscodeWebviewResource, async (request, callback): Promise<void> => {
-			try {
-				const uri = URI.parse(request.url);
+		// Register the protocol for loading webview html
+		const webviewHandler = this.handleWebviewRequest.bind(this);
+		protocol.registerFileProtocol(Schemas.vscodeWebview, webviewHandler);
+	}
 
-				const id = uri.authority;
-				const metadata = this.webviewMetadata.get(id);
-				if (metadata) {
-					const result = await loadLocalResourceStream(uri, this.fileService, metadata.extensionLocation, metadata.localResourceRoots);
-					if (result.type === WebviewResourceResponse.Type.Success) {
-						return callback({
-							statusCode: 200,
-							data: streamToNodeReadable(result.stream),
-							headers: {
-								'Content-Type': result.mimeType,
-								'Access-Control-Allow-Origin': '*',
-							}
-						});
-					}
-
-					if (result.type === WebviewResourceResponse.Type.AccessDenied) {
-						console.error('Webview: Cannot load resource outside of protocol root');
-						return callback({ data: null, statusCode: 401 });
-					}
-				}
-			} catch {
-				// noop
+	private handleWebviewRequest(
+		request: Electron.ProtocolRequest,
+		callback: (response: string | Electron.ProtocolResponse) => void
+	) {
+		try {
+			const uri = URI.parse(request.url);
+			const entry = WebviewProtocolProvider.validWebviewFilePaths.get(uri.path);
+			if (typeof entry === 'string') {
+				const relativeResourcePath = `vs/workbench/contrib/webview/browser/pre/${entry}`;
+				const url = FileAccess.asFileUri(relativeResourcePath, require);
+				return callback(decodeURIComponent(url.fsPath));
+			} else {
+				return callback({ error: -10 /* ACCESS_DENIED - https://cs.chromium.org/chromium/src/net/base/net_error_list.h?l=32 */ });
 			}
-
-			return callback({ data: null, statusCode: 404 });
-		});
-
-		this._register(toDisposable(() => protocol.unregisterProtocol(Schemas.vscodeWebviewResource)));
-	}
-
-	public registerWebview(id: string, extensionLocation: URI | undefined, localResourceRoots: readonly URI[]): void {
-		this.webviewMetadata.set(id, { extensionLocation, localResourceRoots });
-	}
-
-	public unreigsterWebview(id: string): void {
-		this.webviewMetadata.delete(id);
-	}
-
-	public updateLocalResourceRoots(id: string, localResourceRoots: readonly URI[]) {
-		const entry = this.webviewMetadata.get(id);
-		if (entry) {
-			this.webviewMetadata.set(id, {
-				extensionLocation: entry.extensionLocation,
-				localResourceRoots: localResourceRoots,
-			});
+		} catch {
+			// noop
 		}
+		return callback({ error: -2 /* FAILED - https://cs.chromium.org/chromium/src/net/base/net_error_list.h?l=32 */ });
 	}
 }

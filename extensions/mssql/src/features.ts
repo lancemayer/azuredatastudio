@@ -12,6 +12,7 @@ import * as azdata from 'azdata';
 import * as Utils from './utils';
 import * as UUID from 'vscode-languageclient/lib/utils/uuid';
 import { DataItemCache } from './util/dataCache';
+import * as azurecore from 'azurecore';
 
 const localize = nls.loadMessageBundle();
 
@@ -48,11 +49,11 @@ export class AccountFeature implements StaticFeature {
 
 	protected async getToken(request: contracts.RequestSecurityTokenParams): Promise<contracts.RequestSecurityTokenResponse | undefined> {
 		const accountList = await azdata.accounts.getAllAccounts();
-		let account: azdata.Account;
+		let account: azurecore.AzureAccount;
 
 		if (accountList.length < 1) {
 			// TODO: Prompt user to add account
-			window.showErrorMessage(localize('mssql.missingLinkedAzureAccount', "Azure Data Studio needs to contact Azure Key Vault to access a column master key for Always Encrypted, but no linked Azure account is available. Please add a linked Azure account and retry the query."));
+			void window.showErrorMessage(localize('mssql.missingLinkedAzureAccount', "Azure Data Studio needs to contact Azure Key Vault to access a column master key for Always Encrypted, but no linked Azure account is available. Please add a linked Azure account and retry the query."));
 			return undefined;
 		} else if (accountList.length > 1) {
 			let options: QuickPickOptions = {
@@ -62,7 +63,7 @@ export class AccountFeature implements StaticFeature {
 			let items = accountList.map(a => new AccountFeature.AccountQuickPickItem(a));
 			let selectedItem = await window.showQuickPick(items, options);
 			if (!selectedItem) { // The user canceled the selection.
-				window.showErrorMessage(localize('mssql.canceledLinkedAzureAccountSelection', "Azure Data Studio needs to contact Azure Key Vault to access a column master key for Always Encrypted, but no linked Azure account was selected. Please retry the query and select a linked Azure account when prompted."));
+				void window.showErrorMessage(localize('mssql.canceledLinkedAzureAccountSelection', "Azure Data Studio needs to contact Azure Key Vault to access a column master key for Always Encrypted, but no linked Azure account was selected. Please retry the query and select a linked Azure account when prompted."));
 				return undefined;
 			}
 			account = selectedItem.account;
@@ -70,22 +71,22 @@ export class AccountFeature implements StaticFeature {
 			account = accountList[0];
 		}
 
-		const securityToken: { [key: string]: any } = await azdata.accounts.getSecurityToken(account, azdata.AzureResource.AzureKeyVault);
-		const tenant = account.properties.tenants.find((t: { [key: string]: string }) => request.authority.includes(t.id));
+		const tenant = account.properties.tenants.find(tenant => request.authority.includes(tenant.id));
 		const unauthorizedMessage = localize('mssql.insufficientlyPrivelagedAzureAccount', "The configured Azure account for {0} does not have sufficient permissions for Azure Key Vault to access a column master key for Always Encrypted.", account.key.accountId);
 		if (!tenant) {
-			window.showErrorMessage(unauthorizedMessage);
+			void window.showErrorMessage(unauthorizedMessage);
 			return undefined;
 		}
-		let tokenBundle = securityToken[tenant.id];
-		if (!tokenBundle) {
-			window.showErrorMessage(unauthorizedMessage);
+		const securityToken = await azdata.accounts.getAccountSecurityToken(account, tenant.id, azdata.AzureResource.AzureKeyVault);
+
+		if (!securityToken?.token) {
+			void window.showErrorMessage(unauthorizedMessage);
 			return undefined;
 		}
 
 		let params: contracts.RequestSecurityTokenResponse = {
 			accountKey: JSON.stringify(account.key),
-			token: securityToken[tenant.id].token
+			token: securityToken.token
 		};
 
 		return params;
@@ -101,7 +102,7 @@ export class AccountFeature implements StaticFeature {
 
 		constructor(account: azdata.Account) {
 			this.account = account;
-			this.label = account.key.accountId;
+			this.label = account.displayInfo.displayName;
 		}
 	};
 }
@@ -918,6 +919,267 @@ export class SqlAssessmentServicesFeature extends SqlOpsFeature<undefined> {
 			generateAssessmentScript
 		});
 	}
-
-
 }
+
+export class ProfilerFeature extends SqlOpsFeature<undefined> {
+	private static readonly messagesTypes: RPCMessageType[] = [
+		contracts.StartProfilingRequest.type,
+		contracts.StopProfilingRequest.type,
+		contracts.ProfilerEventsAvailableNotification.type
+	];
+
+	constructor(client: SqlOpsDataClient) {
+		super(client, ProfilerFeature.messagesTypes);
+	}
+
+	public fillClientCapabilities(capabilities: ClientCapabilities): void {
+	}
+
+	public initialize(capabilities: ServerCapabilities): void {
+		this.register(this.messages, {
+			id: UUID.generateUuid(),
+			registerOptions: undefined
+		});
+	}
+
+	protected registerProvider(options: undefined): Disposable {
+		const client = this._client;
+
+		let createSession = (ownerUri: string, sessionName: string, template: azdata.ProfilerSessionTemplate): Thenable<boolean> => {
+			let params: contracts.CreateXEventSessionParams = {
+				ownerUri,
+				sessionName,
+				template
+			};
+
+			return client.sendRequest(contracts.CreateXEventSessionRequest.type, params).then(
+				r => true,
+				e => {
+					client.logFailedRequest(contracts.CreateXEventSessionRequest.type, e);
+					return Promise.reject(e);
+				}
+			);
+		};
+
+		let startSession = (ownerUri: string, sessionName: string): Thenable<boolean> => {
+			let params: contracts.StartProfilingParams = {
+				ownerUri,
+				sessionName
+			};
+
+			return client.sendRequest(contracts.StartProfilingRequest.type, params).then(
+				r => true,
+				e => {
+					client.logFailedRequest(contracts.StartProfilingRequest.type, e);
+					return Promise.reject(e);
+				}
+			);
+		};
+
+		let stopSession = (ownerUri: string): Thenable<boolean> => {
+			let params: contracts.StopProfilingParams = {
+				ownerUri
+			};
+
+			return client.sendRequest(contracts.StopProfilingRequest.type, params).then(
+				r => true,
+				e => {
+					client.logFailedRequest(contracts.StopProfilingRequest.type, e);
+					return Promise.reject(e);
+				}
+			);
+		};
+
+		let pauseSession = (ownerUri: string): Thenable<boolean> => {
+			let params: contracts.PauseProfilingParams = {
+				ownerUri
+			};
+
+			return client.sendRequest(contracts.PauseProfilingRequest.type, params).then(
+				r => true,
+				e => {
+					client.logFailedRequest(contracts.PauseProfilingRequest.type, e);
+					return Promise.reject(e);
+				}
+			);
+		};
+
+		let getXEventSessions = (ownerUri: string): Thenable<string[]> => {
+			let params: contracts.GetXEventSessionsParams = {
+				ownerUri
+			};
+
+			return client.sendRequest(contracts.GetXEventSessionsRequest.type, params).then(
+				r => r.sessions,
+				e => {
+					client.logFailedRequest(contracts.GetXEventSessionsRequest.type, e);
+					return Promise.reject(e);
+				}
+			);
+		};
+
+		let connectSession = (sessionId: string): Thenable<boolean> => {
+			return undefined;
+		};
+
+		let disconnectSession = (ownerUri: string): Thenable<boolean> => {
+			let params: contracts.DisconnectSessionParams = {
+				ownerUri: ownerUri
+			};
+			return client.sendRequest(contracts.DisconnectSessionRequest.type, params).then(
+				r => true,
+				e => {
+					client.logFailedRequest(contracts.DisconnectSessionRequest.type, e);
+					return Promise.reject(e);
+				}
+			);
+		};
+
+		let registerOnSessionEventsAvailable = (handler: (response: azdata.ProfilerSessionEvents) => any): void => {
+			client.onNotification(contracts.ProfilerEventsAvailableNotification.type, (params: contracts.ProfilerEventsAvailableParams) => {
+				handler(<azdata.ProfilerSessionEvents>{
+					sessionId: params.ownerUri,
+					events: params.events,
+					eventsLost: params.eventsLost
+				});
+			});
+		};
+
+
+		let registerOnSessionStopped = (handler: (response: azdata.ProfilerSessionStoppedParams) => any): void => {
+			client.onNotification(contracts.ProfilerSessionStoppedNotification.type, (params: contracts.ProfilerSessionStoppedParams) => {
+				handler(<azdata.ProfilerSessionStoppedParams>{
+					ownerUri: params.ownerUri,
+					sessionId: params.sessionId
+				});
+			});
+		};
+
+		let registerOnProfilerSessionCreated = (handler: (response: azdata.ProfilerSessionCreatedParams) => any): void => {
+			client.onNotification(contracts.ProfilerSessionCreatedNotification.type, (params: contracts.ProfilerSessionCreatedParams) => {
+				handler(<azdata.ProfilerSessionCreatedParams>{
+					ownerUri: params.ownerUri,
+					sessionName: params.sessionName,
+					templateName: params.templateName
+				});
+			});
+		};
+
+
+		return azdata.dataprotocol.registerProfilerProvider({
+			providerId: client.providerId,
+			connectSession,
+			disconnectSession,
+			registerOnSessionEventsAvailable,
+			registerOnSessionStopped,
+			registerOnProfilerSessionCreated,
+			createSession,
+			startSession,
+			stopSession,
+			pauseSession,
+			getXEventSessions
+		});
+	}
+}
+
+
+/**
+ * Table Designer Feature
+ * TODO: Move this feature to data protocol client repo once stablized
+ */
+export class TableDesignerFeature extends SqlOpsFeature<undefined> {
+	private static readonly messagesTypes: RPCMessageType[] = [
+		contracts.ProcessTableDesignerEditRequest.type,
+	];
+	constructor(client: SqlOpsDataClient) {
+		super(client, TableDesignerFeature.messagesTypes);
+	}
+
+	public fillClientCapabilities(capabilities: ClientCapabilities): void {
+	}
+
+	public initialize(capabilities: ServerCapabilities): void {
+		this.register(this.messages, {
+			id: UUID.generateUuid(),
+			registerOptions: undefined
+		});
+	}
+
+	protected registerProvider(options: undefined): Disposable {
+		const client = this._client;
+
+		const initializeTableDesigner = (tableInfo: azdata.designers.TableInfo): Thenable<azdata.designers.TableDesignerInfo> => {
+			try {
+				return client.sendRequest(contracts.InitializeTableDesignerRequest.type, tableInfo);
+			}
+			catch (e) {
+				client.logFailedRequest(contracts.InitializeTableDesignerRequest.type, e);
+				return Promise.reject(e);
+			}
+		};
+		const processTableEdit = (tableInfo: azdata.designers.TableInfo, tableChangeInfo: azdata.designers.DesignerEdit): Thenable<azdata.designers.DesignerEditResult> => {
+			let params: contracts.TableDesignerEditRequestParams = {
+				tableInfo: tableInfo,
+				tableChangeInfo: tableChangeInfo
+			};
+			try {
+				return client.sendRequest(contracts.ProcessTableDesignerEditRequest.type, params);
+			}
+			catch (e) {
+				client.logFailedRequest(contracts.ProcessTableDesignerEditRequest.type, e);
+				return Promise.reject(e);
+			}
+		};
+
+		const publishChanges = (tableInfo: azdata.designers.TableInfo): Thenable<azdata.designers.PublishChangesResult> => {
+			try {
+				return client.sendRequest(contracts.PublishTableDesignerChangesRequest.type, tableInfo);
+			}
+			catch (e) {
+				client.logFailedRequest(contracts.PublishTableDesignerChangesRequest.type, e);
+				return Promise.reject(e);
+			}
+		};
+
+		const generateScript = (tableInfo: azdata.designers.TableInfo): Thenable<string> => {
+			try {
+				return client.sendRequest(contracts.TableDesignerGenerateScriptRequest.type, tableInfo);
+			}
+			catch (e) {
+				client.logFailedRequest(contracts.TableDesignerGenerateScriptRequest.type, e);
+				return Promise.reject(e);
+			}
+		};
+
+		const generatePreviewReport = (tableInfo: azdata.designers.TableInfo): Thenable<string> => {
+			try {
+				return client.sendRequest(contracts.TableDesignerGenerateChangePreviewReportRequest.type, tableInfo);
+			}
+			catch (e) {
+				client.logFailedRequest(contracts.TableDesignerGenerateChangePreviewReportRequest.type, e);
+				return Promise.reject(e);
+			}
+		};
+
+		const disposeTableDesigner = (tableInfo: azdata.designers.TableInfo): Thenable<void> => {
+			try {
+				return client.sendRequest(contracts.DisposeTableDesignerRequest.type, tableInfo);
+			}
+			catch (e) {
+				client.logFailedRequest(contracts.DisposeTableDesignerRequest.type, e);
+				return Promise.reject(e);
+			}
+		};
+
+		return azdata.dataprotocol.registerTableDesignerProvider({
+			providerId: client.providerId,
+			initializeTableDesigner,
+			processTableEdit,
+			publishChanges,
+			generateScript,
+			generatePreviewReport,
+			disposeTableDesigner
+		});
+	}
+}
+

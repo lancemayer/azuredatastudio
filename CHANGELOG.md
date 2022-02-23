@@ -1,5 +1,310 @@
 # Change Log
 
+ ## Version 1.34.0
+* Release date: December 15, 2021
+* Release status: General Availability
+## What's new in this version
+* New Features:
+    *  Added “Currently restoring backup file” in the migration progress details page of Azure SQL Migration extension when backup files location is Azure Storage blob container
+    *  Enhancements to diagnostics in Azure SQL Migration extension
+    *  Support for project build with .NET 6 in SQL Database Projects extension
+    *  Publish to container in SQL Database Projects extension
+    *  Undo and redo support for notebook cell-level operations
+    
+* Extension Updates:
+    *  Azure SQL Migration 
+    *  Langpacks
+    *  SQL Database Projects
+
+* Bug Fixes:
+    *  Fix for multiple database migrations when using network share as backup files location in Azure SQL Migration extension
+    *  Fix for multiple database migrations when using blob storage containers as backup files location in Azure SQL Migration extension
+    *  Fix to pre-populate target database names in the migration wizard in Azure SQL Migration extension
+    *  Fix to column sorting in grids where the presence of null values could lead to unexpected results
+    *  Fix for Python upgrades when two or more notebooks were open
+ 
+## Version 1.33.1
+* Release date: Nov 4, 2021
+* Release status: General Availability
+
+## Hotfix release
+- Fix for [#16535 Unable to See Saved Connections in Restricted Mode](https://github.com/microsoft/azuredatastudio/issues/17535)
+- Fix for [#17579 Can't type in Notebook code cell after editing text cell](https://github.com/microsoft/azuredatastudio/issues/17579)
+
+    
+
+| Platform																|
+| ---------------------------------------	|
+| [Windows User Installer][win-user]			|
+| [Windows System Installer][win-system]	|
+| [Windows ZIP][win-zip]									|
+| [macOS ZIP][osx-zip]										|
+| [Linux TAR.GZ][linux-zip]								|
+| [Linux RPM][linux-rpm]									|
+| [Linux DEB][linux-deb]									|
+
+[win-user]: https://go.microsoft.com/fwlink/?linkid=2176805
+[win-system]: https://go.microsoft.com/fwlink/?linkid=2175910
+[win-zip]: https://go.microsoft.com/fwlink/?linkid=2176806
+[osx-zip]: https://go.microsoft.com/fwlink/?linkid=2176807
+[linux-zip]: https://go.microsoft.com/fwlink/?linkid=2176505
+[linux-rpm]: https://go.microsoft.com/fwlink/?linkid=2176005
+[linux-deb]: https://go.microsoft.com/fwlink/?linkid=2176006
+
+## Version 1.33.0
+* Release date: October 27, 2021
+* Release status: General Availability
+## What's new in this version
+* New Notebook Features:
+    *  Notebook Views 
+    *  Split cell support 
+    *  Keyboard shortcuts for Markdown Toolbar Cells 
+       * Ctrl/Cmd + B = Bold Text
+       * Ctrl/Cmd + I = Italicize Text
+       * Ctrl/Cmd + U = Underline Text
+       * Ctrl/Cmd + Shift + K = Add Code Block
+       * Ctrl/Cmd + Shift + H = Highlight Text
+    *  Book improvements 
+       * Add a new section
+       * Drag and Drop
+  
+* Extension Updates:
+    * Import
+    * Langpacks
+    * Schema Compare
+    * Sql Database Projects
+
+* Bug Fixes
+    * Notebook linking improvements
+    * Horizontal Scrollbar improvement (when word wrap is off in MD Splitview / MD mode) in Notebooks
+    * Vertical Scrollbar improvement for MD Splitview in Notebooks
+
+## Version 1.32.0
+* Release date: August 18, 2021
+* Release status: General Availability
+* Extension Updates:
+    * Arc/Az CLI extensions - Azure Arc extension now uses Azure CLI instead of Azure Data CLI for deploying and interacting with Azure Arc 
+       instances    
+    *  Langpacks
+    *  SQL Database Projects
+    *  Azure Monitor
+    *  Machine Learning
+
+## Version 1.31.1
+* Release date: July 29, 2021
+* Release status: General Availability
+## Hotfix Release
+- Fix for [#16436 Database Connection Toolbar Missing](https://github.com/microsoft/azuredatastudio/issues/16436)
+
+## Version 1.31.0
+* Release date: July 21, 2021
+* Release status: General Availability
+* New Notebook Features:
+    * WYSIWYG link improvements
+* Extension Updates:
+    * Import
+    * SandDance
+    * SQL Database Projects
+* Bug Fixes
+  * Accessibility bug fixes
+
+## Version 1.30.0
+* Release date: June 17, 2021
+* Release status: General Availability
+* New Notebook Features:
+    * Show book's notebook TOC title in pinned notebooks view
+    * Add new book icon
+    * Update Python to 3.8.10
+* Query Editor Features:
+    * Added filtering/sorting feature for query result grid in query editor and notebook, the feature can be invoked from the column headers. Note that this feature is only           available when you enable the preview features
+    * Added a status bar item to show summary of the selected cells if there are multiple numeric values
+* Extension Updates:
+    * SQL Database Projects
+    * Machine Learning
+* Bug Fixes
+  * Fix WYSIWYG Table cell adding new line in table cell
+
+## Version 1.29.0
+* Release date: May 19, 2021
+* Release status: General Availability
+* New Notebook Features:
+    * Added runs with a parameters option.
+* Extension Updates:
+    * SQL Database Projects
+    * Schema Compare
+* Bug Fixes
+
+## Version 1.28.0
+* Release date: April 16, 2021
+* Release status: General Availability
+* New Notebook Features:
+    * Added Add Notebook and Remove Notebook commands
+* Extension Updates:
+    * SQL Database Projects
+    * Schema Compare
+* Bug Fixes
+
+## Version 1.27.0
+* Release date: March 17, 2021
+* Release status: General Availability
+* New Notebook Features:
+    * Added create book dialog
+* Extension Updates:
+    * Import
+    * Dacpac
+    * Machine Learning
+    * SQL Assessment
+    * Arc
+    * SQL Database Projects
+    * ASDE Deployment
+* Bug Fixes
+
+## Version 1.26.1
+* Release date: February 25, 2021
+* Release status: General Availability
+* Fixes https://github.com/microsoft/azuredatastudio/issues/14382
+
+## Version 1.26.0
+* Release date: February 22, 2021
+* Release status: General Availability
+* Added edit Jupyter book UI support
+* Improved Jupyter server start-up time by 50% on windows
+* Extension Updates:
+    * Azure Arc
+        * PG dashboard enhancements
+        * Multi-controller support
+        * MIAA Dashboard will no longer prompt for SQL Server connection immediately upon opening
+    * Azure Data CLI
+    * Kusto
+    * Machine Learning
+    * Profiler
+    * Server Reports
+    * Schema Compare
+    * SQL Server Dacpac
+    * SQL Database Projects
+* Bug Fixes
+
+## Version 1.25.3
+* Release date: February 10, 2021
+* Release status: General Availability
+* Update Electron to 9.4.3 to incorporate critical upstream fixes
+
+## Version 1.25.2
+* Release date: January 22, 2021
+* Release status: General Availability
+* Fixes https://github.com/microsoft/azuredatastudio/issues/13899
+
+## Version 1.25.1
+* Release date: December 10, 2020
+* Release status: General Availability
+* Fixes https://github.com/microsoft/azuredatastudio/issues/13751
+
+## Version 1.25.0
+* Release date: December 8, 2020
+* Release status: General Availability
+* Kusto extension improvements
+* SQL Project extension improvements
+* Notebook improvements
+* Azure Browse Connections Preview performance improvements
+* Bug Fixes
+
+## Version 1.24.0
+* Release date: November 12, 2020
+* Release status: General Availability
+* SQL Project improvements
+* Notebook improvements, including in WYSIWYG editor enhancements
+* Azure Arc improvements
+* Azure SQL Deployment UX improvements
+* Azure Browse Connections Preview
+* Bug Fixes
+
+## Version 1.23.0
+* Release date: October 14, 2020
+* Release status: General Availability
+* Added deployments of Azure SQL DB and VM
+* Added PowerShell kernel results streaming support
+* Added improvements to SQL Database Projects extension
+* Bug Fixes
+* Extension Updates:
+    * SQL Server Import
+    * Machine Learning
+    * Schema Compare
+    * Kusto
+    * SQL Assessment
+    * SQL Database Projects
+    * Azure Arc
+    * azdata
+
+## Version 1.22.1
+* Release date: September 30, 2020
+* Release status: General Availability
+* Fix bug #12615 Active connection filter doesn't untoggle | [#12615](https://github.com/microsoft/azuredatastudio/issues/12615)
+* Fix bug #12572 Edit Data grid doesn't escape special characters | [#12572](https://github.com/microsoft/azuredatastudio/issues/12572)
+* Fix bug #12570 Dashboard Explorer table doesn't escape special characters | [#12570](https://github.com/microsoft/azuredatastudio/issues/12570)
+* Fix bug #12582 Delete row on Edit Data fails | [#12582](https://github.com/microsoft/azuredatastudio/issues/12582)
+* Fix bug #12646 SQL Notebooks: Cells being treated isolated | [#12646](https://github.com/microsoft/azuredatastudio/issues/12646)
+
+## Version 1.22.0
+* Release date: September 22, 2020
+* Release status: General Availability
+* New Notebook Features
+    * Supports brand new text cell editing experience based on rich text formatting and seamless conversion to markdown, also known as WYSIWYG toolbar (What You See Is What You Get)
+    * Supports Kusto kernel
+    * Supports pinning of notebooks
+    * Added support for new version of Jupyter Books
+    * Improved Jupyter Shortcuts
+    * Introduced perf loading improvements
+* Added Azure Arc extension - Users can try out Azure Arc public preview through Azure Data Studio. This includes:
+    * Deploy data controller
+    * Deploy Postgres
+    * Deploy Managed Instance for Azure Arc
+    * Connect to data controller
+    * Access data service dashboards
+    * Azure Arc Jupyter Book
+* Added new deployment options
+    * Azure SQL Database Edge
+    * (Edge will require Azure SQL Edge Deployment Extension)
+* Added SQL Database Projects extension - The SQL Database Projects extension brings project-based database development to Azure Data Studio. In this preview release, SQL projects can be created and published from Azure Data Studio.
+* Added Kusto (KQL) extension - Brings native Kusto experiences in Azure Data Studio for data exploration and data analytics against massive amount of real-time streaming data stored in Azure Data Explorer. This preview release supports connecting and browsing Azure Data Explorer clusters, writing KQL queries as well as authoring notebooks with Kusto kernel.
+* SQL Server Import extension GA - Announcing the GA of the SQL Server Import extension, features no longer in preview. This extension facilitates importing csv/txt files. Learn more about the extension in [this article](sql-server-import-extension.md).
+* Resolved [bugs and issues](https://github.com/microsoft/azuredatastudio/issues?q=is%3Aissue+milestone%3A%22September+2020+Release%22+is%3Aclosed).
+
+## Version 1.21.0
+* Release date: August 12, 2020
+* Release status: General Availability
+* New Notebook Features
+   * Move cell locations changd
+   * Added action to convert cells to Text Cell or Code cell
+* Jupyter Books picker to open Jupyter Books directly from Github
+* Search bar added to Notebooks Viewlet for searching through Jupyter Books
+* Address issues in [August 2020 Milestone](https://github.com/microsoft/azuredatastudio/milestone/59?closed=1)
+
+## Version 1.20.1
+* Release date: July 17, 2020
+* Release status: General Availability
+* Fix bug #11372 Object Explorer drag-and-drop table incorrectly wraps table names [#11372](https://github.com/microsoft/azuredatastudio/issues/11372)
+* Fix bug #11356 Dark theme is now the default theme [#11356](https://github.com/microsoft/azuredatastudio/issues/11356)
+* Known Issues:
+    * Some users have reported connection errors from the new Microsoft.Data.SqlClient v2.0.0 included in this release. Users have found [following these instructions](https://github.com/microsoft/azuredatastudio/issues/11367#issuecomment-659614111) to successfully connect. This issue was caused by a client driver update which fixed an issue where TLS encryption wasn't enforced correctly. See https://github.com/dotnet/SqlClient/blob/master/release-notes/2.0/2.0.0.md#breaking-changes-1 and https://docs.microsoft.com/en-us/sql/relational-databases/native-client/features/using-encryption-without-validation for more information.
+
+## Version 1.20.0
+* Release date: July 15, 2020
+* Release status: General Availability
+* Feature Tour
+* New Notebook Features
+    * Header support in Markdown Toolbar
+    * Side-by-side Markdown preview in Text Cells
+* Drag and drop columns and tables into Query Editor
+* Azure Account icon added to Activity Bar
+* Address issues in [July 2020 Milestone](https://github.com/microsoft/azuredatastudio/milestone/57?closed=1)
+* Bug fixes
+
+## Version 1.19.0
+* Release date: June 15, 2020
+* Release status: General Availability
+* Address issues in https://github.com/microsoft/azuredatastudio/milestone/55?closed=1
+* Bug fixes
+
 ## Version 1.18.1
 * Release date: May 27, 2020
 * Release status: General Availability
@@ -406,7 +711,7 @@ The May release is focused on stabilization and bug fixes leading up to the Buil
 
 * Announcing **Redgate SQL Search** extension available in Extension Manager
 * Community Localization available for 10 languages: **German, Spanish, French, Italian, Japanese, Korean, Portuguese, Russian, Simplified Chinese and Traditional Chinese!**
-* Reduced telemetry collection, improved [opt-out](https://github.com/Microsoft/azuredatastudio/wiki/How-to-Disable-Telemetry-Reporting) experience and in-product links to [Privacy Statement](https://privacy.microsoft.com/en-us/privacystatement)
+* Reduced telemetry collection, improved [opt-out](https://github.com/Microsoft/azuredatastudio/wiki/How-to-Disable-Telemetry-Reporting) experience and in-product links to [Privacy Statement](https://privacy.microsoft.com/privacystatement)
 * Extension Manager has improved Marketplace experience to easily discover community extensions
 * SQL Agent extension Jobs and Job History view improvement
 * Updates for **whoisactive** and **Server Reports** extensions

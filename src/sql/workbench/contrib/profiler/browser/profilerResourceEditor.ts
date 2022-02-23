@@ -6,7 +6,7 @@
 import { IEditorOptions } from 'vs/editor/common/config/editorOptions';
 import * as nls from 'vs/nls';
 import * as DOM from 'vs/base/browser/dom';
-import { ResourceEditorModel } from 'vs/workbench/common/editor/resourceEditorModel';
+import { TextResourceEditorModel } from 'vs/workbench/common/editor/textResourceEditorModel';
 import * as editorCommon from 'vs/editor/common/editorCommon';
 
 import { BaseTextEditor } from 'vs/workbench/browser/parts/editor/textEditor';
@@ -15,12 +15,13 @@ import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { IThemeService } from 'vs/platform/theme/common/themeService';
 import { IStorageService } from 'vs/platform/storage/common/storage';
 import { ITextResourceConfigurationService } from 'vs/editor/common/services/textResourceConfigurationService';
-import { EditorOptions } from 'vs/workbench/common/editor';
+import { IEditorOpenContext } from 'vs/workbench/common/editor';
 import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
 import { CancellationToken } from 'vs/base/common/cancellation';
 import { IEditorGroupsService } from 'vs/workbench/services/editor/common/editorGroupsService';
 import { UntitledTextEditorInput } from 'vs/workbench/services/untitled/common/untitledTextEditorInput';
 import { CodeEditorWidget } from 'vs/editor/browser/widget/codeEditorWidget';
+import { ITextEditorOptions } from 'vs/platform/editor/common/editor';
 
 class ProfilerResourceCodeEditor extends CodeEditorWidget {
 
@@ -45,22 +46,22 @@ export class ProfilerResourceEditor extends BaseTextEditor {
 		@IStorageService storageService: IStorageService,
 		@ITextResourceConfigurationService configurationService: ITextResourceConfigurationService,
 		@IThemeService themeService: IThemeService,
-		@IEditorService protected editorService: IEditorService,
+		@IEditorService editorService: IEditorService,
 		@IEditorGroupsService editorGroupService: IEditorGroupsService
 
 	) {
 		super(ProfilerResourceEditor.ID, telemetryService, instantiationService, storageService, configurationService, themeService, editorService, editorGroupService);
 	}
 
-	public createEditorControl(parent: HTMLElement, configuration: IEditorOptions): editorCommon.IEditor {
+	public override createEditorControl(parent: HTMLElement, configuration: IEditorOptions): editorCommon.IEditor {
 		return this.instantiationService.createInstance(ProfilerResourceCodeEditor, parent, configuration, {});
 	}
 
-	protected getConfigurationOverrides(): IEditorOptions {
+	protected override getConfigurationOverrides(): IEditorOptions {
 		const options = super.getConfigurationOverrides();
 		options.readOnly = true;
 		if (this.input) {
-			options.inDiffEditor = true;
+			options.inDiffEditor = false;
 			options.scrollBeyondLastLine = false;
 			options.folding = false;
 			options.renderWhitespace = 'none';
@@ -75,18 +76,18 @@ export class ProfilerResourceEditor extends BaseTextEditor {
 		return options;
 	}
 
-	setInput(input: UntitledTextEditorInput, options: EditorOptions): Promise<void> {
-		return super.setInput(input, options, CancellationToken.None)
-			.then(() => this.input.resolve()
-				.then(editorModel => editorModel.load())
-				.then(editorModel => this.getControl().setModel((<ResourceEditorModel>editorModel).textEditorModel)));
+	override async setInput(input: UntitledTextEditorInput, options: ITextEditorOptions, context: IEditorOpenContext): Promise<void> {
+		await super.setInput(input, options, context, CancellationToken.None);
+		const editorModel = await this.input.resolve() as TextResourceEditorModel;
+		await editorModel.resolve();
+		this.getControl().setModel(editorModel.textEditorModel);
 	}
 
 	protected getAriaLabel(): string {
 		return nls.localize('profilerTextEditorAriaLabel', "Profiler editor for event text. Readonly");
 	}
 
-	public layout(dimension: DOM.Dimension) {
+	public override layout(dimension: DOM.Dimension) {
 		this.getControl().layout(dimension);
 	}
 }

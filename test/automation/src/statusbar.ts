@@ -19,7 +19,7 @@ export const enum StatusBarElement {
 
 export class StatusBar {
 
-	private readonly mainSelector = 'div[id="workbench.parts.statusbar"]';
+	private readonly mainSelector = 'footer[id="workbench.parts.statusbar"]';
 
 	constructor(private code: Code) { }
 
@@ -35,8 +35,9 @@ export class StatusBar {
 		return this.code.waitForTextContent(this.getSelector(StatusBarElement.EOL_STATUS), eol);
 	}
 
-	async waitForStatusbarText(title: string, text: string): Promise<void> {
-		await this.code.waitForTextContent(`${this.mainSelector} .statusbar-item[title="${title}"]`, text);
+	// {{SQL CARBON EDIT}} Add retryCount, selecting status bar text with id instead of title.
+	async waitForStatusbarText(id: string, text: string, retryCount?: number): Promise<void> {
+		await this.code.waitForTextContent(`${this.mainSelector} .statusbar-item[id="${id}"]`, text, undefined, retryCount);
 	}
 
 	private getSelector(element: StatusBarElement): string {

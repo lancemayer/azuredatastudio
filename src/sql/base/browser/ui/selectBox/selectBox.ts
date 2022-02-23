@@ -16,6 +16,7 @@ import { renderFormattedText, renderText, FormattedTextRenderOptions } from 'vs/
 import { IKeyboardEvent } from 'vs/base/browser/keyboardEvent';
 import { KeyCode } from 'vs/base/common/keyCodes';
 import { SelectBoxList } from 'vs/base/browser/ui/selectBox/selectBoxCustom';
+import { Event, Emitter } from 'vs/base/common/event';
 
 const $ = dom.$;
 
@@ -51,6 +52,8 @@ export class SelectBox extends vsSelectBox {
 	private disabledSelectBorder?: Color;
 	private contextViewProvider: IContextViewProvider;
 	private message?: IMessage;
+	private _onDidSelect: Emitter<ISelectData>;
+	private _onDidFocus: Emitter<void>;
 
 	private inputValidationInfoBorder?: Color;
 	private inputValidationInfoBackground?: Color;
@@ -68,15 +71,20 @@ export class SelectBox extends vsSelectBox {
 		let optionItems: SelectOptionItemSQL[] = SelectBox.createOptions(options);
 		super(optionItems, 0, contextViewProvider, undefined, selectBoxOptions);
 
+		this._onDidSelect = new Emitter<ISelectData>();
+		this._onDidFocus = new Emitter<void>();
+		this._optionsDictionary = new Map<string, number>();
 		this.populateOptionsDictionary(optionItems);
+		this._dialogOptions = optionItems;
 		const option = this._optionsDictionary.get(selectedOption);
 		if (option) {
 			super.select(option);
 		}
 
 		this._selectedOption = selectedOption;
-		this._register(this.onDidSelect(newSelect => {
+		this._register(super.onDidSelect(newSelect => {
 			this.onSelect(newSelect);
+			this._onDidSelect.fire(newSelect);
 		}));
 
 		this.enabledSelectBackground = this.selectBackground;
@@ -94,7 +102,10 @@ export class SelectBox extends vsSelectBox {
 		let focusTracker = dom.trackFocus(this.selectElement);
 		this._register(focusTracker);
 		this._register(focusTracker.onDidBlur(() => this._hideMessage()));
-		this._register(focusTracker.onDidFocus(() => this._showMessage()));
+		this._register(focusTracker.onDidFocus(() => {
+			this._showMessage();
+			this._onDidFocus.fire();
+		}));
 		// Stop propagation - we've handled the event already and letting it bubble up causes issues with parent
 		// controls handling it (such as dialog pages)
 		this.onkeydown(this.selectElement, (e: IKeyboardEvent) => {
@@ -119,6 +130,18 @@ export class SelectBox extends vsSelectBox {
 		}
 	}
 
+	public override get onDidSelect(): Event<ISelectData> {
+		// We override the onDidSelect event here because the base onDidSelect event isn't fired when
+		// selecting an element via select - which means that we'll miss out on a selection made that way.
+		// So we expose our own event that's fired either when the base onDidSelect is called or when we
+		// manually select an item
+		return this._onDidSelect.event;
+	}
+
+	public get onDidFocus(): Event<void> {
+		return this._onDidFocus.event;
+	}
+
 	public onSelect(newInput: ISelectData) {
 		const selected = this._dialogOptions[newInput.index];
 		this._selectedOption = selected.value;
@@ -126,8 +149,8 @@ export class SelectBox extends vsSelectBox {
 
 	private static createOptions(options: SelectOptionItemSQL[] | string[] | ISelectOptionItem[]): SelectOptionItemSQL[] {
 		let selectOptions: SelectOptionItemSQL[];
-		if (Array.isArray<string>(options) && typeof (options[0]) === 'string') {
-			selectOptions = options.map(o => {
+		if (Array.isArray(options) && typeof (options[0]) === 'string') {
+			selectOptions = (options as string[]).map(o => {
 				return { text: o, value: o } as SelectOptionItemSQL;
 			});
 		} else { // Handle both SelectOptionItemSql and ISelectOptionItem
@@ -144,14 +167,14 @@ export class SelectBox extends vsSelectBox {
 	}
 
 	public populateOptionsDictionary(options: SelectOptionItemSQL[]) {
-		this._optionsDictionary = new Map<string, number>();
+		this._optionsDictionary.clear();
 		for (let i = 0; i < options.length; i++) {
 			this._optionsDictionary.set(options[i].value, i);
 		}
 		this._dialogOptions = options;
 	}
 
-	public style(styles: ISelectBoxStyles): void {
+	public override style(styles: ISelectBoxStyles): void {
 		super.style(styles);
 		this.enabledSelectBackground = this.selectBackground;
 		this.enabledSelectForeground = this.selectForeground;
@@ -170,8 +193,11 @@ export class SelectBox extends vsSelectBox {
 		this.applyStyles();
 	}
 
-	public selectWithOptionName(optionName: string): void {
-		const option = this._optionsDictionary.get(optionName);
+	public selectWithOptionName(optionName?: string): void {
+		let option: number | undefined;
+		if (optionName) {
+			option = this._optionsDictionary.get(optionName);
+		}
 		if (option) {
 			this.select(option);
 		} else {
@@ -179,15 +205,23 @@ export class SelectBox extends vsSelectBox {
 		}
 	}
 
-	public select(index: number): void {
+	public override select(index: number): void {
 		super.select(index);
+		let selectedOptionIndex = this._optionsDictionary.get(this._selectedOption);
+		if (selectedOptionIndex === index) { // Not generating an event if the same value is selected.
+			return;
+		}
 		if (this._dialogOptions !== undefined) {
 			this._selectedOption = this._dialogOptions[index]?.value;
 		}
+		this._onDidSelect.fire({
+			selected: this._selectedOption,
+			index: index
+		});
 	}
 
 
-	public setOptions(options: string[] | SelectOptionItemSQL[] | ISelectOptionItem[], selected?: number): void {
+	public override setOptions(options: string[] | SelectOptionItemSQL[] | ISelectOptionItem[], selected?: number): void {
 		let selectOptions: SelectOptionItemSQL[] = SelectBox.createOptions(options);
 		this.populateOptionsDictionary(selectOptions);
 		super.setOptions(selectOptions, selected);
@@ -195,6 +229,10 @@ export class SelectBox extends vsSelectBox {
 
 	public get value(): string {
 		return this._selectedOption;
+	}
+
+	public get label(): string | undefined {
+		return this._dialogOptions?.find(s => s.value === this._selectedOption)?.text;
 	}
 
 	public get values(): string[] {
@@ -225,11 +263,11 @@ export class SelectBox extends vsSelectBox {
 		this.message = message;
 
 		if (this.element) {
-			dom.removeClass(this.element, 'idle');
-			dom.removeClass(this.element, 'info');
-			dom.removeClass(this.element, 'warning');
-			dom.removeClass(this.element, 'error');
-			dom.addClass(this.element, this.classForType(message.type));
+			this.element.classList.remove('idle');
+			this.element.classList.remove('info');
+			this.element.classList.remove('warning');
+			this.element.classList.remove('error');
+			this.element.classList.add(this.classForType(message.type));
 		}
 
 		// ARIA Support
@@ -270,7 +308,7 @@ export class SelectBox extends vsSelectBox {
 					let spanElement: HTMLElement = (message.formatContent
 						? renderFormattedText(message.content, renderOptions)
 						: renderText(message.content, renderOptions)) as any;
-					dom.addClass(spanElement, this.classForType(message.type));
+					spanElement.classList.add(this.classForType(message.type));
 
 					const styles = this.stylesForType(message.type);
 					spanElement.style.backgroundColor = styles.background ? styles.background.toString() : '';
@@ -287,10 +325,10 @@ export class SelectBox extends vsSelectBox {
 
 	public hideMessage(): void {
 		if (this.element) {
-			dom.removeClass(this.element, 'info');
-			dom.removeClass(this.element, 'warning');
-			dom.removeClass(this.element, 'error');
-			dom.addClass(this.element, 'idle');
+			this.element.classList.remove('info');
+			this.element.classList.remove('warning');
+			this.element.classList.remove('error');
+			this.element.classList.add('idle');
 		}
 
 		this._hideMessage();
@@ -321,12 +359,13 @@ export class SelectBox extends vsSelectBox {
 		}
 	}
 
-	public render(container: HTMLElement): void {
+	public override render(container: HTMLElement): void {
 		let selectOptions: ISelectBoxOptionsWithLabel = this._selectBoxOptions as ISelectBoxOptionsWithLabel;
 
 		if (selectOptions && selectOptions.labelText && selectOptions.labelText !== undefined) {
 			let outerContainer = document.createElement('div');
 			let selectContainer = document.createElement('div');
+			selectContainer.setAttribute('role', 'presentation');
 
 			outerContainer.className = selectOptions.labelOnTop ? 'labelOnTopContainer' : 'labelOnLeftContainer';
 
@@ -340,6 +379,7 @@ export class SelectBox extends vsSelectBox {
 
 			super.render(selectContainer);
 			this.selectElement.classList.add('action-item-label');
+			this.selectElement.id = selectOptions.id;
 		}
 		else {
 			super.render(container);
@@ -354,4 +394,5 @@ export class SelectBox extends vsSelectBox {
 export interface ISelectBoxOptionsWithLabel extends ISelectBoxOptions {
 	labelText?: string;
 	labelOnTop?: boolean;
+	id?: string;
 }

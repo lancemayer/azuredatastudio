@@ -12,8 +12,7 @@ import { JupyterServerInstallation, PythonPkgDetails, PythonInstallSettings } fr
 import * as utils from '../../common/utils';
 import { promises as fs } from 'fs';
 import { Deferred } from '../../common/promise';
-import { PythonPathInfo, PythonPathLookup } from '../pythonPathLookup';
-import { ApiWrapper } from '../../common/apiWrapper';
+import { PythonPathLookup } from '../pythonPathLookup';
 
 const localize = nls.loadMessageBundle();
 
@@ -21,9 +20,10 @@ export interface ConfigurePythonModel {
 	kernelName: string;
 	pythonLocation: string;
 	useExistingPython: boolean;
-	pythonPathsPromise: Promise<PythonPathInfo[]>;
+	pythonPathLookup: PythonPathLookup;
 	packagesToInstall: PythonPkgDetails[];
 	installation: JupyterServerInstallation;
+	packageUpgradeOnly: boolean;
 }
 
 export class ConfigurePythonWizard {
@@ -35,11 +35,9 @@ export class ConfigurePythonWizard {
 	private model: ConfigurePythonModel;
 
 	private _setupComplete: Deferred<void>;
-	private pythonPathsPromise: Promise<PythonPathInfo[]>;
 
-	constructor(private apiWrapper: ApiWrapper, private jupyterInstallation: JupyterServerInstallation) {
+	constructor(private jupyterInstallation: JupyterServerInstallation) {
 		this._setupComplete = new Deferred<void>();
-		this.pythonPathsPromise = (new PythonPathLookup()).getSuggestions();
 	}
 
 	public get wizard(): azdata.window.Wizard {
@@ -50,13 +48,13 @@ export class ConfigurePythonWizard {
 		return this._setupComplete.promise;
 	}
 
-	public async start(kernelName?: string, rejectOnCancel?: boolean, ...args: any[]): Promise<void> {
+	public async start(kernelName?: string, rejectOnCancel?: boolean): Promise<void> {
 		this.model = <ConfigurePythonModel>{
 			kernelName: kernelName,
-			pythonPathsPromise: this.pythonPathsPromise,
+			pythonPathLookup: new PythonPathLookup(),
 			installation: this.jupyterInstallation,
-			pythonLocation: JupyterServerInstallation.getPythonPathSetting(this.apiWrapper),
-			useExistingPython: JupyterServerInstallation.getExistingPythonSetting(this.apiWrapper)
+			pythonLocation: JupyterServerInstallation.getPythonPathSetting(),
+			useExistingPython: JupyterServerInstallation.getExistingPythonSetting()
 		};
 
 		let pages: Map<number, BasePage> = new Map<number, BasePage>();
@@ -67,19 +65,19 @@ export class ConfigurePythonWizard {
 		} else {
 			wizardTitle = localize('configurePython.wizardNameWithoutKernel', "Configure Python to run kernels");
 		}
-		this._wizard = azdata.window.createWizard(wizardTitle, 600);
+		this._wizard = azdata.window.createWizard(wizardTitle, 'ConfigurePythonWizard', 600);
 		let page0 = azdata.window.createWizardPage(localize('configurePython.page0Name', "Configure Python Runtime"));
 		let page1 = azdata.window.createWizardPage(localize('configurePython.page1Name', "Install Dependencies"));
 
 		page0.registerContent(async (view) => {
-			let configurePathPage = new ConfigurePathPage(this.apiWrapper, this, page0, this.model, view);
+			let configurePathPage = new ConfigurePathPage(this, page0, this.model, view);
 			pages.set(0, configurePathPage);
 			await configurePathPage.initialize();
 			await configurePathPage.onPageEnter();
 		});
 
 		page1.registerContent(async (view) => {
-			let pickPackagesPage = new PickPackagesPage(this.apiWrapper, this, page1, this.model, view);
+			let pickPackagesPage = new PickPackagesPage(this, page1, this.model, view);
 			pages.set(1, pickPackagesPage);
 			await pickPackagesPage.initialize();
 		});
@@ -101,6 +99,10 @@ export class ConfigurePythonWizard {
 		});
 
 		this._wizard.registerNavigationValidator(async (info) => {
+			// The pages have not been registered yet
+			if (pages.size === 0) {
+				return false;
+			}
 			let lastPage = pages.get(info.lastPage);
 			let newPage = pages.get(info.newPage);
 
@@ -123,11 +125,18 @@ export class ConfigurePythonWizard {
 
 		this._wizard.generateScriptButton.hidden = true;
 		this._wizard.pages = [page0, page1];
-		this._wizard.open();
+		await this._wizard.open();
 	}
 
 	public async close(): Promise<void> {
 		await this._wizard.close();
+	}
+
+	public showInfoMessage(errorMsg: string) {
+		this._wizard.message = <azdata.window.DialogMessage>{
+			text: errorMsg,
+			level: azdata.window.MessageLevel.Information
+		};
 	}
 
 	public showErrorMessage(errorMsg: string) {
@@ -151,7 +160,7 @@ export class ConfigurePythonWizard {
 			}
 
 			if (useExistingPython) {
-				let exePath = JupyterServerInstallation.getPythonExePath(pythonLocation, true);
+				let exePath = JupyterServerInstallation.getPythonExePath(pythonLocation);
 				let pythonExists = await utils.exists(exePath);
 				if (!pythonExists) {
 					this.showErrorMessage(this.PythonNotFoundMsg);
@@ -167,7 +176,8 @@ export class ConfigurePythonWizard {
 		let installSettings: PythonInstallSettings = {
 			installPath: pythonLocation,
 			existingPython: useExistingPython,
-			specificPackages: this.model.packagesToInstall
+			packages: this.model.packagesToInstall,
+			packageUpgradeOnly: this.model.packageUpgradeOnly
 		};
 		this.jupyterInstallation.startInstallProcess(false, installSettings)
 			.then(() => {

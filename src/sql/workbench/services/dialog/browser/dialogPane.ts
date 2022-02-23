@@ -22,18 +22,19 @@ import { IThemeService } from 'vs/platform/theme/common/themeService';
 import { IThemable } from 'vs/base/common/styler';
 import { attachTabbedPanelStyler } from 'sql/workbench/common/styler';
 import { localize } from 'vs/nls';
+import { getFocusableElements } from 'sql/base/browser/dom';
 
 export class DialogPane extends Disposable implements IThemable {
-	private _tabbedPanel: TabbedPanel;
+	private _tabbedPanel: TabbedPanel | undefined;
 	private _moduleRefs: NgModuleRef<{}>[] = [];
 
 	// Validation
 	private _modelViewValidityMap = new Map<string, boolean>();
 
-	private _body: HTMLElement;
+	private _body!: HTMLElement;
 	private _selectedTabIndex: number = 0; //TODO: can be an option
 	private _onLayoutChange = new Emitter<LayoutRequestParams>();
-	private _selectedTabContent: string;
+	private _selectedTabContent: string = '';
 	public pageNumber?: number;
 
 	constructor(
@@ -44,6 +45,7 @@ export class DialogPane extends Disposable implements IThemable {
 		private _themeService: IThemeService,
 		public displayPageTitle: boolean,
 		public description?: string,
+		private setInitialFocus: boolean = true
 	) {
 		super();
 	}
@@ -56,7 +58,7 @@ export class DialogPane extends Disposable implements IThemable {
 		this._body = DOM.append(container, DOM.$('div.dialogModal-pane'));
 		if (typeof this._content === 'string' || this._content.length < 2) {
 			let modelViewId = typeof this._content === 'string' ? this._content : this._content[0].content;
-			this.initializeModelViewContainer(this._body, modelViewId);
+			this.initializeModelViewContainer(this._body, modelViewId, undefined, this.setInitialFocus);
 		} else {
 			this._tabbedPanel = new TabbedPanel(this._body);
 			attachTabbedPanelStyler(this._tabbedPanel, this._themeService);
@@ -67,12 +69,13 @@ export class DialogPane extends Disposable implements IThemable {
 				let tabContainer = document.createElement('div');
 				tabContainer.style.display = 'none';
 				this._body.appendChild(tabContainer);
-				this.initializeModelViewContainer(tabContainer, tab.content, tab);
-				this._tabbedPanel.onTabChange(e => {
-					tabContainer.style.height = (this.getTabDimension().height - this._tabbedPanel.headersize) + 'px';
+				// Only set initial focus when the tab is active one.
+				this.initializeModelViewContainer(tabContainer, tab.content, tab, this.setInitialFocus && tabIndex === this._selectedTabIndex);
+				this._tabbedPanel!.onTabChange(e => {
+					tabContainer.style.height = (this.getTabDimension().height - this._tabbedPanel!.headersize) + 'px';
 					this._onLayoutChange.fire({ modelViewId: tab.content });
 				});
-				this._tabbedPanel.pushTab({
+				this._tabbedPanel!.pushTab({
 					title: tab.title,
 					identifier: 'dialogPane.' + this.title + '.' + tabIndex,
 					view: {
@@ -83,8 +86,7 @@ export class DialogPane extends Disposable implements IThemable {
 							container.appendChild(tabContainer);
 							tabContainer.style.display = 'block';
 						},
-						layout: (dimension) => { this.getTabDimension(); },
-						focus: () => { this.focus(); }
+						layout: (dimension) => { this.getTabDimension(); }
 					}
 				});
 			});
@@ -113,8 +115,8 @@ export class DialogPane extends Disposable implements IThemable {
 	/**
 	 * Bootstrap angular for the dialog's model view controller with the given model view ID
 	 */
-	private initializeModelViewContainer(bodyContainer: HTMLElement, modelViewId: string, tab?: DialogTab) {
-		this._instantiationService.invokeFunction(bootstrapAngular,
+	private initializeModelViewContainer(bodyContainer: HTMLElement, modelViewId: string, tab?: DialogTab, setInitialFocus: boolean = true) {
+		this._instantiationService.invokeFunction<void, any[]>(bootstrapAngular,
 			DialogModule,
 			bodyContainer,
 			'dialog-modelview-container',
@@ -127,10 +129,11 @@ export class DialogPane extends Disposable implements IThemable {
 					}
 				},
 				onLayoutRequested: this._onLayoutChange.event,
-				dialogPane: this
+				dialogPane: this,
+				setInitialFocus: setInitialFocus
 			} as DialogComponentParams,
 			undefined,
-			(moduleRef) => {
+			(moduleRef: NgModuleRef<{}>) => {
 				return this._moduleRefs.push(moduleRef);
 			});
 	}
@@ -147,16 +150,18 @@ export class DialogPane extends Disposable implements IThemable {
 	}
 
 	private focus(): void {
-		let focusedElement = <HTMLElement>this._body.querySelector('a[href], area[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])');
-		focusedElement ? focusedElement.focus() : this._body.focus();
+		const focusableElements = getFocusableElements(this._body);
+		if (focusableElements?.length > 0) {
+			focusableElements[0].focus();
+		}
 	}
 
 	/**
 	 * Called by the theme registry on theme change to style the component
 	 */
 	public style(styles: IModalDialogStyles): void {
-		this._body.style.backgroundColor = styles.dialogBodyBackground ? styles.dialogBodyBackground.toString() : undefined;
-		this._body.style.color = styles.dialogForeground ? styles.dialogForeground.toString() : undefined;
+		this._body.style.backgroundColor = styles.dialogBodyBackground ? styles.dialogBodyBackground.toString() : '';
+		this._body.style.color = styles.dialogForeground ? styles.dialogForeground.toString() : '';
 	}
 
 	private _setValidity(modelViewId: string, valid: boolean) {
@@ -174,7 +179,7 @@ export class DialogPane extends Disposable implements IThemable {
 		return valid;
 	}
 
-	public dispose() {
+	public override dispose() {
 		super.dispose();
 		this._body.remove();
 		this._moduleRefs.forEach(moduleRef => moduleRef.destroy());

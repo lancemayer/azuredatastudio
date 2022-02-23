@@ -12,7 +12,7 @@ import { createDecorator } from 'vs/platform/instantiation/common/instantiation'
 export const ITextModelService = createDecorator<ITextModelService>('textModelService');
 
 export interface ITextModelService {
-	_serviceBrand: undefined;
+	readonly _serviceBrand: undefined;
 
 	/**
 	 * Provided a resource URI, it will return a model reference
@@ -56,11 +56,6 @@ export interface ITextEditorModel extends IEditorModel {
 	 * Signals if this model is readonly or not.
 	 */
 	isReadonly(): boolean;
-
-	/**
-	 * Figure out if this model is resolved or not.
-	 */
-	isResolved(): this is IResolvedTextEditorModel;
 
 	/**
 	 * The mode id of the text model if known.

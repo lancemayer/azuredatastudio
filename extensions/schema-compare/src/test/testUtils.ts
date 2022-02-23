@@ -47,6 +47,28 @@ export const mockConnectionProfile: azdata.connection.ConnectionProfile = {
 	}
 };
 
+export const mockConnectionProfile2: azdata.connection.ConnectionProfile = {
+	providerId: 'My Provider2',
+	connectionId: 'My Id2',
+	connectionName: 'My Connection2',
+	serverName: 'My Server2',
+	databaseName: 'My Database2',
+	userName: 'My User2',
+	password: 'My Pwd2',
+	authenticationType: 'SqlLogin',
+	savePassword: false,
+	groupFullName: 'My groupName2',
+	groupId: 'My GroupId2',
+	saveProfile: true,
+	options: {
+		server: 'My Server2',
+		database: 'My Database2',
+		user: 'My User2',
+		password: 'My Pwd2',
+		authenticationType: 'SqlLogin'
+	}
+};
+
 export const mockConnectionResult: azdata.ConnectionResult = {
 	connected: false,
 	connectionId: undefined,
@@ -72,7 +94,11 @@ export const mockDacpacEndpoint: mssql.SchemaCompareEndpointInfo = {
 	databaseName: '',
 	ownerUri: '',
 	packageFilePath: mockFilePath,
-	connectionDetails: undefined
+	connectionDetails: undefined,
+	projectFilePath: '',
+	folderStructure: '',
+	targetScripts: [],
+	dataSchemaProvider: '',
 };
 
 export const mockDatabaseEndpoint: mssql.SchemaCompareEndpointInfo = {
@@ -82,7 +108,11 @@ export const mockDatabaseEndpoint: mssql.SchemaCompareEndpointInfo = {
 	databaseName: '',
 	ownerUri: '',
 	packageFilePath: '',
-	connectionDetails: undefined
+	connectionDetails: undefined,
+	projectFilePath: '',
+	folderStructure: '',
+	targetScripts: [],
+	dataSchemaProvider: '',
 };
 
 export async function shouldThrowSpecificError(block: Function, expectedMessage: string, details?: string) {
@@ -98,4 +128,27 @@ export async function shouldThrowSpecificError(block: Function, expectedMessage:
 	if (succeeded) {
 		throw new AssertionError({ message: `Operation succeeded, but expected failure with exception: "${expectedMessage}".${details ? '  ' + details : ''}` });
 	}
+}
+
+export function setDacpacEndpointInfo(path: string): mssql.SchemaCompareEndpointInfo {
+	let endpointInfo: mssql.SchemaCompareEndpointInfo;
+
+	endpointInfo = { ...mockDacpacEndpoint };
+	endpointInfo.packageFilePath = path;
+
+	return endpointInfo;
+}
+
+export function setDatabaseEndpointInfo(): mssql.SchemaCompareEndpointInfo {
+	let endpointInfo: mssql.SchemaCompareEndpointInfo;
+	const serverName = 'My Server';
+	const dbName = 'My Database';
+	const serverDisplayName = 'My Connection';
+
+	endpointInfo = { ...mockDatabaseEndpoint };
+	endpointInfo.databaseName = dbName;
+	endpointInfo.serverDisplayName = serverDisplayName;
+	endpointInfo.serverName = serverName;
+
+	return endpointInfo;
 }

@@ -12,7 +12,7 @@ import { URI } from 'vs/base/common/uri';
 import { INotificationService } from 'vs/platform/notification/common/notification';
 
 import { CellType, NotebookChangeType } from 'sql/workbench/services/notebook/common/contracts';
-import { INotebookManager, ILanguageMagic } from 'sql/workbench/services/notebook/browser/notebookService';
+import { IExecuteManager, ILanguageMagic, ISerializationManager } from 'sql/workbench/services/notebook/browser/notebookService';
 import { IConnectionProfile } from 'sql/platform/connection/common/interfaces';
 import { IConnectionManagementService } from 'sql/platform/connection/common/connectionManagement';
 import { IStandardKernelWithProvider } from 'sql/workbench/services/notebook/browser/models/notebookUtils';
@@ -21,21 +21,27 @@ import { ICapabilitiesService } from 'sql/platform/capabilities/common/capabilit
 import { NotebookModel } from 'sql/workbench/services/notebook/browser/models/notebookModel';
 import { IModelContentChangedEvent } from 'vs/editor/common/model/textModelEvents';
 import type { FutureInternal } from 'sql/workbench/services/notebook/browser/interfaces';
+import { ICellValue, ResultSetSummary } from 'sql/workbench/services/query/common/query';
+import { QueryResultId } from 'sql/workbench/services/notebook/browser/models/cell';
+import { IPosition } from 'vs/editor/common/core/position';
+import * as TelemetryKeys from 'sql/platform/telemetry/common/telemetryKeys';
+import { ITelemetryEventProperties } from 'sql/platform/telemetry/common/telemetry';
+import { INotebookEditOperation } from 'sql/workbench/api/common/sqlExtHostTypes';
+
+
+export enum ViewMode {
+	Notebook,
+	Views,
+}
 
 export interface ICellRange {
 	readonly start: number;
 	readonly end: number;
 }
 
-export interface ISingleNotebookEditOperation {
-	range: ICellRange;
-	cell: Partial<nb.ICellContents>;
-	forceMoveMarkers: boolean;
-}
-
 export interface IClientSessionOptions {
 	notebookUri: URI;
-	notebookManager: INotebookManager;
+	executeManager: IExecuteManager;
 	notificationService: INotificationService;
 	kernelSpec: nb.IKernelSpec;
 }
@@ -82,7 +88,7 @@ export interface IClientSession extends IDisposable {
 	/**
 	 * The current kernel associated with the document.
 	 */
-	readonly kernel: nb.IKernel | null;
+	readonly kernel: nb.IKernel | undefined;
 
 	/**
 	 * The current path associated with the client session.
@@ -133,7 +139,7 @@ export interface IClientSession extends IDisposable {
 	 */
 	readonly kernelDisplayName: string;
 
-	readonly cachedKernelSpec: nb.IKernelSpec;
+	readonly cachedKernelSpec: nb.IKernelSpec | undefined;
 
 	/**
 	 * Initializes the ClientSession, by starting the server and
@@ -149,7 +155,7 @@ export interface IClientSession extends IDisposable {
 	changeKernel(
 		options: nb.IKernelSpec,
 		oldKernel?: nb.IKernel
-	): Promise<nb.IKernel>;
+	): Promise<nb.IKernel | undefined>;
 
 	/**
 	 * Configure the current kernel associated with the document.
@@ -222,7 +228,7 @@ export interface INotebookModel {
 	/**
 	 * Cell List for this model
 	 */
-	readonly cells: ReadonlyArray<ICellModel>;
+	readonly cells: ReadonlyArray<ICellModel> | undefined;
 
 	/**
 	 * The active cell for this model. May be undefined
@@ -232,7 +238,7 @@ export interface INotebookModel {
 	/**
 	 * Client Session in the notebook, used for sending requests to the notebook service
 	 */
-	readonly clientSession: IClientSession;
+	readonly clientSession: IClientSession | undefined;
 	/**
 	 * Promise indicating when client session is ready to use.
 	 */
@@ -240,16 +246,21 @@ export interface INotebookModel {
 	/**
 	 * LanguageInfo saved in the notebook
 	 */
-	readonly languageInfo: nb.ILanguageInfo;
+	readonly languageInfo: nb.ILanguageInfo | undefined;
 	/**
 	 * Current default language for the notebook
 	 */
 	readonly language: string;
 
 	/**
-	 * All notebook managers applicable for a given notebook
+	 * The current serialization manager applicable for a given notebook
 	 */
-	readonly notebookManagers: INotebookManager[];
+	readonly serializationManager: ISerializationManager | undefined;
+
+	/**
+	 * All execute managers applicable for a given notebook
+	 */
+	readonly executeManagers: IExecuteManager[];
 
 	/**
 	 * Event fired on first initialization of the kernel and
@@ -266,7 +277,7 @@ export interface INotebookModel {
 	 * Event fired on first initialization of the kernels and
 	 * on subsequent change events
 	 */
-	readonly kernelsChanged: Event<nb.IKernelSpec>;
+	readonly kernelsChanged: Event<nb.IKernel>;
 
 	/**
 	 * Default kernel
@@ -297,6 +308,17 @@ export interface INotebookModel {
 	readonly context: ConnectionProfile | undefined;
 
 	/**
+	 * The connection name (alias) saved in the notebook metadata,
+	 * or undefined if none.
+	 */
+	readonly savedConnectionName: string | undefined;
+
+	/**
+	 * The connection mode of the notebook (single vs multiple connections)
+	 */
+	multiConnectionMode: boolean;
+
+	/**
 	 * Event fired on first initialization of the cells and
 	 * on subsequent change events
 	 */
@@ -310,7 +332,12 @@ export interface INotebookModel {
 	/**
 	 * Event fired on active cell change
 	 */
-	readonly onActiveCellChanged: Event<ICellModel>;
+	readonly onActiveCellChanged: Event<ICellModel | undefined>;
+
+	/**
+	 * Event fired on cell type change
+	 */
+	readonly onCellTypeChanged: Event<ICellModel>;
 
 	/**
 	 * The trusted mode of the Notebook
@@ -321,6 +348,27 @@ export interface INotebookModel {
 	 * Current notebook provider id
 	 */
 	providerId: string;
+
+	/**
+	 * View mode for this model. It determines what editor mode
+	 * will be displayed.
+	 */
+	viewMode: ViewMode;
+
+	/**
+	 * Add custom metadata values to the notebook
+	 */
+	setMetaValue(key: string, value: any);
+
+	/**
+	 * Get a custom metadata value from the notebook
+	 */
+	getMetaValue(key: string): any;
+
+	/**
+	 * Restart current active session if it exists
+	 */
+	restartSession(): Promise<void>;
 
 	/**
 	 * Change the current kernel from the Kernel dropdown
@@ -344,6 +392,11 @@ export interface INotebookModel {
 	addCell(cellType: CellType, index?: number): void;
 
 	/**
+	 * Moves a cell up/down
+	 */
+	moveCell(cellModel: ICellModel, direction: MoveDirection): void;
+
+	/**
 	 * Deletes a cell
 	 */
 	deleteCell(cellModel: ICellModel): void;
@@ -358,13 +411,12 @@ export interface INotebookModel {
 	 */
 	onCellChange(cell: ICellModel, change: NotebookChangeType): void;
 
-
 	/**
 	 * Push edit operations, basically editing the model. This is the preferred way of
 	 * editing the model. Long-term, this will ensure edit operations can be added to the undo stack
 	 * @param edits The edit operations to perform
 	 */
-	pushEditOperations(edits: ISingleNotebookEditOperation[]): void;
+	pushEditOperations(edits: INotebookEditOperation[]): void;
 
 	getApplicableConnectionProviderIds(kernelName: string): string[];
 
@@ -374,7 +426,7 @@ export interface INotebookModel {
 	 * Get the standardKernelWithProvider by name
 	 * @param name The kernel name
 	 */
-	getStandardKernelFromName(name: string): IStandardKernelWithProvider;
+	getStandardKernelFromName(name: string): IStandardKernelWithProvider | undefined;
 
 	/** Event fired once we get call back from ConfigureConnection method in sqlops extension */
 	readonly onValidConnectionSelected: Event<boolean>;
@@ -385,6 +437,12 @@ export interface INotebookModel {
 
 	requestConnection(): Promise<boolean>;
 
+	/**
+	 * Create and send a Notebook Telemetry Event
+	 * @param action Telemetry action
+	 * @param additionalProperties Additional properties to send.
+	*/
+	sendNotebookTelemetryActionEvent(action: TelemetryKeys.TelemetryAction | TelemetryKeys.NbTelemetryAction, additionalProperties?: ITelemetryEventProperties): void;
 }
 
 export interface NotebookContentChange {
@@ -424,9 +482,19 @@ export enum CellExecutionState {
 	Error = 3
 }
 
+export enum MoveDirection {
+	Up,
+	Down
+}
+
 export interface IOutputChangedEvent {
 	outputs: ReadonlyArray<nb.ICellOutput>;
 	shouldScroll: boolean;
+}
+
+export interface ITableUpdatedEvent {
+	resultSet: ResultSetSummary;
+	rows: ICellValue[][];
 }
 
 export interface ICellModel {
@@ -437,13 +505,16 @@ export interface ICellModel {
 	source: string | string[];
 	cellType: CellType;
 	trustedMode: boolean;
+	metadata: any | undefined;
 	active: boolean;
 	hover: boolean;
 	executionCount: number | undefined;
 	readonly future: FutureInternal;
 	readonly outputs: ReadonlyArray<nb.ICellOutput>;
+	getOutputId(output: nb.ICellOutput): QueryResultId | undefined;
 	renderedOutputTextContent?: string[];
 	readonly onOutputsChanged: Event<IOutputChangedEvent>;
+	readonly onTableUpdated: Event<ITableUpdatedEvent>;
 	readonly onExecutionStateChange: Event<CellExecutionState>;
 	readonly executionState: CellExecutionState;
 	readonly notebookModel: NotebookModel;
@@ -457,11 +528,53 @@ export interface ICellModel {
 	stdInVisible: boolean;
 	readonly onLoaded: Event<string>;
 	isCollapsed: boolean;
+	isParameter: boolean;
+	isInjectedParameter: boolean;
 	readonly onCollapseStateChanged: Event<boolean>;
+	readonly onParameterStateChanged: Event<boolean>;
 	readonly onCellModeChanged: Event<boolean>;
 	modelContentChangedEvent: IModelContentChangedEvent;
 	isEditMode: boolean;
+	showPreview: boolean;
+	showMarkdown: boolean;
+	defaultTextEditMode: string;
 	sendChangeToNotebook(change: NotebookChangeType): void;
+	cellSourceChanged: boolean;
+	readonly savedConnectionName: string | undefined;
+	attachments: nb.ICellAttachments | undefined;
+	readonly onCurrentEditModeChanged: Event<CellEditModes>;
+	readonly currentMode: CellEditModes;
+	/**
+	 * Adds image as an attachment to cell metadata
+	 * @param mimeType a string defining mimeType of the image. Examples: image/png, image/jpeg
+	 * @param base64Encoding the base64 encoded value of the image
+	 * @param name the name of the image.
+	 * Returns the name of the attachment added to metadata.
+	 */
+	addAttachment(mimeType: string, base64Encoding: string, name: string): string;
+	richTextCursorPosition: ICaretPosition;
+	markdownCursorPosition: IPosition;
+	/**
+	 * Processes a list of edits for the cell
+	 * @param edits List of edits to apply to the cell
+	 */
+	processEdits(edits: ICellEdit[]): void;
+}
+
+export const enum CellEditType {
+	Output,
+	OutputData
+}
+
+export interface ICellEdit {
+	readonly type: CellEditType
+}
+
+export interface ICaretPosition {
+	startElementNodes: number[];
+	startOffset: number;
+	endElementNodes: number[];
+	endOffset: number;
 }
 
 export interface IModelFactory {
@@ -470,7 +583,7 @@ export interface IModelFactory {
 	createClientSession(options: IClientSessionOptions): IClientSession;
 }
 
-export interface IContentManager {
+export interface IContentLoader {
 	/**
 	 * This is a specialized method intended to load for a default context - just the current Notebook's URI
 	 */
@@ -488,8 +601,9 @@ export interface INotebookModelOptions {
 	 */
 	factory: IModelFactory;
 
-	contentManager: IContentManager;
-	notebookManagers: INotebookManager[];
+	contentLoader: IContentLoader;
+	serializationManagers: ISerializationManager[];
+	executeManagers: IExecuteManager[];
 	providerId: string;
 	defaultKernel: nb.IKernelSpec;
 	cellMagicMapper: ICellMagicMapper;
@@ -516,4 +630,11 @@ export interface INotebookContentsEditable {
 	metadata: nb.INotebookMetadata;
 	nbformat: number;
 	nbformat_minor: number;
+}
+
+export enum CellEditModes {
+	'CODE',
+	'MARKDOWN',
+	'SPLIT',
+	'WYSIWYG'
 }

@@ -10,17 +10,22 @@ import * as path from 'path';
  * Base class for an item that appears in the ADS project tree
  */
 export abstract class BaseProjectTreeItem {
-	uri: vscode.Uri;
+	/** Project-relative URI that's compatible with the project tree */
+	projectUri: vscode.Uri;
 	parent?: BaseProjectTreeItem;
 
 	constructor(uri: vscode.Uri, parent?: BaseProjectTreeItem) {
-		this.uri = uri;
+		this.projectUri = uri;
 		this.parent = parent;
 	}
 
 	abstract get children(): BaseProjectTreeItem[];
 
 	abstract get treeItem(): vscode.TreeItem;
+
+	public get friendlyName(): string {
+		return path.parse(this.projectUri.path).base;
+	}
 
 	public get root() {
 		let node: BaseProjectTreeItem = this;
@@ -40,7 +45,7 @@ export class MessageTreeItem extends BaseProjectTreeItem {
 	private message: string;
 
 	constructor(message: string, parent?: BaseProjectTreeItem) {
-		super(vscode.Uri.file(path.join(parent?.uri.path ?? 'Message', message)), parent);
+		super(vscode.Uri.file(path.join(parent?.projectUri.path ?? 'Message', message)), parent);
 		this.message = message;
 	}
 

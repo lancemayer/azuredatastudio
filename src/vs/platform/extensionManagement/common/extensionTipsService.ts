@@ -3,20 +3,21 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { URI } from 'vs/base/common/uri';
-import { IProductService, IConfigBasedExtensionTip as IRawConfigBasedExtensionTip } from 'vs/platform/product/common/productService';
-import { IFileService } from 'vs/platform/files/common/files';
 import { isNonEmptyArray } from 'vs/base/common/arrays';
-import { IExtensionTipsService, IExecutableBasedExtensionTip, IWorkspaceTips, IConfigBasedExtensionTip } from 'vs/platform/extensionManagement/common/extensionManagement';
-import { forEach } from 'vs/base/common/collections';
-import { IRequestService, asJson } from 'vs/platform/request/common/request';
 import { CancellationToken } from 'vs/base/common/cancellation';
-import { ILogService } from 'vs/platform/log/common/log';
+import { forEach } from 'vs/base/common/collections';
+import { Disposable } from 'vs/base/common/lifecycle';
+import { IConfigBasedExtensionTip as IRawConfigBasedExtensionTip } from 'vs/base/common/product';
 import { joinPath } from 'vs/base/common/resources';
+import { URI } from 'vs/base/common/uri';
 import { getDomainsOfRemotes } from 'vs/platform/extensionManagement/common/configRemotes';
-import { keys } from 'vs/base/common/map';
+import { IConfigBasedExtensionTip, IExecutableBasedExtensionTip, IExtensionTipsService, IWorkspaceTips } from 'vs/platform/extensionManagement/common/extensionManagement';
+import { IFileService } from 'vs/platform/files/common/files';
+import { ILogService } from 'vs/platform/log/common/log';
+import { IProductService } from 'vs/platform/product/common/productService';
+import { asJson, IRequestService } from 'vs/platform/request/common/request';
 
-export class ExtensionTipsService implements IExtensionTipsService {
+export class ExtensionTipsService extends Disposable implements IExtensionTipsService {
 
 	_serviceBrand: any;
 
@@ -28,6 +29,7 @@ export class ExtensionTipsService implements IExtensionTipsService {
 		@IRequestService private readonly requestService: IRequestService,
 		@ILogService private readonly logService: ILogService,
 	) {
+		super();
 		if (this.productService.configBasedExtensionTips) {
 			forEach(this.productService.configBasedExtensionTips, ({ value }) => this.allConfigBasedTips.set(value.configPath, value));
 		}
@@ -76,7 +78,7 @@ export class ExtensionTipsService implements IExtensionTipsService {
 						});
 					}
 				});
-				const domains = getDomainsOfRemotes(content.value.toString(), keys(recommendationByRemote));
+				const domains = getDomainsOfRemotes(content.value.toString(), [...recommendationByRemote.keys()]);
 				for (const domain of domains) {
 					const remote = recommendationByRemote.get(domain);
 					if (remote) {

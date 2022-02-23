@@ -10,7 +10,7 @@ import { IConnectionManagementService } from 'sql/platform/connection/common/con
 import { IConnectionProfile } from 'sql/platform/connection/common/interfaces';
 import { ConnectionProfileGroup } from 'sql/platform/connection/common/connectionProfileGroup';
 import { ITree } from 'vs/base/parts/tree/browser/tree';
-import { IObjectExplorerService } from 'sql/workbench/services/objectExplorer/browser/objectExplorerService';
+import { IObjectExplorerService, ServerTreeViewView } from 'sql/workbench/services/objectExplorer/browser/objectExplorerService';
 import { TreeNode } from 'sql/workbench/services/objectExplorer/common/treeNode';
 import Severity from 'vs/base/common/severity';
 import { ObjectExplorerActionsContext } from 'sql/workbench/services/objectExplorer/browser/objectExplorerActions';
@@ -18,6 +18,8 @@ import { IErrorMessageService } from 'sql/platform/errorMessage/common/errorMess
 import { UNSAVED_GROUP_ID } from 'sql/platform/connection/common/constants';
 import { IServerGroupController } from 'sql/platform/serverGroup/common/serverGroupController';
 import { ILogService } from 'vs/platform/log/common/log';
+import { AsyncServerTree, ServerTreeElement } from 'sql/workbench/services/objectExplorer/browser/asyncServerTree';
+import { SqlIconId } from 'sql/base/common/codicons';
 
 export interface IServerView {
 	showFilteredTree(filter: string): void;
@@ -28,23 +30,21 @@ export class RefreshAction extends Action {
 
 	public static ID = 'objectExplorer.refresh';
 	public static LABEL = localize('connectionTree.refresh', "Refresh");
-	private _tree: ITree;
 
 	constructor(
 		id: string,
 		label: string,
-		tree: ITree,
-		private element: IConnectionProfile | TreeNode,
+		private _tree: AsyncServerTree | ITree,
+		private element: ServerTreeElement,
 		@IConnectionManagementService private _connectionManagementService: IConnectionManagementService,
 		@IObjectExplorerService private _objectExplorerService: IObjectExplorerService,
 		@IErrorMessageService private _errorMessageService: IErrorMessageService,
 		@ILogService private _logService: ILogService
 	) {
 		super(id, label);
-		this._tree = tree;
 	}
-	public async run(): Promise<boolean> {
-		let treeNode: TreeNode;
+	public override async run(): Promise<void> {
+		let treeNode: TreeNode | undefined = undefined;
 		if (this.element instanceof ConnectionProfile) {
 			let connection: ConnectionProfile = this.element;
 			if (this._connectionManagementService.isConnected(undefined, connection)) {
@@ -61,18 +61,24 @@ export class RefreshAction extends Action {
 		if (treeNode) {
 			try {
 				try {
-					await this._objectExplorerService.refreshTreeNode(treeNode.getSession(), treeNode);
+					const session = treeNode.getSession();
+					if (session) {
+						await this._objectExplorerService.refreshTreeNode(session, treeNode);
+					}
 				} catch (error) {
 					this.showError(error);
-					return true;
+					return;
 				}
-				await this._tree.refresh(this.element);
+				if (this._tree instanceof AsyncServerTree) {
+					await this._tree.updateChildren(this.element);
+				} else {
+					await this._tree.refresh(this.element);
+				}
 			} catch (ex) {
 				this._logService.error(ex);
-				return true;
+				return;
 			}
 		}
-		return true;
 	}
 
 	private showError(errorMessage: string) {
@@ -97,13 +103,10 @@ export class EditConnectionAction extends Action {
 		this.class = 'edit-server-action';
 	}
 
-	public async run(): Promise<boolean> {
-		if (!this._connectionProfile) {
-			return false;
+	public override async run(): Promise<void> {
+		if (this._connectionProfile) {
+			await this._connectionManagementService.showEditConnectionDialog(this._connectionProfile);
 		}
-
-		await this._connectionManagementService.showEditConnectionDialog(this._connectionProfile);
-		return true;
 	}
 }
 
@@ -120,7 +123,7 @@ export class DisconnectConnectionAction extends Action {
 		super(id, label);
 	}
 
-	async run(actionContext: ObjectExplorerActionsContext): Promise<any> {
+	override async run(actionContext: ObjectExplorerActionsContext): Promise<any> {
 		if (!this._connectionProfile) {
 			return true;
 		}
@@ -152,12 +155,12 @@ export class AddServerAction extends Action {
 		label: string,
 		@IConnectionManagementService private _connectionManagementService: IConnectionManagementService
 	) {
-		super(id, label);
-		this.class = 'add-server-action';
+		super(id, label, SqlIconId.addServerAction);
 	}
 
-	public async run(element: ConnectionProfileGroup): Promise<boolean> {
-		let connection: IConnectionProfile = element === undefined ? undefined : {
+	public override async run(element: ConnectionProfileGroup): Promise<void> {
+		// Not sure how to fix this....
+		let connection: Partial<IConnectionProfile> | undefined = element === undefined ? undefined : {
 			connectionName: undefined,
 			serverName: undefined,
 			databaseName: undefined,
@@ -172,15 +175,14 @@ export class AddServerAction extends Action {
 			providerName: '',
 			options: {},
 			saveProfile: true,
-			id: element.id
-		};
+			id: element.id!
+		} as Partial<IConnectionProfile>;
 		await this._connectionManagementService.showConnectionDialog(undefined, undefined, connection);
-		return true;
 	}
 }
 
 /**
- * Actions to add a server to the group
+ * Action to open up the dialog to create a new server group
  */
 export class AddServerGroupAction extends Action {
 	public static ID = 'registeredServers.addServerGroup';
@@ -191,13 +193,11 @@ export class AddServerGroupAction extends Action {
 		label: string,
 		@IServerGroupController private readonly serverGroupController: IServerGroupController
 	) {
-		super(id, label);
-		this.class = 'add-server-group-action';
+		super(id, label, SqlIconId.addServerGroupAction);
 	}
 
-	public async run(): Promise<boolean> {
-		await this.serverGroupController.showCreateGroupDialog();
-		return true;
+	public override async run(): Promise<void> {
+		return this.serverGroupController.showCreateGroupDialog();
 	}
 }
 
@@ -218,103 +218,38 @@ export class EditServerGroupAction extends Action {
 		this.class = 'edit-server-group-action';
 	}
 
-	public run(): Promise<boolean> {
-		this.serverGroupController.showEditGroupDialog(this._group);
-		return Promise.resolve(true);
+	public override run(): Promise<void> {
+		return this.serverGroupController.showEditGroupDialog(this._group);
 	}
 }
 
 /**
- * Display active connections in the tree
+ * Action to toggle filtering the server connections tree to only show
+ * active connections or not.
  */
 export class ActiveConnectionsFilterAction extends Action {
 	public static ID = 'registeredServers.recentConnections';
-	public static LABEL = localize('activeConnections', "Show Active Connections");
-	private static enabledClass = 'active-connections-action';
-	private static disabledClass = 'icon server-page';
-	private static showAllConnectionsLabel = localize('showAllConnections', "Show All Connections");
-	private _isSet: boolean;
+	public static SHOW_ACTIVE_CONNECTIONS_LABEL = localize('activeConnections', "Show Active Connections");
+	public static SHOW_ALL_CONNECTIONS_LABEL = localize('showAllConnections', "Show All Connections");
 	public static readonly ACTIVE = 'active';
-	public get isSet(): boolean {
-		return this._isSet;
-	}
-	public set isSet(value: boolean) {
-		this._isSet = value;
-		this.class = (!this._isSet) ?
-			ActiveConnectionsFilterAction.enabledClass : ActiveConnectionsFilterAction.disabledClass;
-	}
 
 	constructor(
 		id: string,
 		label: string,
-		private view: IServerView
+		@IObjectExplorerService private _objectExplorerService: IObjectExplorerService
 	) {
-		super(id, label);
-		this.class = ActiveConnectionsFilterAction.enabledClass;
+		super(id, label, SqlIconId.activeConnectionsAction);
 	}
 
-	public run(): Promise<boolean> {
-		if (!this.view) {
-			// return without doing anything
-			return Promise.resolve(true);
-		}
-		if (this.class === ActiveConnectionsFilterAction.enabledClass) {
+	public override async run(): Promise<void> {
+		const serverTreeView = this._objectExplorerService.getServerTreeView();
+		if (serverTreeView.view !== ServerTreeViewView.active) {
 			// show active connections in the tree
-			this.view.showFilteredTree(ActiveConnectionsFilterAction.ACTIVE);
-			this.isSet = true;
-			this.label = ActiveConnectionsFilterAction.showAllConnectionsLabel;
+			serverTreeView.showFilteredTree(ServerTreeViewView.active);
 		} else {
 			// show full tree
-			this.view.refreshTree();
-			this.isSet = false;
-			this.label = ActiveConnectionsFilterAction.LABEL;
+			await serverTreeView.refreshTree();
 		}
-		return Promise.resolve(true);
-	}
-}
-
-/**
- * Display recent connections in the tree
- */
-export class RecentConnectionsFilterAction extends Action {
-	public static ID = 'registeredServers.recentConnections';
-	public static LABEL = localize('recentConnections', "Recent Connections");
-	private static enabledClass = 'recent-connections-action';
-	private static disabledClass = 'recent-connections-action-set';
-	private _isSet: boolean;
-	public get isSet(): boolean {
-		return this._isSet;
-	}
-	public set isSet(value: boolean) {
-		this._isSet = value;
-		this.class = (!this._isSet) ?
-			RecentConnectionsFilterAction.enabledClass : RecentConnectionsFilterAction.disabledClass;
-	}
-	constructor(
-		id: string,
-		label: string,
-		private view: IServerView
-	) {
-		super(id, label);
-		this.class = RecentConnectionsFilterAction.enabledClass;
-		this._isSet = false;
-	}
-
-	public run(): Promise<boolean> {
-		if (!this.view) {
-			// return without doing anything
-			return Promise.resolve(true);
-		}
-		if (this.class === RecentConnectionsFilterAction.enabledClass) {
-			// show recent connections in the tree
-			this.view.showFilteredTree('recent');
-			this.isSet = true;
-		} else {
-			// show full tree
-			this.view.refreshTree();
-			this.isSet = false;
-		}
-		return Promise.resolve(true);
 	}
 }
 
@@ -339,19 +274,18 @@ export class DeleteConnectionAction extends Action {
 		}
 
 		if (element instanceof ConnectionProfile) {
-			let parent: ConnectionProfileGroup = element.parent;
+			let parent: ConnectionProfileGroup | undefined = element.parent;
 			if (parent && parent.id === UNSAVED_GROUP_ID) {
 				this.enabled = false;
 			}
 		}
 	}
 
-	public run(): Promise<boolean> {
+	public override async run(): Promise<void> {
 		if (this.element instanceof ConnectionProfile) {
-			this._connectionManagementService.deleteConnection(this.element);
+			await this._connectionManagementService.deleteConnection(this.element);
 		} else if (this.element instanceof ConnectionProfileGroup) {
-			this._connectionManagementService.deleteConnectionGroup(this.element);
+			await this._connectionManagementService.deleteConnectionGroup(this.element);
 		}
-		return Promise.resolve(true);
 	}
 }

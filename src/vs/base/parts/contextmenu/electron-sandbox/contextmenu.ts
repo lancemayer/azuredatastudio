@@ -3,12 +3,12 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { CONTEXT_MENU_CHANNEL, CONTEXT_MENU_CLOSE_CHANNEL, IContextMenuEvent, IContextMenuItem, IPopupOptions, ISerializableContextMenuItem } from 'vs/base/parts/contextmenu/common/contextmenu';
 import { ipcRenderer } from 'vs/base/parts/sandbox/electron-sandbox/globals';
-import { IContextMenuItem, ISerializableContextMenuItem, CONTEXT_MENU_CLOSE_CHANNEL, CONTEXT_MENU_CHANNEL, IPopupOptions, IContextMenuEvent } from 'vs/base/parts/contextmenu/common/contextmenu';
 
 let contextMenuIdPool = 0;
 
-export function popup(items: IContextMenuItem[], options?: IPopupOptions): void {
+export function popup(items: IContextMenuItem[], options?: IPopupOptions, onHide?: () => void): void {
 	const processedItems: IContextMenuItem[] = [];
 
 	const contextMenuId = contextMenuIdPool++;
@@ -28,8 +28,8 @@ export function popup(items: IContextMenuItem[], options?: IPopupOptions): void 
 
 		ipcRenderer.removeListener(onClickChannel, onClickChannelHandler);
 
-		if (options?.onHide) {
-			options.onHide();
+		if (onHide) {
+			onHide();
 		}
 	});
 

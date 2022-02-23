@@ -7,8 +7,8 @@ import 'vs/css!./media/checkbox';
 
 import { Color } from 'vs/base/common/color';
 import { Event, Emitter } from 'vs/base/common/event';
-import { KeyCode } from 'vs/base/common/keyCodes';
 import { Widget } from 'vs/base/browser/ui/widget';
+import { generateUuid } from 'vs/base/common/uuid';
 
 export interface ICheckboxOptions {
 	label: string;
@@ -30,12 +30,16 @@ export class Checkbox extends Widget {
 	private _onChange = new Emitter<boolean>();
 	public readonly onChange: Event<boolean> = this._onChange.event;
 
+	private _onFocus = new Emitter<void>();
+	public readonly onFocus: Event<void> = this._onFocus.event;
+
 	constructor(container: HTMLElement, opts: ICheckboxOptions) {
 		super();
-
+		const id = generateUuid();
 		this._el = document.createElement('input');
 		this._el.type = 'checkbox';
 		this._el.style.verticalAlign = 'middle';
+		this._el.id = id;
 
 		if (opts.ariaLabel) {
 			this.ariaLabel = opts.ariaLabel;
@@ -45,19 +49,17 @@ export class Checkbox extends Widget {
 			this._onChange.fire(this.checked);
 		});
 
-		this.onkeydown(this._el, e => {
-			if (e.equals(KeyCode.Enter)) {
-				this.checked = !this.checked;
-				e.stopPropagation();
-			}
+		this.onfocus(this._el, () => {
+			this._onFocus.fire();
 		});
 
-		this._label = document.createElement('span');
+		this._label = document.createElement('label');
 		this._label.style.verticalAlign = 'middle';
+		this._label.setAttribute('for', id);
 
 		this.label = opts.label;
-		this.enabled = opts.enabled || true;
-		this.checked = opts.checked || false;
+		this.enabled = opts.enabled ?? true;
+		this.checked = opts.checked ?? false;
 
 		if (opts.onChange) {
 			this.onChange(opts.onChange);

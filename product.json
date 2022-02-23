@@ -5,7 +5,7 @@
 	"dataFolderName": ".azuredatastudio",
 	"win32MutexName": "azuredatastudio",
 	"licenseName": "Microsoft EULA",
-	"licenseUrl": "https://github.com/Microsoft/azuredatastudio/blob/master/LICENSE.txt",
+	"licenseUrl": "https://raw.githubusercontent.com/microsoft/azuredatastudio/main/LICENSE.txt",
 	"win32DirName": "Azure Data Studio",
 	"win32NameVersion": "Azure Data Studio",
 	"win32RegValueName": "azuredatastudio",
@@ -20,41 +20,49 @@
 	"darwinBundleIdentifier": "com.azuredatastudio.oss",
 	"linuxIconName": "com.azuredatastudio.oss",
 	"licenseFileName": "LICENSE.txt",
-	"reportIssueUrl": "https://github.com/Microsoft/azuredatastudio/issues/new?labels=customer%20reported%20issue",
+	"reportIssueUrl": "https://github.com/Microsoft/azuredatastudio/issues/new",
 	"requestFeatureUrl": "https://go.microsoft.com/fwlink/?linkid=2118021",
-	"privacyStatementUrl": "https://privacy.microsoft.com/en-us/privacystatement",
+	"privacyStatementUrl": "https://privacy.microsoft.com/privacystatement",
 	"telemetryOptOutUrl": "https://github.com/Microsoft/azuredatastudio/wiki/How-to-Disable-Telemetry-Reporting",
-	"urlProtocol": "azuredatastudio",
+	"urlProtocol": "azuredatastudio-oss",
 	"enableTelemetry": true,
+	"npsSurveyUrl": "https://aka.ms/azuredatastudio-nps",
 	"aiConfig": {
 		"asimovKey": "AIF-37eefaf0-8022-4671-a3fb-64752724682e"
 	},
 	"sendASmile": {
-		"reportIssueUrl": "https://github.com/Microsoft/azuredatastudio/issues/new?labels=customer%20reported%20issue",
+		"reportIssueUrl": "https://github.com/Microsoft/azuredatastudio/issues/new",
 		"requestFeatureUrl": "https://go.microsoft.com/fwlink/?linkid=2118115"
 	},
 	"gettingStartedUrl": "https://go.microsoft.com/fwlink/?linkid=862039",
 	"releaseNotesUrl": "https://go.microsoft.com/fwlink/?linkid=875578",
 	"documentationUrl": "https://go.microsoft.com/fwlink/?linkid=862277",
-	"vscodeVersion": "1.46.0",
+	"vscodeVersion": "1.59.0",
 	"commit": "9ca6200018fc206d67a47229f991901a8a453781",
 	"date": "2017-12-15T12:00:00.000Z",
 	"recommendedExtensions": [
 		"Microsoft.admin-pack",
 		"Microsoft.admin-tool-ext-win",
 		"Microsoft.agent",
+		"Microsoft.arc",
+		"Microsoft.azcli",
 		"Microsoft.azuredatastudio-postgresql",
+		"Microsoft.azurehybridtoolkit",
 		"Microsoft.cms",
 		"Microsoft.dacpac",
 		"Microsoft.import",
 		"Microsoft.managed-instance-dashboard",
 		"Microsoft.powershell",
 		"Microsoft.profiler",
+		"Microsoft.query-history",
 		"Microsoft.schema-compare",
+		"Microsoft.sql-assessment",
 		"Microsoft.datavirtualization",
+		"Microsoft.sql-database-projects",
+		"Microsoft.sql-migration",
+		"Microsoft.machine-learning",
 		"Redgate.sql-prompt",
 		"Redgate.sql-search",
-		"IDERA.sqldm-performance-insights",
 		"SentryOne.plan-explorer"
 	],
 	"recommendedExtensionsByScenario": {
@@ -65,16 +73,20 @@
 	"extensionAllowedProposedApi": [
 		"ms-vscode.vscode-js-profile-flame",
 		"ms-vscode.vscode-js-profile-table",
-		"ms-vscode.references-view"
+		"ms-vscode.remotehub",
+		"ms-vscode.remotehub-insiders",
+		"GitHub.remotehub",
+		"GitHub.remotehub-insiders"
 	],
 	"extensionsGallery": {
+		"version": "0.0.76",
 		"serviceUrl": "https://sqlopsextensions.blob.core.windows.net/marketplace/v1/extensionsGallery.json"
 	},
 	"builtInExtensions": [
 		{
 			"name": "Microsoft.sqlservernotebook",
-			"version": "0.3.7",
-			"repo": "https://github.com/Microsoft/azuredatastudio"
+			"version": "0.5.0",
+			"repo": "https://github.com/microsoft/azuredatastudio"
 		}
 	]
 }

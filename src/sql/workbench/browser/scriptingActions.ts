@@ -15,6 +15,7 @@ import { IErrorMessageService } from 'sql/platform/errorMessage/common/errorMess
 export class ScriptSelectAction extends Action {
 	public static ID = 'selectTop';
 	public static LABEL = nls.localize('scriptSelect', "Select Top 1000");
+	public static KUSTOLABEL = nls.localize('scriptKustoSelect', "Take 10");
 
 	constructor(
 		id: string, label: string,
@@ -25,10 +26,10 @@ export class ScriptSelectAction extends Action {
 		super(id, label);
 	}
 
-	public async run(actionContext: BaseActionContext): Promise<boolean> {
-		return scriptSelect(
-			actionContext.profile,
-			actionContext.object,
+	public override async run(actionContext: BaseActionContext): Promise<void> {
+		await scriptSelect(
+			actionContext.profile!,
+			actionContext.object!,
 			this._connectionManagementService,
 			this._queryEditorService,
 			this._scriptingService
@@ -50,10 +51,10 @@ export class ScriptExecuteAction extends Action {
 		super(id, label);
 	}
 
-	public async run(actionContext: BaseActionContext): Promise<boolean> {
-		return script(
-			actionContext.profile,
-			actionContext.object,
+	public override async run(actionContext: BaseActionContext): Promise<void> {
+		await script(
+			actionContext.profile!,
+			actionContext.object!,
 			this._connectionManagementService,
 			this._queryEditorService,
 			this._scriptingService,
@@ -77,10 +78,10 @@ export class ScriptAlterAction extends Action {
 		super(id, label);
 	}
 
-	public async run(actionContext: BaseActionContext): Promise<boolean> {
-		return script(
-			actionContext.profile,
-			actionContext.object,
+	public override async run(actionContext: BaseActionContext): Promise<void> {
+		await script(
+			actionContext.profile!,
+			actionContext.object!,
 			this._connectionManagementService,
 			this._queryEditorService,
 			this._scriptingService,
@@ -103,10 +104,10 @@ export class EditDataAction extends Action {
 		super(id, label);
 	}
 
-	public async run(actionContext: BaseActionContext): Promise<boolean> {
-		return scriptEditSelect(
-			actionContext.profile,
-			actionContext.object,
+	public override async run(actionContext: BaseActionContext): Promise<void> {
+		await scriptEditSelect(
+			actionContext.profile!,
+			actionContext.object!,
 			this._connectionManagementService,
 			this._queryEditorService,
 			this._scriptingService
@@ -128,10 +129,10 @@ export class ScriptCreateAction extends Action {
 		super(id, label);
 	}
 
-	public async run(actionContext: BaseActionContext): Promise<boolean> {
-		return script(
-			actionContext.profile,
-			actionContext.object,
+	public override async run(actionContext: BaseActionContext): Promise<void> {
+		await script(
+			actionContext.profile!,
+			actionContext.object!,
 			this._connectionManagementService,
 			this._queryEditorService,
 			this._scriptingService,
@@ -155,10 +156,10 @@ export class ScriptDeleteAction extends Action {
 		super(id, label);
 	}
 
-	public async run(actionContext: BaseActionContext): Promise<boolean> {
-		return script(
-			actionContext.profile,
-			actionContext.object,
+	public override async run(actionContext: BaseActionContext): Promise<void> {
+		await script(
+			actionContext.profile!,
+			actionContext.object!,
 			this._connectionManagementService,
 			this._queryEditorService,
 			this._scriptingService,

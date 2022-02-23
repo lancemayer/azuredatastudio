@@ -8,7 +8,7 @@ exports.rollupAngular = void 0;
 const fs = require("fs");
 const rollup = require("rollup");
 const path = require("path");
-// getting around stupid import rules
+// getting around import rules
 const nodeResolve = require('rollup-plugin-node-resolve');
 const commonjs = require('rollup-plugin-commonjs');
 async function rollupModule(options) {
@@ -39,8 +39,10 @@ async function rollupModule(options) {
         });
         const result = generatedBundle.output[0];
         result.code = result.code + '\n//# sourceMappingURL=' + path.basename(outputMapName);
-        await fs.promises.writeFile(outputFilePath, result.code);
-        await fs.promises.writeFile(outputMapPath, result.map);
+        await fs.promises.writeFile(outputFilePath, result.code.toString());
+        if (result.map) {
+            await fs.promises.writeFile(outputMapPath, result.map.toString());
+        }
         return {
             name: moduleName,
             result: true

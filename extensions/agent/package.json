@@ -2,10 +2,10 @@
   "name": "agent",
   "displayName": "SQL Server Agent",
   "description": "Manage and troubleshoot SQL Server Agent jobs",
-  "version": "0.48.0",
+  "version": "0.49.0",
   "publisher": "Microsoft",
   "preview": true,
-  "license": "https://raw.githubusercontent.com/Microsoft/azuredatastudio/master/LICENSE.txt",
+  "license": "https://raw.githubusercontent.com/Microsoft/azuredatastudio/main/LICENSE.txt",
   "icon": "images/extension.png",
   "aiKey": "AIF-37eefaf0-8022-4671-a3fb-64752724682e",
   "engines": {
@@ -19,6 +19,12 @@
     "type": "git",
     "url": "https://github.com/Microsoft/azuredatastudio.git"
   },
+	"capabilities": {
+    "virtualWorkspaces": false,
+    "untrustedWorkspaces": {
+      "supported": true
+    }
+	},
   "extensionDependencies": [
     "Microsoft.mssql"
   ],
@@ -80,7 +86,7 @@
     }
   },
   "dependencies": {
-    "vscode-nls": "^3.2.1"
+    "vscode-nls": "^4.1.2"
   },
   "devDependencies": {
     "@types/mocha": "^5.2.5",
@@ -90,7 +96,7 @@
     "mocha-multi-reporters": "^1.1.7",
     "should": "^13.2.1",
     "typemoq": "^2.1.0",
-    "vscodetestcover": "^1.0.9"
+    "@microsoft/vscodetestcover": "^1.2.0"
   },
   "__metadata": {
     "id": "10",

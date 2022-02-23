@@ -11,11 +11,36 @@ import { IModelViewTreeViewDataProvider, ITreeComponentItem } from 'sql/workbenc
 import { INotificationService } from 'vs/platform/notification/common/notification';
 // eslint-disable-next-line code-import-patterns
 import * as vsTreeView from 'vs/workbench/api/browser/mainThreadTreeViews';
+import { ResolvableTreeItem } from 'vs/workbench/common/views';
+import { deepClone } from 'vs/base/common/objects';
+
+export class ResolvableTreeComponentItem extends ResolvableTreeItem implements ITreeComponentItem {
+
+	checked?: boolean;
+	enabled?: boolean;
+	onCheckedChanged?: (checked: boolean) => void;
+	override children?: ITreeComponentItem[];
+
+	constructor(treeItem: ITreeComponentItem, resolve?: (() => Promise<ITreeComponentItem | undefined>)) {
+		super(treeItem, resolve);
+		this.checked = treeItem.checked;
+		this.enabled = treeItem.enabled;
+		this.onCheckedChanged = treeItem.onCheckedChanged;
+		this.children = deepClone(treeItem.children);
+	}
+
+	override asTreeItem(): ITreeComponentItem {
+		const item = super.asTreeItem() as ITreeComponentItem;
+		item.checked = this.checked;
+		item.enabled = this.enabled;
+		return item;
+	}
+}
 
 export class TreeViewDataProvider extends vsTreeView.TreeViewDataProvider implements IModelViewTreeViewDataProvider {
 	constructor(handle: number, treeViewId: string,
 		context: IExtHostContext,
-		notificationService?: INotificationService
+		notificationService: INotificationService
 	) {
 		super(`${handle}-${treeViewId}`, context.getProxy(SqlExtHostContext.ExtHostModelViewTreeViews), notificationService);
 	}
@@ -31,5 +56,25 @@ export class TreeViewDataProvider extends vsTreeView.TreeViewDataProvider implem
 	}
 
 	refresh(itemsToRefreshByHandle: { [treeItemHandle: string]: ITreeComponentItem }) {
+	}
+
+	/**
+	 * Returns the set of mapped ResolvableTreeComponentItems
+	 * @override
+	 * @param elements The elements to map
+	 */
+	protected override async postGetChildren(elements: ResolvableTreeItem[] | undefined): Promise<ResolvableTreeComponentItem[]> {
+		const result: ResolvableTreeComponentItem[] = [];
+		const hasResolve = await this.hasResolve;
+		if (elements) {
+			for (const element of elements) {
+				const resolvable = new ResolvableTreeComponentItem(element, hasResolve ? () => {
+					return this._proxy.$resolve(this.treeViewId, element.handle, undefined);
+				} : undefined);
+				this.itemsMap.set(element.handle, resolvable);
+				result.push(resolvable);
+			}
+		}
+		return result;
 	}
 }

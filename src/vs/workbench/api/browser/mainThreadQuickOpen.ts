@@ -3,16 +3,22 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IPickOptions, IInputOptions, IQuickInputService, IQuickInput } from 'vs/platform/quickinput/common/quickInput';
+import { IPickOptions, IInputOptions, IQuickInputService, IQuickInput, IQuickPick, IQuickPickItem } from 'vs/platform/quickinput/common/quickInput';
 import { ExtHostContext, MainThreadQuickOpenShape, ExtHostQuickOpenShape, TransferQuickPickItems, MainContext, IExtHostContext, TransferQuickInput, TransferQuickInputButton, IInputBoxOptions } from 'vs/workbench/api/common/extHost.protocol';
 import { extHostNamedCustomer } from 'vs/workbench/api/common/extHostCustomers';
 import { URI } from 'vs/base/common/uri';
 import { CancellationToken } from 'vs/base/common/cancellation';
-import { ThemeIcon } from 'vs/platform/theme/common/themeService';
 
 interface QuickInputSession {
 	input: IQuickInput;
 	handlesToItems: Map<number, TransferQuickPickItems>;
+}
+
+function reviveIconPathUris(iconPath: { dark: URI; light?: URI | undefined; }) {
+	iconPath.dark = URI.revive(iconPath.dark);
+	if (iconPath.light) {
+		iconPath.light = URI.revive(iconPath.light);
+	}
 }
 
 @extHostNamedCustomer(MainContext.MainThreadQuickOpen)
@@ -37,14 +43,14 @@ export class MainThreadQuickOpen implements MainThreadQuickOpenShape {
 	}
 
 	$show(instance: number, options: IPickOptions<TransferQuickPickItems>, token: CancellationToken): Promise<number | number[] | undefined> {
-		// {{ SQL CARBON EDIT }} Fix a11y issue https://github.com/microsoft/azuredatastudio/issues/9232
+		// {{SQL CARBON EDIT}} Fix a11y issue https://github.com/microsoft/azuredatastudio/issues/9232
 		const activeElement = document.activeElement as HTMLElement;
 		const focusBackToStartingPosition = () => {
 			try {
 				activeElement?.focus();
 			} catch { }
 		};
-		// {{ SQL CARBON EDIT }} Fix a11y issue https://github.com/microsoft/azuredatastudio/issues/9232
+		// {{SQL CARBON EDIT}} Fix a11y issue https://github.com/microsoft/azuredatastudio/issues/9232
 
 		const contents = new Promise<TransferQuickPickItems[]>((resolve, reject) => {
 			this._items[instance] = { resolve, reject };
@@ -61,7 +67,7 @@ export class MainThreadQuickOpen implements MainThreadQuickOpenShape {
 
 		if (options.canPickMany) {
 			return this._quickInputService.pick(contents, options as { canPickMany: true }, token).then(items => {
-				focusBackToStartingPosition(); // {{ SQL CARBON EDIT }} Fix a11y issue https://github.com/microsoft/azuredatastudio/issues/9232
+				focusBackToStartingPosition(); // {{SQL CARBON EDIT}} Fix a11y issue https://github.com/microsoft/azuredatastudio/issues/9232
 				if (items) {
 					return items.map(item => item.handle);
 				}
@@ -69,7 +75,7 @@ export class MainThreadQuickOpen implements MainThreadQuickOpenShape {
 			});
 		} else {
 			return this._quickInputService.pick(contents, options, token).then(item => {
-				focusBackToStartingPosition(); // {{ SQL CARBON EDIT }} Fix a11y issue https://github.com/microsoft/azuredatastudio/issues/9232
+				focusBackToStartingPosition(); // {{SQL CARBON EDIT}} Fix a11y issue https://github.com/microsoft/azuredatastudio/issues/9232
 				if (item) {
 					return item.handle;
 				}
@@ -100,6 +106,7 @@ export class MainThreadQuickOpen implements MainThreadQuickOpenShape {
 		const inputOptions: IInputOptions = Object.create(null);
 
 		if (options) {
+			inputOptions.title = options.title;
 			inputOptions.password = options.password;
 			inputOptions.placeHolder = options.placeHolder;
 			inputOptions.valueSelection = options.valueSelection;
@@ -125,49 +132,39 @@ export class MainThreadQuickOpen implements MainThreadQuickOpenShape {
 		const sessionId = params.id;
 		let session = this.sessions.get(sessionId);
 		if (!session) {
+
+			const input = params.type === 'quickPick' ? this._quickInputService.createQuickPick() : this._quickInputService.createInputBox();
+			input.onDidAccept(() => {
+				this._proxy.$onDidAccept(sessionId);
+			});
+			input.onDidTriggerButton(button => {
+				this._proxy.$onDidTriggerButton(sessionId, (button as TransferQuickInputButton).handle);
+			});
+			input.onDidChangeValue(value => {
+				this._proxy.$onDidChangeValue(sessionId, value);
+			});
+			input.onDidHide(() => {
+				this._proxy.$onDidHide(sessionId);
+			});
+
 			if (params.type === 'quickPick') {
-				const input = this._quickInputService.createQuickPick();
-				input.onDidAccept(() => {
-					this._proxy.$onDidAccept(sessionId);
-				});
-				input.onDidChangeActive(items => {
+				// Add extra events specific for quickpick
+				const quickpick = input as IQuickPick<IQuickPickItem>;
+				quickpick.onDidChangeActive(items => {
 					this._proxy.$onDidChangeActive(sessionId, items.map(item => (item as TransferQuickPickItems).handle));
 				});
-				input.onDidChangeSelection(items => {
+				quickpick.onDidChangeSelection(items => {
 					this._proxy.$onDidChangeSelection(sessionId, items.map(item => (item as TransferQuickPickItems).handle));
 				});
-				input.onDidTriggerButton(button => {
-					this._proxy.$onDidTriggerButton(sessionId, (button as TransferQuickInputButton).handle);
+				quickpick.onDidTriggerItemButton((e) => {
+					this._proxy.$onDidTriggerItemButton(sessionId, (e.item as TransferQuickPickItems).handle, (e.button as TransferQuickInputButton).handle);
 				});
-				input.onDidChangeValue(value => {
-					this._proxy.$onDidChangeValue(sessionId, value);
-				});
-				input.onDidHide(() => {
-					this._proxy.$onDidHide(sessionId);
-				});
-				session = {
-					input,
-					handlesToItems: new Map()
-				};
-			} else {
-				const input = this._quickInputService.createInputBox();
-				input.onDidAccept(() => {
-					this._proxy.$onDidAccept(sessionId);
-				});
-				input.onDidTriggerButton(button => {
-					this._proxy.$onDidTriggerButton(sessionId, (button as TransferQuickInputButton).handle);
-				});
-				input.onDidChangeValue(value => {
-					this._proxy.$onDidChangeValue(sessionId, value);
-				});
-				input.onDidHide(() => {
-					this._proxy.$onDidHide(sessionId);
-				});
-				session = {
-					input,
-					handlesToItems: new Map()
-				};
 			}
+
+			session = {
+				input,
+				handlesToItems: new Map()
+			};
 			this.sessions.set(sessionId, session);
 		}
 		const { input, handlesToItems } = session;
@@ -184,6 +181,15 @@ export class MainThreadQuickOpen implements MainThreadQuickOpenShape {
 			} else if (param === 'items') {
 				handlesToItems.clear();
 				params[param].forEach((item: TransferQuickPickItems) => {
+					if (item.buttons) {
+						item.buttons = item.buttons.map((button: TransferQuickInputButton) => {
+							if (button.iconPath) {
+								reviveIconPathUris(button.iconPath);
+							}
+
+							return button;
+						});
+					}
 					handlesToItems.set(item.handle, item);
 				});
 				(input as any)[param] = params[param];
@@ -196,23 +202,12 @@ export class MainThreadQuickOpen implements MainThreadQuickOpenShape {
 					if (button.handle === -1) {
 						return this._quickInputService.backButton;
 					}
-					const { iconPath, tooltip, handle } = button;
-					if ('id' in iconPath) {
-						return {
-							iconClass: ThemeIcon.asClassName(iconPath),
-							tooltip,
-							handle
-						};
-					} else {
-						return {
-							iconPath: {
-								dark: URI.revive(iconPath.dark),
-								light: iconPath.light && URI.revive(iconPath.light)
-							},
-							tooltip,
-							handle
-						};
+
+					if (button.iconPath) {
+						reviveIconPathUris(button.iconPath);
 					}
+
+					return button;
 				});
 			} else {
 				(input as any)[param] = params[param];

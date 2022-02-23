@@ -3,15 +3,20 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IClipboardService } from 'vs/platform/clipboard/common/clipboardService';
-import { URI } from 'vs/base/common/uri';
 import { $ } from 'vs/base/browser/dom';
+import { URI } from 'vs/base/common/uri';
+import { ClipboardData, IClipboardService } from 'vs/platform/clipboard/common/clipboardService';	// {{SQL CARBON EDIT}}
 
 export class BrowserClipboardService implements IClipboardService {
 
-	_serviceBrand: undefined;
+	declare readonly _serviceBrand: undefined;
 
 	private readonly mapTextToType = new Map<string, string>(); // unsupported in web (only in-memory)
+
+	// {{SQL CARBON EDIT}}
+	async write(data: ClipboardData, type?: string): Promise<void> {
+		throw new Error('Not Implemented');
+	}
 
 	async writeText(text: string, type?: string): Promise<void> {
 
@@ -96,20 +101,5 @@ export class BrowserClipboardService implements IClipboardService {
 
 	async hasResources(): Promise<boolean> {
 		return this.resources.length > 0;
-	}
-
-	/** @deprecated */
-	readTextSync(): string | undefined {
-		return undefined;
-	}
-
-	/** @deprecated */
-	readFindTextSync(): string {
-		return this.findText;
-	}
-
-	/** @deprecated */
-	writeFindTextSync(text: string): void {
-		this.findText = text;
 	}
 }

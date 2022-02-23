@@ -3,17 +3,17 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IEncodingSupport, EncodingMode, Verbosity, IModeSupport } from 'vs/workbench/common/editor';
+import { DEFAULT_EDITOR_ASSOCIATION, GroupIdentifier, IEditorInput, IUntitledTextResourceEditorInput, IUntypedEditorInput, Verbosity } from 'vs/workbench/common/editor';
 import { AbstractTextResourceEditorInput } from 'vs/workbench/common/editor/textResourceEditorInput';
 import { IUntitledTextEditorModel } from 'vs/workbench/services/untitled/common/untitledTextEditorModel';
-import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
+import { EncodingMode, IEncodingSupport, IModeSupport, ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
 import { ILabelService } from 'vs/platform/label/common/label';
-import { IResolvedTextEditorModel } from 'vs/editor/common/services/resolverService';
 import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
-import { IEditorGroupsService } from 'vs/workbench/services/editor/common/editorGroupsService';
 import { IFileService } from 'vs/platform/files/common/files';
-import { IFilesConfigurationService } from 'vs/workbench/services/filesConfiguration/common/filesConfigurationService';
-import { basenameOrAuthority } from 'vs/base/common/resources';
+import { isEqual, toLocalResource } from 'vs/base/common/resources';
+import { IWorkbenchEnvironmentService } from 'vs/workbench/services/environment/common/environmentService';
+import { IPathService } from 'vs/workbench/services/path/common/pathService';
+import { ITextEditorOptions } from 'vs/platform/editor/common/editor';
 
 /**
  * An editor input to be used for untitled text buffers.
@@ -22,18 +22,26 @@ export class UntitledTextEditorInput extends AbstractTextResourceEditorInput imp
 
 	static readonly ID: string = 'workbench.editors.untitledEditorInput';
 
-	private modelResolve: Promise<IUntitledTextEditorModel & IResolvedTextEditorModel> | undefined = undefined;
+	override get typeId(): string {
+		return UntitledTextEditorInput.ID;
+	}
+
+	override get editorId(): string | undefined {
+		return DEFAULT_EDITOR_ASSOCIATION.id;
+	}
+
+	private modelResolve: Promise<void> | undefined = undefined;
 
 	constructor(
-		public readonly model: IUntitledTextEditorModel,
+		readonly model: IUntitledTextEditorModel,
 		@ITextFileService textFileService: ITextFileService,
 		@ILabelService labelService: ILabelService,
 		@IEditorService editorService: IEditorService,
-		@IEditorGroupsService editorGroupService: IEditorGroupsService,
 		@IFileService fileService: IFileService,
-		@IFilesConfigurationService filesConfigurationService: IFilesConfigurationService
+		@IWorkbenchEnvironmentService private readonly environmentService: IWorkbenchEnvironmentService,
+		@IPathService private readonly pathService: IPathService
 	) {
-		super(model.resource, editorService, editorGroupService, textFileService, labelService, fileService, filesConfigurationService);
+		super(model.resource, undefined, editorService, textFileService, labelService, fileService);
 
 		this.registerModelListeners(model);
 	}
@@ -48,19 +56,11 @@ export class UntitledTextEditorInput extends AbstractTextResourceEditorInput imp
 		this._register(model.onDidRevert(() => this.dispose()));
 	}
 
-	getTypeId(): string {
-		return UntitledTextEditorInput.ID;
-	}
-
-	get ariaLabel(): string {
-		return basenameOrAuthority(this.resource);
-	}
-
-	getName(): string {
+	override getName(): string {
 		return this.model.name;
 	}
 
-	getDescription(verbosity: Verbosity = Verbosity.MEDIUM): string | undefined {
+	override getDescription(verbosity = Verbosity.MEDIUM): string | undefined {
 
 		// Without associated path: only use if name and description differ
 		if (!this.model.hasAssociatedFilePath) {
@@ -76,7 +76,7 @@ export class UntitledTextEditorInput extends AbstractTextResourceEditorInput imp
 		return super.getDescription(verbosity);
 	}
 
-	getTitle(verbosity: Verbosity): string {
+	override getTitle(verbosity: Verbosity): string {
 
 		// Without associated path: check if name and description differ to decide
 		// if description should appear besides the name to distinguish better
@@ -94,7 +94,7 @@ export class UntitledTextEditorInput extends AbstractTextResourceEditorInput imp
 		return super.getTitle(verbosity);
 	}
 
-	isDirty(): boolean {
+	override isDirty(): boolean {
 		return this.model.isDirty();
 	}
 
@@ -102,8 +102,8 @@ export class UntitledTextEditorInput extends AbstractTextResourceEditorInput imp
 		return this.model.getEncoding();
 	}
 
-	setEncoding(encoding: string, mode: EncodingMode /* ignored, we only have Encode */): void {
-		this.model.setEncoding(encoding);
+	setEncoding(encoding: string, mode: EncodingMode /* ignored, we only have Encode */): Promise<void> {
+		return this.model.setEncoding(encoding);
 	}
 
 	setMode(mode: string): void {
@@ -114,32 +114,48 @@ export class UntitledTextEditorInput extends AbstractTextResourceEditorInput imp
 		return this.model.getMode();
 	}
 
-	resolve(): Promise<IUntitledTextEditorModel & IResolvedTextEditorModel> {
-
-		// Join a model resolve if we have had one before
-		if (this.modelResolve) {
-			return this.modelResolve;
+	override async resolve(): Promise<IUntitledTextEditorModel> {
+		if (!this.modelResolve) {
+			this.modelResolve = this.model.resolve();
 		}
 
-		this.modelResolve = this.model.load();
+		await this.modelResolve;
 
-		return this.modelResolve;
+		return this.model;
 	}
 
-	matches(otherInput: unknown): boolean {
-		if (super.matches(otherInput) === true) {
+	override toUntyped(options?: { preserveViewState: GroupIdentifier }): IUntitledTextResourceEditorInput {
+		const untypedInput: IUntitledTextResourceEditorInput & { options: ITextEditorOptions } = {
+			resource: this.model.hasAssociatedFilePath ? toLocalResource(this.model.resource, this.environmentService.remoteAuthority, this.pathService.defaultUriScheme) : this.resource,
+			forceUntitled: true,
+			options: {
+				override: this.editorId
+			}
+		};
+
+		if (typeof options?.preserveViewState === 'number') {
+			untypedInput.encoding = this.getEncoding();
+			untypedInput.mode = this.getMode();
+			untypedInput.contents = this.model.isDirty() ? this.model.textEditorModel?.getValue() : undefined;
+			untypedInput.options.viewState = this.getViewStateFor(options.preserveViewState);
+		}
+
+		return untypedInput;
+	}
+
+	override matches(otherInput: IEditorInput | IUntypedEditorInput): boolean {
+		if (super.matches(otherInput)) {
 			return true;
 		}
 
-		// Otherwise compare by properties
 		if (otherInput instanceof UntitledTextEditorInput) {
-			return otherInput.resource.toString() === this.resource.toString();
+			return isEqual(otherInput.resource, this.resource);
 		}
 
 		return false;
 	}
 
-	dispose(): void {
+	override dispose(): void {
 		this.modelResolve = undefined;
 
 		super.dispose();

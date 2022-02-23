@@ -12,15 +12,21 @@ const os = require('os');
 const extensionList = [
 	'admin-tool-ext-win',
 	'agent',
+	'arc',
+	'azcli',
 	'azurecore',
 	'cms',
 	'dacpac',
-	'schema-compare',
+	'data-workspace',
+	'import',
 	//'mssql',
 	'notebook',
+	'machine-learning',
 	'resource-deployment',
-	'machine-learning-services',
-	'sql-database-projects'];
+	'schema-compare',
+	'sql-database-projects',
+
+];
 
 let argv = require('yargs')
 	.command('$0 [extensions...]')
@@ -28,13 +34,11 @@ let argv = require('yargs')
 	.default('extensions', extensionList)
 	.strict().help().wrap(null).version(false).argv;
 
-// set up environment
+let LINUX_EXTRA_ARGS='';
 
-const VSCODEUSERDATADIR = tmp.dirSync({ prefix: 'adsuser' }).name;
-const VSCODEEXTENSIONSDIR = tmp.dirSync({ prefix: 'adsext' }).name;
-
-console.log(VSCODEUSERDATADIR);
-console.log(VSCODEEXTENSIONSDIR);
+if(os.platform() === 'linux') {
+	LINUX_EXTRA_ARGS = '--no-sandbox --disable-dev-shm-usage --use-gl=swiftshader';
+}
 
 if (!process.env.INTEGRATION_TEST_ELECTRON_PATH) {
 	process.env.INTEGRATION_TEST_ELECTRON_PATH = path.join(__dirname, '..', 'scripts', os.platform() === 'win32' ? 'code.bat' : 'code.sh');
@@ -61,12 +65,31 @@ for (const ext of argv.extensions) {
 	console.log('*'.repeat(ext.length + 23));
 	console.log(`*** starting ${ext} tests ***`);
 	console.log('*'.repeat(ext.length + 23));
+	// set up environment
+	const VSCODEUSERDATADIR = tmp.dirSync({ prefix: `adsuser_${ext}` }).name;
+	const VSCODEEXTENSIONSDIR = tmp.dirSync({ prefix: `adsext_${ext}` }).name;
 
-	const command = `${process.env.INTEGRATION_TEST_ELECTRON_PATH} --extensionDevelopmentPath=${path.join(__dirname, '..', 'extensions', ext)} --extensionTestsPath=${path.join(__dirname, '..', 'extensions', ext, 'out', 'test')} --user-data-dir=${VSCODEUSERDATADIR} --extensions-dir=${VSCODEEXTENSIONSDIR} --remote-debugging-port=9222 --disable-telemetry --disable-crash-reporter --disable-updates --nogpu`;
-	console.log(execSync(command, {stdio: 'inherit'}));
+	console.log(`VSCODEUSERDATADIR : ${VSCODEUSERDATADIR}`);
+	console.log(`VSCODEEXTENSIONSDIR : ${VSCODEEXTENSIONSDIR}`);
+
+	const command = `${process.env.INTEGRATION_TEST_ELECTRON_PATH} ${LINUX_EXTRA_ARGS} --extensionDevelopmentPath=${path.join(__dirname, '..', 'extensions', ext)} --extensionTestsPath=${path.join(__dirname, '..', 'extensions', ext, 'out', 'test')} --user-data-dir=${VSCODEUSERDATADIR} --extensions-dir=${VSCODEEXTENSIONSDIR} --remote-debugging-port=9222 --disable-telemetry --disable-crash-reporter --disable-updates --no-cached-data`;
+	console.log(`Command used: ${command}`);
+
+	if (os.platform() === 'darwin') {
+		// passing in env on mac causes the executing the command to fail, so only pass in env for windows and linux
+		console.log(execSync(command, { stdio: 'inherit'}));
+	} else {
+		const env = {
+			VSCODE_CLI: 1,
+			ELECTRON_ENABLE_STACK_DUMPING: 1,
+			ELECTRON_ENABLE_LOGGING: 1
+		};
+		console.log(execSync(command, { stdio: 'inherit', env: env}));
+	}
+
+	// clean up
+	if (!process.env.NO_CLEANUP) {
+		fs.remove(VSCODEUSERDATADIR, { recursive: true }).catch(console.error);
+		fs.remove(VSCODEEXTENSIONSDIR, { recursive: true }).catch(console.error);
+	}
 }
-
-// clean up
-
-fs.remove(VSCODEUSERDATADIR, { recursive: true });
-fs.remove(VSCODEEXTENSIONSDIR, { recursive: true });

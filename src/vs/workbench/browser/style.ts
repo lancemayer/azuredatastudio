@@ -4,15 +4,15 @@
  *--------------------------------------------------------------------------------------------*/
 
 import 'vs/css!./media/style';
-
-import { registerThemingParticipant, IColorTheme, ICssStyleCollector, HIGH_CONTRAST } from 'vs/platform/theme/common/themeService';
-import { iconForeground, foreground, selectionBackground, focusBorder, scrollbarShadow, scrollbarSliderActiveBackground, scrollbarSliderBackground, scrollbarSliderHoverBackground, listHighlightForeground, inputPlaceholderForeground } from 'vs/platform/theme/common/colorRegistry';
+import { registerThemingParticipant } from 'vs/platform/theme/common/themeService';
+import { iconForeground, foreground, selectionBackground, focusBorder, scrollbarShadow, scrollbarSliderActiveBackground, scrollbarSliderBackground, scrollbarSliderHoverBackground, listHighlightForeground, inputPlaceholderForeground, toolbarHoverBackground, toolbarActiveBackground, toolbarHoverOutline, listFocusHighlightForeground } from 'vs/platform/theme/common/colorRegistry';
 import { WORKBENCH_BACKGROUND, TITLE_BAR_ACTIVE_BACKGROUND } from 'vs/workbench/common/theme';
-import { isWeb, isIOS } from 'vs/base/common/platform';
+import { isWeb, isIOS, isMacintosh, isWindows } from 'vs/base/common/platform';
 import { createMetaElement } from 'vs/base/browser/dom';
 import { isSafari, isStandalone } from 'vs/base/browser/browser';
+import { ColorScheme } from 'vs/platform/theme/common/theme';
 
-registerThemingParticipant((theme: IColorTheme, collector: ICssStyleCollector) => {
+registerThemingParticipant((theme, collector) => {
 
 	// Foreground
 	const windowForeground = theme.getColor(foreground);
@@ -27,7 +27,7 @@ registerThemingParticipant((theme: IColorTheme, collector: ICssStyleCollector) =
 	// Icon defaults
 	const iconForegroundColor = theme.getColor(iconForeground);
 	if (iconForegroundColor) {
-		collector.addRule(`.monaco-workbench .codicon { color: ${iconForegroundColor}; }`);
+		collector.addRule(`.codicon { color: ${iconForegroundColor}; }`);
 	}
 
 	// Selection
@@ -57,6 +57,16 @@ registerThemingParticipant((theme: IColorTheme, collector: ICssStyleCollector) =
 		collector.addRule(`
 			.monaco-workbench .monaco-list .monaco-list-row .monaco-highlighted-label .highlight {
 				color: ${listHighlightForegroundColor};
+			}
+		`);
+	}
+
+	// List highlight w/ focus
+	const listHighlightFocusForegroundColor = theme.getColor(listFocusHighlightForeground);
+	if (listHighlightFocusForegroundColor) {
+		collector.addRule(`
+			.monaco-workbench .monaco-list .monaco-list-row.focused .monaco-highlighted-label .highlight {
+				color: ${listHighlightFocusForegroundColor};
 			}
 		`);
 	}
@@ -120,14 +130,15 @@ registerThemingParticipant((theme: IColorTheme, collector: ICssStyleCollector) =
 		.monaco-workbench button:focus,
 		.monaco-workbench textarea:focus,
 		.monaco-workbench input[type="search"]:focus,
-		.monaco-workbench input[type="checkbox"]:focus {
+		.monaco-workbench input[type="radio"]:focus, /* {{SQL CARBON EDIT}} */
+		.monaco-workbench input[type="checkbox"]:focus{
 			outline-color: ${focusOutline};
 		}
 		`);
 	}
 
 	// High Contrast theme overwrites for outline
-	if (theme.type === HIGH_CONTRAST) {
+	if (theme.type === ColorScheme.HIGH_CONTRAST) {
 		collector.addRule(`
 		.hc-black [tabindex="0"]:focus,
 		.hc-black [tabindex="-1"]:focus,
@@ -182,4 +193,47 @@ registerThemingParticipant((theme: IColorTheme, collector: ICssStyleCollector) =
 	if (isIOS && isStandalone) {
 		collector.addRule(`body { background-color: ${workbenchBackground}; }`);
 	}
+
+	// Action bars
+	const toolbarHoverBackgroundColor = theme.getColor(toolbarHoverBackground);
+	if (toolbarHoverBackgroundColor) {
+		collector.addRule(`
+		.monaco-action-bar:not(.vertical) .action-label:not(.disabled):hover {
+			background-color: ${toolbarHoverBackgroundColor};
+		}
+		.monaco-action-bar:not(.vertical) .monaco-dropdown-with-primary:not(.disabled):hover {
+			background-color: ${toolbarHoverBackgroundColor};
+		}
+	`);
+	}
+
+	const toolbarActiveBackgroundColor = theme.getColor(toolbarActiveBackground);
+	if (toolbarActiveBackgroundColor) {
+		collector.addRule(`
+		.monaco-action-bar:not(.vertical) .action-item.active .action-label:not(.disabled),
+		.monaco-action-bar:not(.vertical) .monaco-dropdown.active .action-label:not(.disabled) {
+			background-color: ${toolbarActiveBackgroundColor};
+		}
+	`);
+	}
+
+	const toolbarHoverOutlineColor = theme.getColor(toolbarHoverOutline);
+	if (toolbarHoverOutlineColor) {
+		collector.addRule(`
+			.monaco-action-bar:not(.vertical) .action-item .action-label:hover:not(.disabled) {
+				outline: 1px dashed ${toolbarHoverOutlineColor};
+				outline-offset: -1px;
+			}
+		`);
+	}
 });
+
+/**
+ * The best font-family to be used in CSS based on the platform:
+ * - Windows: Segoe preferred, fallback to sans-serif
+ * - macOS: standard system font, fallback to sans-serif
+ * - Linux: standard system font preferred, fallback to Ubuntu fonts
+ *
+ * Note: this currently does not adjust for different locales.
+ */
+export const DEFAULT_FONT_FAMILY = isWindows ? '"Segoe WPC", "Segoe UI", sans-serif' : isMacintosh ? '-apple-system, BlinkMacSystemFont, sans-serif' : 'system-ui, "Ubuntu", "Droid Sans", sans-serif';

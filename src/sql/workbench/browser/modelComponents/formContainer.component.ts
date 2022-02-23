@@ -9,12 +9,12 @@ import {
 	ElementRef, OnDestroy, AfterViewInit
 } from '@angular/core';
 
-import { FormLayout, FormItemLayout } from 'azdata';
+import { FormLayout, FormItemLayout, CssStyles } from 'azdata';
 
 import { ContainerBase } from 'sql/workbench/browser/modelComponents/componentBase';
-import { find } from 'vs/base/common/arrays';
 import { IComponentDescriptor, IComponent, IModelStore } from 'sql/platform/dashboard/browser/interfaces';
 import { convertSize } from 'sql/base/browser/dom';
+import { ILogService } from 'vs/platform/log/common/log';
 
 export interface TitledFormItemLayout {
 	title: string;
@@ -36,7 +36,7 @@ class FormItem {
 
 @Component({
 	template: `
-		<div #container *ngIf="items" class="form-table" [style.padding]="getFormPadding()" [style.width]="getFormWidth()" [style.height]="getFormHeight()" role="presentation">
+		<div #container [ngStyle]="CSSStyles" *ngIf="items" class="form-table" role="presentation">
 			<ng-container *ngFor="let item of items">
 			<div class="form-row" *ngIf="isGroupLabel(item)" [style.font-size]="getItemTitleFontSize(item)">
 				<div class="form-item-row form-group-label">
@@ -96,22 +96,20 @@ export default class FormContainer extends ContainerBase<FormItemLayout> impleme
 
 	constructor(
 		@Inject(forwardRef(() => ChangeDetectorRef)) changeRef: ChangeDetectorRef,
-		@Inject(forwardRef(() => ElementRef)) el: ElementRef) {
-		super(changeRef, el);
+		@Inject(forwardRef(() => ElementRef)) el: ElementRef,
+		@Inject(ILogService) logService: ILogService) {
+		super(changeRef, el, logService);
 	}
 
-	ngOnInit(): void {
-		this.baseInit();
-	}
-
-	ngOnDestroy(): void {
+	override ngOnDestroy(): void {
 		this.baseDestroy();
 	}
 
 	ngAfterViewInit(): void {
+		this.baseInit();
 	}
 
-	public layout(): void {
+	public override layout(): void {
 		super.layout();
 	}
 
@@ -186,7 +184,7 @@ export default class FormContainer extends ContainerBase<FormItemLayout> impleme
 		let itemConfig = item.config;
 		if (itemConfig && itemConfig.actions) {
 			let resultItems = itemConfig.actions.map(x => {
-				let actionComponent = find(items, i => i.descriptor.id === x);
+				let actionComponent = items.find(i => i.descriptor.id === x);
 				return <FormItem>actionComponent;
 			});
 
@@ -224,5 +222,13 @@ export default class FormContainer extends ContainerBase<FormItemLayout> impleme
 
 	public isVertical(item: FormItem): boolean {
 		return item && item.config && !item.config.horizontal;
+	}
+
+	public override get CSSStyles(): CssStyles {
+		return this.mergeCss(super.CSSStyles, {
+			'padding': this.getFormPadding(),
+			'width': this.getFormWidth(),
+			'height': this.getFormHeight()
+		});
 	}
 }

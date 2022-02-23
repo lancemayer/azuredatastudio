@@ -4,40 +4,69 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as azdata from 'azdata';
-import * as nls from 'vscode-nls';
 
-import { ImportDataModel } from '../api/models';
 import { ImportPage } from '../api/importPage';
-import { FlatFileProvider, InsertDataResponse } from '../../services/contracts';
-import { FlatFileWizard } from '../flatFileWizard';
-
-const localize = nls.loadMessageBundle();
-
+import { InsertDataResponse } from '../../services/contracts';
+import * as constants from '../../common/constants';
+import { EOL } from 'os';
 
 export class SummaryPage extends ImportPage {
-	private table: azdata.TableComponent;
-	private statusText: azdata.TextComponent;
-	private loading: azdata.LoadingComponent;
-	private form: azdata.FormContainer;
+	private _table: azdata.TableComponent;
+	private _statusText: azdata.TextComponent;
+	private _loading: azdata.LoadingComponent;
+	private _form: azdata.FormContainer;
 
-	public constructor(instance: FlatFileWizard, wizardPage: azdata.window.WizardPage, model: ImportDataModel, view: azdata.ModelView, provider: FlatFileProvider) {
-		super(instance, wizardPage, model, view, provider);
+	public get table(): azdata.TableComponent {
+		return this._table;
+	}
+
+	public set table(table: azdata.TableComponent) {
+		this._table = table;
+	}
+
+	public get statusText(): azdata.TextComponent {
+		return this._statusText;
+	}
+
+	public set statusText(statusText: azdata.TextComponent) {
+		this._statusText = statusText;
+	}
+
+	public get loading(): azdata.LoadingComponent {
+		return this._loading;
+	}
+
+	public set loading(loading: azdata.LoadingComponent) {
+		this._loading = loading;
+	}
+
+	public get form(): azdata.FormContainer {
+		return this._form;
+	}
+
+	public set form(form: azdata.FormContainer) {
+		this._form = form;
 	}
 
 	async start(): Promise<boolean> {
 		this.table = this.view.modelBuilder.table().component();
-		this.statusText = this.view.modelBuilder.text().component();
+		this.statusText = this.view.modelBuilder.text().withProps({
+			CSSStyles: {
+				'user-select': 'text',
+				'font-size': '13px'
+			}
+		}).component();
 		this.loading = this.view.modelBuilder.loadingComponent().withItem(this.statusText).component();
 
 		this.form = this.view.modelBuilder.formContainer().withFormItems(
 			[
 				{
 					component: this.table,
-					title: localize('flatFileImport.importInformation', "Import information")
+					title: constants.importInformationText
 				},
 				{
 					component: this.loading,
-					title: localize('flatFileImport.importStatus', "Import status")
+					title: constants.importStatusText
 				}
 			]
 		).component();
@@ -56,51 +85,72 @@ export class SummaryPage extends ImportPage {
 		return true;
 	}
 
-	async onPageLeave(): Promise<boolean> {
+	override async onPageLeave(): Promise<boolean> {
 		this.instance.setImportAnotherFileVisibility(false);
 
 		return true;
-	}
-	public setupNavigationValidator() {
-		this.instance.registerNavigationValidator((info) => {
-			return !this.loading.loading;
-		});
 	}
 
 	private populateTable() {
 		this.table.updateProperties({
 			data: [
-				[localize('flatFileImport.serverName', "Server name"), this.model.server.providerName],
-				[localize('flatFileImport.databaseName', "Database name"), this.model.database],
-				[localize('flatFileImport.tableName', "Table name"), this.model.table],
-				[localize('flatFileImport.tableSchema', "Table schema"), this.model.schema],
-				[localize('flatFileImport.fileImport', "File to be imported"), this.model.filePath]],
+				[constants.serverNameText, this.model.server.options.server],
+				[constants.databaseText, this.model.database],
+				[constants.tableNameText, this.model.table],
+				[constants.tableSchemaText, this.model.schema],
+				[constants.fileImportText, this.model.filePath]],
 			columns: ['Object type', 'Name'],
 			width: 600,
 			height: 200
 		});
 	}
 
-	private async handleImport(): Promise<boolean> {
-		let changeColumnResults = [];
-		this.model.proseColumns.forEach((val, i, arr) => {
+	private async handleImport(): Promise<void> {
+		let i = 0;
+		const changeColumnSettingsErrors = [];
+		for (let val of this.model.proseColumns) {
 			let columnChangeParams = {
-				index: i,
+				index: i++,
 				newName: val.columnName,
 				newDataType: val.dataType,
 				newNullable: val.nullable,
 				newInPrimaryKey: val.primaryKey
 			};
-			changeColumnResults.push(this.provider.sendChangeColumnSettingsRequest(columnChangeParams));
-		});
+			const changeColumnResult = await this.provider.sendChangeColumnSettingsRequest(columnChangeParams);
+			if (changeColumnResult?.result?.errorMessage) {
+				changeColumnSettingsErrors.push(changeColumnResult.result.errorMessage);
+			}
+		}
+
+		// Stopping import if there are errors in change column setting.
+		if (changeColumnSettingsErrors.length !== 0) {
+			let updateText: string;
+			updateText = changeColumnSettingsErrors.join(EOL);
+			this.statusText.updateProperties({
+				value: updateText
+			});
+			return;
+		}
 
 		let result: InsertDataResponse;
 		let err;
+
+		const currentServer = this.model.server;
+		const includePasswordInConnectionString = (currentServer.options.authenticationType === 'Integrated') ? false : true;
+		const connectionString = await azdata.connection.getConnectionString(currentServer.connectionId, includePasswordInConnectionString);
+
+		let accessToken = undefined;
+		if (currentServer.options.authenticationType === 'AzureMFA') {
+			const azureAccount = (await azdata.accounts.getAllAccounts()).filter(v => v.key.accountId === currentServer.options.azureAccount)[0];
+			accessToken = (await azdata.accounts.getAccountSecurityToken(azureAccount, currentServer.options.azureTenantId, azdata.AzureResource.Sql)).token;
+		}
+
 		try {
 			result = await this.provider.sendInsertDataRequest({
-				connectionString: await this.getConnectionString(),
+				connectionString: connectionString,
 				//TODO check what SSMS uses as batch size
-				batchSize: 500
+				batchSize: 500,
+				azureAccessToken: accessToken
 			});
 		} catch (e) {
 			err = e.toString();
@@ -108,7 +158,7 @@ export class SummaryPage extends ImportPage {
 
 		let updateText: string;
 		if (!result || !result.result.success) {
-			updateText = '✗ ';
+			updateText = constants.summaryErrorSymbol;
 			if (!result) {
 				updateText += err;
 			} else {
@@ -118,7 +168,7 @@ export class SummaryPage extends ImportPage {
 			// TODO: When sql statements are in, implement this.
 			//let rows = await this.getCountRowsInserted();
 			//if (rows < 0) {
-			updateText = localize('flatFileImport.success.norows', "✔ You have successfully inserted the data into a table.");
+			updateText = constants.updateText;
 			//} else {
 			//updateText = localize('flatFileImport.success.rows', '✔ You have successfully inserted {0} rows.', rows);
 			//}
@@ -126,26 +176,6 @@ export class SummaryPage extends ImportPage {
 		this.statusText.updateProperties({
 			value: updateText
 		});
-		return true;
-	}
-
-	/**
-	 * Gets the connection string to send to the middleware
-	 */
-	private async getConnectionString(): Promise<string> {
-		let options = this.model.server.options;
-		let connectionString: string;
-
-		if (options.authenticationType === 'Integrated') {
-			connectionString = `Data Source=${options.server + (options.port ? `,${options.port}` : '')};Initial Catalog=${this.model.database};Integrated Security=True`;
-		} else {
-			let credentials = await azdata.connection.getCredentials(this.model.server.connectionId);
-			connectionString = `Data Source=${options.server + (options.port ? `,${options.port}` : '')};Initial Catalog=${this.model.database};Integrated Security=False;User Id=${options.user};Password=${credentials.password}`;
-		}
-
-		// TODO: Fix this, it's returning undefined string.
-		//await azdata.connection.getConnectionString(this.model.server.connectionId, true);
-		return connectionString;
 	}
 
 	// private async getCountRowsInserted(): Promise<Number> {

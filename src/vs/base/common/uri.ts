@@ -3,9 +3,10 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { isWindows } from 'vs/base/common/platform';
 import { CharCode } from 'vs/base/common/charCode';
+import { MarshalledId } from 'vs/base/common/marshalling';
 import * as paths from 'vs/base/common/path';
+import { isWindows } from 'vs/base/common/platform';
 
 const _schemePattern = /^\w[\w\d+.-]*$/;
 const _singleSlashStart = /^\//;
@@ -108,7 +109,7 @@ export class URI implements UriComponents {
 			&& typeof (<URI>thing).path === 'string'
 			&& typeof (<URI>thing).query === 'string'
 			&& typeof (<URI>thing).scheme === 'string'
-			&& typeof (<URI>thing).fsPath === 'function'
+			&& typeof (<URI>thing).fsPath === 'string'
 			&& typeof (<URI>thing).with === 'function'
 			&& typeof (<URI>thing).toString === 'function';
 	}
@@ -252,7 +253,7 @@ export class URI implements UriComponents {
 			return this;
 		}
 
-		return new _URI(scheme, authority, path, query, fragment);
+		return new Uri(scheme, authority, path, query, fragment);
 	}
 
 	// ---- parse & validate ------------------------
@@ -266,9 +267,9 @@ export class URI implements UriComponents {
 	static parse(value: string, _strict: boolean = false): URI {
 		const match = _regexp.exec(value);
 		if (!match) {
-			return new _URI(_empty, _empty, _empty, _empty, _empty);
+			return new Uri(_empty, _empty, _empty, _empty, _empty);
 		}
-		return new _URI(
+		return new Uri(
 			match[2] || _empty,
 			percentDecode(match[4] || _empty),
 			percentDecode(match[5] || _empty),
@@ -323,17 +324,19 @@ export class URI implements UriComponents {
 			}
 		}
 
-		return new _URI('file', authority, path, _empty, _empty);
+		return new Uri('file', authority, path, _empty, _empty);
 	}
 
 	static from(components: { scheme: string; authority?: string; path?: string; query?: string; fragment?: string }): URI {
-		return new _URI(
+		const result = new Uri(
 			components.scheme,
 			components.authority,
 			components.path,
 			components.query,
 			components.fragment,
 		);
+		_validateUri(result, true);
+		return result;
 	}
 
 	/**
@@ -345,7 +348,7 @@ export class URI implements UriComponents {
 	 */
 	static joinPath(uri: URI, ...pathFragment: string[]): URI {
 		if (!uri.path) {
-			throw new Error(`[UriError]: cannot call joinPaths on URI without path`);
+			throw new Error(`[UriError]: cannot call joinPath on URI without path`);
 		}
 		let newPath: string;
 		if (isWindows && uri.scheme === 'file') {
@@ -383,12 +386,12 @@ export class URI implements UriComponents {
 	static revive(data: UriComponents | URI | undefined | null): URI | undefined | null;
 	static revive(data: UriComponents | URI | undefined | null): URI | undefined | null {
 		if (!data) {
-			// {{SQL CARBON EDIT}} @todo chlafren change back to data when we enable strict null checks
+			// {{SQL CARBON EDIT}} strict-null-check
 			return undefined;
 		} else if (data instanceof URI) {
 			return data;
 		} else {
-			const result = new _URI(data);
+			const result = new Uri(data);
 			result._formatted = (<UriState>data).external;
 			result._fsPath = (<UriState>data)._sep === _pathSepMarker ? (<UriState>data).fsPath : null;
 			return result;
@@ -405,7 +408,7 @@ export interface UriComponents {
 }
 
 interface UriState extends UriComponents {
-	$mid: number;
+	$mid: MarshalledId.Uri;
 	external: string;
 	fsPath: string;
 	_sep: 1 | undefined;
@@ -413,20 +416,20 @@ interface UriState extends UriComponents {
 
 const _pathSepMarker = isWindows ? 1 : undefined;
 
-// eslint-disable-next-line @typescript-eslint/class-name-casing
-class _URI extends URI {
+// This class exists so that URI is compatible with vscode.Uri (API).
+class Uri extends URI {
 
 	_formatted: string | null = null;
 	_fsPath: string | null = null;
 
-	get fsPath(): string {
+	override get fsPath(): string {
 		if (!this._fsPath) {
 			this._fsPath = uriToFsPath(this, false);
 		}
 		return this._fsPath;
 	}
 
-	toString(skipEncoding: boolean = false): string {
+	override toString(skipEncoding: boolean = false): string {
 		if (!skipEncoding) {
 			if (!this._formatted) {
 				this._formatted = _asFormatted(this, false);
@@ -438,9 +441,9 @@ class _URI extends URI {
 		}
 	}
 
-	toJSON(): UriComponents {
+	override toJSON(): UriComponents {
 		const res = <UriState>{
-			$mid: 1
+			$mid: MarshalledId.Uri
 		};
 		// cached state
 		if (this._fsPath) {

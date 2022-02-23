@@ -7,7 +7,7 @@ import 'vs/css!./media/insightsDialog';
 import { Button } from 'sql/base/browser/ui/button/button';
 import { IConnectionProfile } from 'sql/platform/connection/common/interfaces';
 import { Modal } from 'sql/workbench/browser/modal/modal';
-import { attachButtonStyler, attachTableStyler } from 'sql/platform/theme/common/styler';
+import { attachTableStyler } from 'sql/platform/theme/common/styler';
 import { ConnectionProfile } from 'sql/platform/connection/common/connectionProfile';
 import * as TelemetryKeys from 'sql/platform/telemetry/common/telemetryKeys';
 import { IInsightsDialogModel, ListResource, IInsightDialogActionContext, insertValueRegex } from 'sql/workbench/services/insights/browser/insightsDialogService';
@@ -17,7 +17,6 @@ import { Table } from 'sql/base/browser/ui/table/table';
 import { CopyInsightDialogSelectionAction } from 'sql/workbench/services/insights/browser/insightDialogActions';
 import { ICapabilitiesService } from 'sql/platform/capabilities/common/capabilitiesService';
 import { IClipboardService } from 'sql/platform/clipboard/common/clipboardService';
-import { IDisposableDataProvider } from 'sql/base/browser/ui/table/interfaces';
 
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import * as DOM from 'vs/base/browser/dom';
@@ -36,21 +35,37 @@ import { SplitView, Orientation, Sizing } from 'vs/base/browser/ui/splitview/spl
 import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { ILogService } from 'vs/platform/log/common/log';
-import { IInsightsConfigDetails } from 'sql/platform/dashboard/browser/insightRegistry';
 import { TaskRegistry } from 'sql/workbench/services/tasks/browser/tasksRegistry';
 import { ITextResourcePropertiesService } from 'vs/editor/common/services/textResourceConfigurationService';
 import { IAdsTelemetryService } from 'sql/platform/telemetry/common/telemetry';
 import { onUnexpectedError } from 'vs/base/common/errors';
-import { ViewPane, IViewPaneOptions } from 'vs/workbench/browser/parts/views/viewPaneContainer';
+import { ViewPane, IViewPaneOptions } from 'vs/workbench/browser/parts/views/viewPane';
+import { ViewPaneContainer } from 'vs/workbench/browser/parts/views/viewPaneContainer';
 import { attachPanelStyler, attachModalDialogStyler } from 'sql/workbench/common/styler';
-import { IViewDescriptorService } from 'vs/workbench/common/views';
+import { IViewDescriptorService, IViewContainersRegistry, ViewContainerLocation, Extensions as ViewContainerExtensions, IViewsRegistry } from 'vs/workbench/common/views';
 import { IOpenerService } from 'vs/platform/opener/common/opener';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { ILayoutService } from 'vs/platform/layout/browser/layoutService';
+import { Registry } from 'vs/platform/registry/common/platform';
+import { SyncDescriptor } from 'vs/platform/instantiation/common/descriptors';
+import { IInsightsConfigDetails } from 'sql/platform/extensions/common/extensions';
+import { attachButtonStyler } from 'vs/platform/theme/common/styler';
+import { IDisposableDataProvider } from 'sql/base/common/dataProvider';
 
 const labelDisplay = nls.localize("insights.item", "Item");
 const valueDisplay = nls.localize("insights.value", "Value");
 const iconClass = 'codicon';
+
+export const VIEWLET_ID = 'workbench.view.insightdetails';
+
+export class InsightsDetailPaneContainer extends ViewPaneContainer { }
+
+export const INSIGHTS_DETAIL_VIEW_CONTAINER = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry).registerViewContainer({
+	id: VIEWLET_ID,
+	title: nls.localize('insightsDetailView.name', "Insight Details"),
+	ctorDescriptor: new SyncDescriptor(InsightsDetailPaneContainer),
+	storageId: `${VIEWLET_ID}.state`
+}, ViewContainerLocation.Dialog);
 
 class InsightTableView extends ViewPane {
 	private _table: Table<ListResource>;
@@ -76,14 +91,14 @@ class InsightTableView extends ViewPane {
 		super(options, keybindingService, contextMenuService, configurationService, contextKeyService, viewDescriptorService, instantiationService, openerService, themeService, telemetryService);
 	}
 
-	protected renderBody(container: HTMLElement): void {
+	protected override renderBody(container: HTMLElement): void {
 		this._table = new Table(container, {
 			columns: this.columns,
 			dataProvider: this.data
 		}, this.tableOptions);
 	}
 
-	protected layoutBody(size: number): void {
+	protected override layoutBody(size: number): void {
 		this._table.layout(size, Orientation.VERTICAL);
 	}
 
@@ -181,7 +196,7 @@ export class InsightsDialogView extends Modal {
 		@ICapabilitiesService private readonly _capabilitiesService: ICapabilitiesService,
 		@ITextResourcePropertiesService textResourcePropertiesService: ITextResourcePropertiesService
 	) {
-		super(nls.localize("InsightsDialogTitle", "Insights"), TelemetryKeys.Insights, telemetryService, layoutService, clipboardService, themeService, logService, textResourcePropertiesService, contextKeyService);
+		super(nls.localize("InsightsDialogTitle", "Insights"), TelemetryKeys.ModalDialogName.Insights, telemetryService, layoutService, clipboardService, themeService, logService, textResourcePropertiesService, contextKeyService);
 		this._model.onDataChange(e => this.build());
 	}
 
@@ -217,17 +232,29 @@ export class InsightsDialogView extends Modal {
 
 		this._splitView = new SplitView(container);
 
+		const itemsViewId = 'insights.top';
+		const itemDetailsViewId = 'insights.bottom';
 		const itemsHeaderTitle = nls.localize("insights.dialog.items", "Items");
 		const itemsDetailHeaderTitle = nls.localize("insights.dialog.itemDetails", "Item Details");
 
 		this._topTableData = new TableDataView<ListResource>();
 		this._bottomTableData = new TableDataView<ListResource>();
-		let topTableView = this._instantiationService.createInstance(InsightTableView, this._topColumns, this._topTableData, { forceFitColumns: true }, { id: 'insights.top', title: itemsHeaderTitle });
+		let topTableView = this._instantiationService.createInstance(InsightTableView, this._topColumns, this._topTableData, { forceFitColumns: true }, { id: itemsViewId, title: itemsHeaderTitle });
+		Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry).registerViews([{
+			id: itemsViewId,
+			name: itemsHeaderTitle,
+			ctorDescriptor: new SyncDescriptor(InsightTableView),
+		}], INSIGHTS_DETAIL_VIEW_CONTAINER);
 		topTableView.render();
 		attachPanelStyler(topTableView, this._themeService);
 		this._topTable = topTableView.table;
 		this._topTable.setSelectionModel(new RowSelectionModel<ListResource>());
-		let bottomTableView = this._instantiationService.createInstance(InsightTableView, this._bottomColumns, this._bottomTableData, { forceFitColumns: true }, { id: 'insights.bottom', title: itemsDetailHeaderTitle });
+		let bottomTableView = this._instantiationService.createInstance(InsightTableView, this._bottomColumns, this._bottomTableData, { forceFitColumns: true }, { id: itemDetailsViewId, title: itemsDetailHeaderTitle });
+		Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry).registerViews([{
+			id: itemDetailsViewId,
+			name: itemsDetailHeaderTitle,
+			ctorDescriptor: new SyncDescriptor(InsightTableView),
+		}], INSIGHTS_DETAIL_VIEW_CONTAINER);
 		bottomTableView.render();
 		attachPanelStyler(bottomTableView, this._themeService);
 		this._bottomTable = bottomTableView.table;
@@ -309,7 +336,7 @@ export class InsightsDialogView extends Modal {
 		});
 	}
 
-	public render() {
+	public override render() {
 		super.render();
 		this._closeButton = this.addFooterButton('Close', () => this.close());
 		this._register(attachButtonStyler(this._closeButton, this._themeService));
@@ -364,7 +391,7 @@ export class InsightsDialogView extends Modal {
 						}
 						let context = this.topInsightContext(resource);
 						this._commandService.executeCommand(action, context).catch(err => onUnexpectedError(err));
-					}, 'left');
+					}, 'left', true);
 					button.enabled = false;
 					this._taskButtonDisposables.push(button);
 					this._taskButtonDisposables.push(attachButtonStyler(button, this._themeService));
@@ -388,12 +415,12 @@ export class InsightsDialogView extends Modal {
 
 
 	public close() {
-		this.hide();
+		this.hide('close');
 		dispose(this._taskButtonDisposables);
 		this._taskButtonDisposables = [];
 	}
 
-	protected onClose(e: StandardKeyboardEvent) {
+	protected override onClose(e: StandardKeyboardEvent) {
 		this.close();
 	}
 

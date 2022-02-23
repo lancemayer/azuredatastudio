@@ -7,11 +7,11 @@ import * as vscode from 'vscode';
 import * as constants from './../common/constants';
 import { BookTreeItem } from './bookTreeItem';
 import { BookModel } from './bookModel';
-import { ApiWrapper } from '../common/apiWrapper';
+import { BookVersion } from './bookVersionHandler';
 
 export interface IBookTrustManager {
 	isNotebookTrustedByDefault(notebookUri: string): boolean;
-	setBookAsTrusted(bookRootPath: string): boolean;
+	setBookAsTrusted(bookRootPath: string, isTrusted: boolean): boolean;
 }
 
 enum TrustBookOperation {
@@ -20,7 +20,7 @@ enum TrustBookOperation {
 }
 
 export class BookTrustManager implements IBookTrustManager {
-	constructor(private books: BookModel[], private apiWrapper: ApiWrapper) { }
+	constructor(private books: BookModel[]) { }
 
 	isNotebookTrustedByDefault(notebookUri: string): boolean {
 		let normalizedNotebookUri: string = path.normalize(notebookUri);
@@ -28,8 +28,8 @@ export class BookTrustManager implements IBookTrustManager {
 		let trustableBookPaths = this.getTrustableBookPaths();
 		let hasTrustedBookPath: boolean = treeBookItems
 			.filter(bookItem => trustableBookPaths.some(trustableBookPath => trustableBookPath === path.join(bookItem.book.root, path.sep)))
-			.some(bookItem => normalizedNotebookUri.startsWith(path.join(bookItem.root, 'content', path.sep)));
-		let isNotebookTrusted = hasTrustedBookPath && this.books.some(bookModel => bookModel.getNotebook(normalizedNotebookUri));
+			.some(bookItem => normalizedNotebookUri.startsWith(bookItem.book.version === BookVersion.v1 ? path.join(bookItem.book.root, 'content', path.sep) : path.join(bookItem.book.root, path.sep)));
+		let isNotebookTrusted = hasTrustedBookPath && this.books.some(bookModel => bookModel.getNotebook(vscode.Uri.file(normalizedNotebookUri).fsPath));
 		return isNotebookTrusted;
 	}
 
@@ -38,7 +38,7 @@ export class BookTrustManager implements IBookTrustManager {
 		let bookPathsInConfig: string[] = this.getTrustedBookPathsInConfig();
 
 		if (this.hasWorkspaceFolders()) {
-			let workspaceFolders = this.apiWrapper.getWorkspaceFolders();
+			let workspaceFolders = vscode.workspace.workspaceFolders;
 
 			trustablePaths = bookPathsInConfig
 				.map(trustableBookPath => workspaceFolders
@@ -58,26 +58,29 @@ export class BookTrustManager implements IBookTrustManager {
 			.reduce((accumulator, currentBookItemList) => accumulator.concat(currentBookItemList), []);
 	}
 
-	setBookAsTrusted(bookRootPath: string): boolean {
-		return this.updateTrustedBooks(bookRootPath, TrustBookOperation.Add);
+	setBookAsTrusted(bookRootPath: string, isTrusted: boolean): boolean {
+		if (isTrusted) {
+			return this.updateTrustedBooks(bookRootPath, TrustBookOperation.Add);
+		}
+		return this.updateTrustedBooks(bookRootPath, TrustBookOperation.Remove);
 	}
 
 	getTrustedBookPathsInConfig(): string[] {
-		let config: vscode.WorkspaceConfiguration = this.apiWrapper.getConfiguration(constants.notebookConfigKey);
+		let config: vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration(constants.notebookConfigKey);
 		let trustedBookDirectories: string[] = config.get(constants.trustedBooksConfigKey);
 
 		return trustedBookDirectories;
 	}
 
 	setTrustedBookPathsInConfig(bookPaths: string[]) {
-		let config: vscode.WorkspaceConfiguration = this.apiWrapper.getConfiguration(constants.notebookConfigKey);
+		let config: vscode.WorkspaceConfiguration = vscode.workspace.getConfiguration(constants.notebookConfigKey);
 		let storeInWorspace: boolean = this.hasWorkspaceFolders();
 
-		config.update(constants.trustedBooksConfigKey, bookPaths, storeInWorspace ? false : vscode.ConfigurationTarget.Global);
+		void config.update(constants.trustedBooksConfigKey, bookPaths, storeInWorspace ? false : vscode.ConfigurationTarget.Global);
 	}
 
 	hasWorkspaceFolders(): boolean {
-		let workspaceFolders = this.apiWrapper.getWorkspaceFolders();
+		let workspaceFolders = vscode.workspace.workspaceFolders;
 		return workspaceFolders && workspaceFolders.length > 0;
 	}
 
@@ -86,7 +89,7 @@ export class BookTrustManager implements IBookTrustManager {
 		let bookPathToChange: string = path.join(bookPath, path.sep);
 
 		if (this.hasWorkspaceFolders()) {
-			let workspaceFolders = this.apiWrapper.getWorkspaceFolders();
+			let workspaceFolders = vscode.workspace.workspaceFolders;
 			let matchingWorkspaceFolder: vscode.WorkspaceFolder = workspaceFolders
 				.find(ws => bookPathToChange.startsWith(path.normalize(ws.uri.fsPath)));
 

@@ -20,11 +20,12 @@ import { ITextResourcePropertiesService } from 'vs/editor/common/services/textRe
 import { IAdsTelemetryService } from 'sql/platform/telemetry/common/telemetry';
 import { attachModalDialogStyler } from 'sql/workbench/common/styler';
 import { ILayoutService } from 'vs/platform/layout/browser/layoutService';
+import { NgModuleRef } from '@angular/core';
 
 export class BackupDialog extends Modal {
-	private _body: HTMLElement;
-	private _backupTitle: string;
-	private _moduleRef: any;
+	private _body?: HTMLElement;
+	private _backupTitle?: string;
+	private _moduleRef?: NgModuleRef<typeof BackupModule>;
 
 	constructor(
 		@IThemeService themeService: IThemeService,
@@ -36,32 +37,32 @@ export class BackupDialog extends Modal {
 		@ILogService logService: ILogService,
 		@ITextResourcePropertiesService textResourcePropertiesService: ITextResourcePropertiesService
 	) {
-		super('', TelemetryKeys.Backup, telemetryService, layoutService, clipboardService, themeService, logService, textResourcePropertiesService, contextKeyService, { isAngular: true, hasErrors: true });
+		super('', TelemetryKeys.ModalDialogName.Backup, telemetryService, layoutService, clipboardService, themeService, logService, textResourcePropertiesService, contextKeyService, { isAngular: true, hasErrors: true });
 	}
 
 	protected renderBody(container: HTMLElement) {
 		this._body = append(container, $('.backup-dialog'));
 	}
 
-	public render() {
+	public override render() {
 		super.render();
 		attachModalDialogStyler(this, this._themeService);
 
 		// Add angular component template to dialog body
-		this.bootstrapAngular(this._body);
+		this.bootstrapAngular(this._body!);
 	}
 
 	/**
 	 * Get the bootstrap params and perform the bootstrap
 	 */
 	private bootstrapAngular(bodyContainer: HTMLElement) {
-		this._instantiationService.invokeFunction(bootstrapAngular,
+		this._instantiationService.invokeFunction<void, any[]>(bootstrapAngular,
 			BackupModule,
 			bodyContainer,
 			BACKUP_SELECTOR,
 			undefined,
 			undefined,
-			(moduleRef) => this._moduleRef = moduleRef);
+			(moduleRef: NgModuleRef<typeof BackupModule>) => this._moduleRef = moduleRef);
 	}
 
 	public hideError() {
@@ -73,7 +74,7 @@ export class BackupDialog extends Modal {
 	}
 
 	/* Overwrite escape key behavior */
-	protected onClose() {
+	protected override onClose() {
 		this.close();
 	}
 
@@ -81,10 +82,10 @@ export class BackupDialog extends Modal {
 	 * Clean up the module and DOM element and close the dialog
 	 */
 	public close() {
-		this.hide();
+		this.hide('close');
 	}
 
-	public dispose(): void {
+	public override dispose(): void {
 		super.dispose();
 		if (this._moduleRef) {
 			this._moduleRef.destroy();

@@ -3,7 +3,7 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { EditorInput, EncodingMode, IEditorInput } from 'vs/workbench/common/editor';
+import { IEditorInput } from 'vs/workbench/common/editor';
 import { IConnectionManagementService, IConnectableInput, INewConnectionParams } from 'sql/platform/connection/common/connectionManagement';
 import { IQueryModelService } from 'sql/workbench/services/query/common/queryModel';
 import { Event, Emitter } from 'vs/base/common/event';
@@ -17,6 +17,8 @@ import { IEditorViewState } from 'vs/editor/common/editorCommon';
 import { UntitledTextEditorInput } from 'vs/workbench/services/untitled/common/untitledTextEditorInput';
 import { IResolvedTextEditorModel } from 'vs/editor/common/services/resolverService';
 import { IUntitledTextEditorModel, UntitledTextEditorModel } from 'vs/workbench/services/untitled/common/untitledTextEditorModel';
+import { EncodingMode } from 'vs/workbench/services/textfile/common/textfiles';
+import { EditorInput } from 'vs/workbench/common/editor/editorInput';
 
 /**
  * Input for the EditDataEditor.
@@ -50,7 +52,7 @@ export class EditDataInput extends EditorInput implements IConnectableInput {
 		super();
 		this._hasBootstrapped = false;
 		this._updateTaskbar = new Emitter<EditDataInput>();
-		this._showResultsEditor = new Emitter<EditDataInput>();
+		this._showResultsEditor = new Emitter<EditDataInput | undefined>();
 		this._editorInitializing = new Emitter<boolean>();
 		this._setup = false;
 		this._stopButtonEnabled = false;
@@ -85,8 +87,10 @@ export class EditDataInput extends EditorInput implements IConnectableInput {
 
 			this._register(
 				this._queryModelService.onEditSessionReady((result) => {
-					if (self.uri === result.ownerUri) {
-						self.initEditEnd(result);
+					if (this.uri === result.ownerUri) {
+						this._results.editDataGridPanel!.onRefreshComplete.then(() => {
+							this.initEditEnd(result);
+						});
 					}
 				})
 			);
@@ -110,9 +114,9 @@ export class EditDataInput extends EditorInput implements IConnectableInput {
 	public get rowLimit(): number | undefined { return this._rowLimit; }
 	public get objectType(): string { return this._objectType; }
 	public showResultsEditor(): void { this._showResultsEditor.fire(undefined); }
-	public isDirty(): boolean { return false; }
-	public save(): Promise<IEditorInput | undefined> { return Promise.resolve(undefined); }
-	public getTypeId(): string { return EditDataInput.ID; }
+	public override isDirty(): boolean { return false; }
+	public override save(): Promise<IEditorInput | undefined> { return Promise.resolve(undefined); }
+	public override get typeId(): string { return EditDataInput.ID; }
 	public setBootstrappedTrue(): void { this._hasBootstrapped = true; }
 	public get resource(): URI { return this._uri; }
 	public supportsSplitEditor(): boolean { return false; }
@@ -191,7 +195,7 @@ export class EditDataInput extends EditorInput implements IConnectableInput {
 	}
 
 	// Boiler Plate Functions
-	public matches(otherInput: any): boolean {
+	public override matches(otherInput: any): boolean {
 		if (otherInput instanceof EditDataInput) {
 			return this._sql.matches(otherInput.sql);
 		}
@@ -199,7 +203,7 @@ export class EditDataInput extends EditorInput implements IConnectableInput {
 		return this._sql.matches(otherInput);
 	}
 
-	public dispose(): void {
+	public override dispose(): void {
 		// Dispose our edit session then disconnect our input
 		this._queryModelService.disposeEdit(this.uri).then(() => {
 			return this._connectionManagementService.disconnectEditor(this, true);
@@ -215,9 +219,9 @@ export class EditDataInput extends EditorInput implements IConnectableInput {
 		return this._connectionManagementService.getTabColorForUri(this.uri);
 	}
 
-	public resolve(refresh?: boolean): Promise<IUntitledTextEditorModel & IResolvedTextEditorModel> { return this._sql.resolve(); }
-	public getEncoding(): string { return this._sql.getEncoding(); }
-	public getName(): string { return this._sql.getName(); }
+	public override resolve(refresh?: boolean): Promise<IUntitledTextEditorModel & IResolvedTextEditorModel> { return this._sql.resolve(); }
+	public getEncoding(): string | undefined { return this._sql.getEncoding(); }
+	public override getName(): string { return this._sql.getName(); }
 	public get hasAssociatedFilePath(): boolean { return this._sql.model.hasAssociatedFilePath; }
 
 	public setEncoding(encoding: string, mode: EncodingMode /* ignored, we only have Encode */): void {

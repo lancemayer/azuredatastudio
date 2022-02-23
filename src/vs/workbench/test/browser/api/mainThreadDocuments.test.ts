@@ -8,10 +8,11 @@ import { BoundModelReferenceCollection } from 'vs/workbench/api/browser/mainThre
 import { createTextModel } from 'vs/editor/test/common/editorTestUtils';
 import { timeout } from 'vs/base/common/async';
 import { URI } from 'vs/base/common/uri';
+import { extUri } from 'vs/base/common/resources';
 
 suite('BoundModelReferenceCollection', () => {
 
-	let col = new BoundModelReferenceCollection(15, 75);
+	let col = new BoundModelReferenceCollection(extUri, 15, 75);
 
 	teardown(() => {
 		col.dispose();
@@ -31,7 +32,7 @@ suite('BoundModelReferenceCollection', () => {
 			});
 
 		await timeout(30);
-		assert.equal(didDispose, true);
+		assert.strictEqual(didDispose, true);
 	});
 
 	test('max size', () => {
@@ -45,7 +46,7 @@ suite('BoundModelReferenceCollection', () => {
 				dispose() {
 					disposed.push(0);
 				}
-			});
+			}, 6);
 
 		col.add(
 			URI.parse('test://boofar'),
@@ -54,7 +55,7 @@ suite('BoundModelReferenceCollection', () => {
 				dispose() {
 					disposed.push(1);
 				}
-			});
+			}, 6);
 
 		col.add(
 			URI.parse('test://xxxxxxx'),
@@ -63,9 +64,9 @@ suite('BoundModelReferenceCollection', () => {
 				dispose() {
 					disposed.push(2);
 				}
-			});
+			}, 70);
 
-		assert.deepEqual(disposed, [0, 1]);
+		assert.deepStrictEqual(disposed, [0, 1]);
 	});
 
 	test('dispose uri', () => {
@@ -118,15 +119,15 @@ suite('BoundModelReferenceCollection', () => {
 			});
 
 		col.remove(URI.parse('test:///unknown'));
-		assert.equal(disposed.length, 0);
+		assert.strictEqual(disposed.length, 0);
 
 		col.remove(URI.parse('test:///farboo'));
-		assert.deepEqual(disposed, [0]);
+		assert.deepStrictEqual(disposed, [0]);
 
 		disposed = [];
 
 		col.remove(URI.parse('test:///boo'));
-		assert.deepEqual(disposed, [2, 3]);
+		assert.deepStrictEqual(disposed, [2, 3]);
 	});
 
 });

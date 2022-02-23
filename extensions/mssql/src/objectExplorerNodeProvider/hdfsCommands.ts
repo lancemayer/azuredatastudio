@@ -10,7 +10,6 @@ import * as fspath from 'path';
 import * as nls from 'vscode-nls';
 const localize = nls.loadMessageBundle();
 
-import { ApiWrapper } from '../apiWrapper';
 import { Command, ICommandViewContext, ProgressCommand, ICommandObjectExplorerContext } from './command';
 import { File, IFile, joinHdfsPath, FileType } from './fileSources';
 import { FolderNode, FileNode, HdfsFileSourceNode } from './hdfsProvider';
@@ -23,9 +22,9 @@ import { TreeNode } from './treeNodes';
 import { MssqlObjectExplorerNodeProvider } from './objectExplorerNodeProvider';
 import { ManageAccessDialog } from '../hdfs/ui/hdfsManageAccessDialog';
 
-async function getSaveableUri(apiWrapper: ApiWrapper, fileName: string, isPreview?: boolean): Promise<vscode.Uri> {
+async function getSaveableUri(fileName: string, isPreview?: boolean): Promise<vscode.Uri> {
 	let root = utils.getUserHome();
-	let workspaceFolders = apiWrapper.workspaceFolders;
+	let workspaceFolders = vscode.workspace.workspaceFolders;
 	if (workspaceFolders && workspaceFolders.length > 0) {
 		root = workspaceFolders[0].uri.fsPath;
 	}
@@ -63,7 +62,7 @@ export class UploadFilesCommand extends ProgressCommand {
 		super('mssqlCluster.uploadFiles', prompter, appContext);
 	}
 
-	protected async preExecute(context: ICommandViewContext | ICommandObjectExplorerContext, args: object = {}): Promise<any> {
+	protected override async preExecute(context: ICommandViewContext | ICommandObjectExplorerContext, args: object = {}): Promise<any> {
 		return this.execute(context, args);
 	}
 
@@ -81,13 +80,13 @@ export class UploadFilesCommand extends ProgressCommand {
 					openLabel: localize('lblUploadFiles', "Upload"),
 					filters: filter
 				};
-				let fileUris: vscode.Uri[] = await this.apiWrapper.showOpenDialog(options);
+				let fileUris: vscode.Uri[] = await vscode.window.showOpenDialog(options);
 				if (fileUris) {
 					let files: IFile[] = await Promise.all(fileUris.map(uri => uri.fsPath).map(this.mapPathsToFiles()));
 					await this.executeWithProgress(
 						(cancelToken: vscode.CancellationTokenSource) => this.writeFiles(files, folderNode, cancelToken),
 						localize('uploading', "Uploading files to HDFS"), true,
-						() => this.apiWrapper.showInformationMessage(localize('uploadCanceled', "Upload operation was canceled")));
+						() => vscode.window.showInformationMessage(localize('uploadCanceled', "Upload operation was canceled")));
 					if (context.type === constants.ObjectExplorerService) {
 						let objectExplorerNode = await azdata.objectexplorer.getNode(context.explorerContext.connectionProfile.id, folderNode.getNodeInfo().nodePath);
 						await objectExplorerNode.refresh();
@@ -95,7 +94,7 @@ export class UploadFilesCommand extends ProgressCommand {
 				}
 			}
 		} catch (err) {
-			this.apiWrapper.showErrorMessage(
+			void vscode.window.showErrorMessage(
 				localize('uploadError', "Error uploading files: {0}", utils.getErrorMessage(err, true)));
 		}
 	}
@@ -126,7 +125,7 @@ export class UploadFilesCommand extends ProgressCommand {
 				let children: IFile[] = await Promise.all((await fs.readdir(file.path))
 					.map(childFileName => joinHdfsPath(file.path, childFileName))
 					.map(this.mapPathsToFiles()));
-				this.writeFiles(children, subFolder, cancelToken);
+				await this.writeFiles(children, subFolder, cancelToken);
 			} else {
 				await folderNode.writeFile(file);
 			}
@@ -139,7 +138,7 @@ export class MkDirCommand extends ProgressCommand {
 		super('mssqlCluster.mkdir', prompter, appContext);
 	}
 
-	protected async preExecute(context: ICommandViewContext | ICommandObjectExplorerContext, args: object = {}): Promise<any> {
+	protected override async preExecute(context: ICommandViewContext | ICommandObjectExplorerContext, args: object = {}): Promise<any> {
 		return this.execute(context, args);
 	}
 
@@ -153,7 +152,7 @@ export class MkDirCommand extends ProgressCommand {
 					await this.executeWithProgress(
 						async (cancelToken: vscode.CancellationTokenSource) => this.mkDir(fileName, folderNode, cancelToken),
 						localize('makingDir', "Creating directory"), true,
-						() => this.apiWrapper.showInformationMessage(localize('mkdirCanceled', "Operation was canceled")));
+						() => vscode.window.showInformationMessage(localize('mkdirCanceled', "Operation was canceled")));
 					if (context.type === constants.ObjectExplorerService) {
 						let objectExplorerNode = await azdata.objectexplorer.getNode(context.explorerContext.connectionProfile.id, folderNode.getNodeInfo().nodePath);
 						await objectExplorerNode.refresh();
@@ -161,7 +160,7 @@ export class MkDirCommand extends ProgressCommand {
 				}
 			}
 		} catch (err) {
-			this.apiWrapper.showErrorMessage(
+			void vscode.window.showErrorMessage(
 				localize('mkDirError', "Error on making directory: {0}", utils.getErrorMessage(err, true)));
 		}
 	}
@@ -186,7 +185,7 @@ export class DeleteFilesCommand extends Command {
 		super('mssqlCluster.deleteFiles', appContext);
 	}
 
-	protected async preExecute(context: ICommandViewContext | ICommandObjectExplorerContext, args: object = {}): Promise<any> {
+	protected override async preExecute(context: ICommandViewContext | ICommandObjectExplorerContext, args: object = {}): Promise<any> {
 		return this.execute(context, args);
 	}
 
@@ -216,10 +215,10 @@ export class DeleteFilesCommand extends Command {
 					await oeNodeToRefresh.refresh();
 				}
 			} else {
-				this.apiWrapper.showErrorMessage(LocalizedConstants.msgMissingNodeContext);
+				void vscode.window.showErrorMessage(LocalizedConstants.msgMissingNodeContext);
 			}
 		} catch (err) {
-			this.apiWrapper.showErrorMessage(
+			void vscode.window.showErrorMessage(
 				localize('deleteError', "Error on deleting files: {0}", utils.getErrorMessage(err, true)));
 		}
 	}
@@ -258,7 +257,7 @@ export class SaveFileCommand extends ProgressCommand {
 		super('mssqlCluster.saveFile', prompter, appContext);
 	}
 
-	protected async preExecute(context: ICommandViewContext | ICommandObjectExplorerContext, args: object = {}): Promise<any> {
+	protected override async preExecute(context: ICommandViewContext | ICommandObjectExplorerContext, args: object = {}): Promise<any> {
 		return this.execute(context, args);
 	}
 
@@ -266,28 +265,28 @@ export class SaveFileCommand extends ProgressCommand {
 		try {
 			let fileNode = await getNode<FileNode>(context, this.appContext);
 			if (fileNode) {
-				let defaultUri = await getSaveableUri(this.apiWrapper, fspath.basename(fileNode.hdfsPath));
-				let fileUri: vscode.Uri = await this.apiWrapper.showSaveDialog({
+				let defaultUri = await getSaveableUri(fspath.basename(fileNode.hdfsPath));
+				let fileUri: vscode.Uri = await vscode.window.showSaveDialog({
 					defaultUri: defaultUri
 				});
 				if (fileUri) {
 					await this.executeWithProgress(
 						(cancelToken: vscode.CancellationTokenSource) => this.doSaveAndOpen(fileUri, fileNode, cancelToken),
 						localize('saving', "Saving HDFS Files"), true,
-						() => this.apiWrapper.showInformationMessage(localize('saveCanceled', "Save operation was canceled")));
+						() => vscode.window.showInformationMessage(localize('saveCanceled', "Save operation was canceled")));
 				}
 			} else {
-				this.apiWrapper.showErrorMessage(LocalizedConstants.msgMissingNodeContext);
+				void vscode.window.showErrorMessage(LocalizedConstants.msgMissingNodeContext);
 			}
 		} catch (err) {
-			this.apiWrapper.showErrorMessage(
+			void vscode.window.showErrorMessage(
 				localize('saveError', "Error on saving file: {0}", utils.getErrorMessage(err, true)));
 		}
 	}
 
 	private async doSaveAndOpen(fileUri: vscode.Uri, fileNode: FileNode, cancelToken: vscode.CancellationTokenSource): Promise<void> {
 		await fileNode.writeFileContentsToDisk(fileUri.fsPath, cancelToken);
-		await this.apiWrapper.executeCommand('vscode.open', fileUri);
+		await vscode.commands.executeCommand('vscode.open', fileUri);
 	}
 }
 
@@ -298,7 +297,7 @@ export class PreviewFileCommand extends ProgressCommand {
 		super('mssqlCluster.previewFile', prompter, appContext);
 	}
 
-	protected async preExecute(context: ICommandViewContext | ICommandObjectExplorerContext, args: object = {}): Promise<any> {
+	protected override async preExecute(context: ICommandViewContext | ICommandObjectExplorerContext, args: object = {}): Promise<any> {
 		return this.execute(context, args);
 	}
 
@@ -311,8 +310,12 @@ export class PreviewFileCommand extends ProgressCommand {
 						let contents = await fileNode.getFileContentsAsString(PreviewFileCommand.DefaultMaxSize);
 						let fileName: string = fspath.basename(fileNode.hdfsPath);
 						if (fspath.extname(fileName) !== '.ipynb') {
-							let doc = await this.openTextDocument(fileName);
-							let editor = await this.apiWrapper.showTextDocument(doc, vscode.ViewColumn.Active, false);
+							const doc = await this.openTextDocument(fileName);
+							const options: vscode.TextDocumentShowOptions = {
+								viewColumn: vscode.ViewColumn.Active,
+								preserveFocus: false
+							};
+							const editor = await vscode.window.showTextDocument(doc, options);
 							await editor.edit(edit => {
 								edit.insert(new vscode.Position(0, 0), contents);
 							});
@@ -327,10 +330,10 @@ export class PreviewFileCommand extends ProgressCommand {
 					localize('previewing', "Generating preview"),
 					false);
 			} else {
-				this.apiWrapper.showErrorMessage(LocalizedConstants.msgMissingNodeContext);
+				void vscode.window.showErrorMessage(LocalizedConstants.msgMissingNodeContext);
 			}
 		} catch (err) {
-			this.apiWrapper.showErrorMessage(
+			void vscode.window.showErrorMessage(
 				localize('previewError', "Error on previewing file: {0}", utils.getErrorMessage(err, true)));
 		}
 	}
@@ -338,7 +341,7 @@ export class PreviewFileCommand extends ProgressCommand {
 	private async showNotebookDocument(fileName: string, connectionProfile?: azdata.IConnectionProfile,
 		initialContent?: string
 	): Promise<azdata.nb.NotebookEditor> {
-		let docUri: vscode.Uri = (await getSaveableUri(this.apiWrapper, fileName, true))
+		let docUri: vscode.Uri = (await getSaveableUri(fileName, true))
 			.with({ scheme: constants.UNTITLED_SCHEMA });
 		return await azdata.nb.showNotebookDocument(docUri, {
 			connectionProfile: connectionProfile,
@@ -348,10 +351,10 @@ export class PreviewFileCommand extends ProgressCommand {
 	}
 
 	private async openTextDocument(fileName: string): Promise<vscode.TextDocument> {
-		let docUri: vscode.Uri = await getSaveableUri(this.apiWrapper, fileName, true);
+		let docUri: vscode.Uri = await getSaveableUri(fileName, true);
 		if (docUri) {
 			docUri = docUri.with({ scheme: constants.UNTITLED_SCHEMA });
-			return await this.apiWrapper.openTextDocument(docUri);
+			return await vscode.workspace.openTextDocument(docUri);
 		} else {
 			// Can't reliably create a filename to save as so just use untitled
 			let language = fspath.extname(fileName);
@@ -359,7 +362,7 @@ export class PreviewFileCommand extends ProgressCommand {
 				// trim the '.'
 				language = language.substring(1);
 			}
-			return await this.apiWrapper.openTextDocument({
+			return await vscode.workspace.openTextDocument({
 				language: language
 			});
 		}
@@ -373,7 +376,7 @@ export class CopyPathCommand extends Command {
 		super('mssqlCluster.copyPath', appContext);
 	}
 
-	protected async preExecute(context: ICommandViewContext | ICommandObjectExplorerContext, args: object = {}): Promise<any> {
+	protected override async preExecute(context: ICommandViewContext | ICommandObjectExplorerContext, args: object = {}): Promise<any> {
 		return this.execute(context, args);
 	}
 
@@ -382,12 +385,12 @@ export class CopyPathCommand extends Command {
 			let node = await getNode<HdfsFileSourceNode>(context, this.appContext);
 			if (node) {
 				let path = node.hdfsPath;
-				vscode.env.clipboard.writeText(path);
+				void vscode.env.clipboard.writeText(path);
 			} else {
-				this.apiWrapper.showErrorMessage(LocalizedConstants.msgMissingNodeContext);
+				void vscode.window.showErrorMessage(LocalizedConstants.msgMissingNodeContext);
 			}
 		} catch (err) {
-			this.apiWrapper.showErrorMessage(
+			void vscode.window.showErrorMessage(
 				localize('copyPathError', "Error on copying path: {0}", utils.getErrorMessage(err, true)));
 		}
 	}
@@ -403,12 +406,12 @@ export class ManageAccessCommand extends Command {
 		try {
 			let node = await getNode<HdfsFileSourceNode>(context, this.appContext);
 			if (node) {
-				new ManageAccessDialog(node.hdfsPath, node.fileSource, this.apiWrapper).openDialog();
+				new ManageAccessDialog(node.hdfsPath, await node.getFileSource()).openDialog();
 			} else {
-				this.apiWrapper.showErrorMessage(LocalizedConstants.msgMissingNodeContext);
+				void vscode.window.showErrorMessage(LocalizedConstants.msgMissingNodeContext);
 			}
 		} catch (err) {
-			this.apiWrapper.showErrorMessage(
+			void vscode.window.showErrorMessage(
 				localize('manageAccessError', "An unexpected error occurred while opening the Manage Access dialog: {0}", utils.getErrorMessage(err, true)));
 		}
 	}

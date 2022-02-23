@@ -3,224 +3,277 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { PGResourceInfo } from 'arc';
+import * as azdata from 'azdata';
+import * as azExt from 'az-ext';
 import * as vscode from 'vscode';
 import * as loc from '../localizedConstants';
-import { DuskyObjectModelsDatabaseService, DatabaseRouterApi, DuskyObjectModelsDatabase, V1Status, V1Pod } from '../controller/generated/dusky/api';
-import { Authentication } from '../controller/auth';
+import { ConnectToPGSqlDialog } from '../ui/dialogs/connectPGDialog';
+import { AzureArcTreeDataProvider } from '../ui/tree/azureArcTreeDataProvider';
+import { ControllerModel, Registration } from './controllerModel';
+import { parseIpAndPort } from '../common/utils';
+import { UserCancelledError } from '../common/api';
+import { ResourceModel } from './resourceModel';
+import { Deferred } from '../common/promise';
 
-export enum PodRole {
-	Monitor,
-	Router,
-	Shard
-}
+export type EngineSettingsModel = {
+	parameterName: string | undefined,
+	value: string | undefined,
+	description: string | undefined,
+	min: string | undefined,
+	max: string | undefined,
+	options: string | undefined,
+	type: string | undefined
+};
 
-export class PostgresModel {
-	private _databaseRouter: DatabaseRouterApi;
-	private _service?: DuskyObjectModelsDatabaseService;
-	private _password?: string;
-	private _pods?: V1Pod[];
-	private readonly _onServiceUpdated = new vscode.EventEmitter<DuskyObjectModelsDatabaseService>();
-	private readonly _onPasswordUpdated = new vscode.EventEmitter<string>();
-	private readonly _onPodsUpdated = new vscode.EventEmitter<V1Pod[]>();
-	public onServiceUpdated = this._onServiceUpdated.event;
-	public onPasswordUpdated = this._onPasswordUpdated.event;
-	public onPodsUpdated = this._onPodsUpdated.event;
-	public serviceLastUpdated?: Date;
-	public passwordLastUpdated?: Date;
-	public podsLastUpdated?: Date;
+export class PostgresModel extends ResourceModel {
+	private _config?: azExt.PostgresServerShowResult;
+	public workerNodesEngineSettings: EngineSettingsModel[] = [];
+	public coordinatorNodeEngineSettings: EngineSettingsModel[] = [];
+	private readonly _azApi: azExt.IExtension;
 
-	constructor(controllerUrl: string, auth: Authentication, private _namespace: string, private _name: string) {
-		this._databaseRouter = new DatabaseRouterApi(controllerUrl);
-		this._databaseRouter.setDefaultAuthentication(auth);
+	private readonly _onConfigUpdated = new vscode.EventEmitter<azExt.PostgresServerShowResult>();
+	public onConfigUpdated = this._onConfigUpdated.event;
+	public configLastUpdated?: Date;
+	public engineSettingsLastUpdated?: Date;
+
+	private _refreshPromise?: Deferred<void>;
+	private _engineSettingsPromise?: Deferred<void>;
+
+	constructor(_controllerModel: ControllerModel, private _pgInfo: PGResourceInfo, registration: Registration, private _treeDataProvider: AzureArcTreeDataProvider) {
+		super(_controllerModel, _pgInfo, registration);
+		this._azApi = <azExt.IExtension>vscode.extensions.getExtension(azExt.extension.name)?.exports;
 	}
 
-	/** Returns the service's Kubernetes namespace */
-	public namespace(): string {
-		return this._namespace;
+	/** Returns the configuration of Postgres */
+	public get config(): azExt.PostgresServerShowResult | undefined {
+		return this._config;
 	}
 
-	/** Returns the service's name */
-	public name(): string {
-		return this._name;
+	/** Returns the major version of Postgres */
+	public get engineVersion(): string | undefined {
+		return this._config?.spec.engine.version;
 	}
 
-	/** Returns the service's fully qualified name in the format namespace.name */
-	public fullName(): string {
-		return `${this._namespace}.${this._name}`;
+	/** Returns the IP address and port of Postgres */
+	public get endpoint(): { ip: string, port: string } | undefined {
+		return this._config?.status.primaryEndpoint
+			? parseIpAndPort(this._config.status.primaryEndpoint)
+			: undefined;
 	}
 
-	/** Returns the service's spec */
-	public service(): DuskyObjectModelsDatabaseService | undefined {
-		return this._service;
-	}
+	/** Returns the scale configuration of Postgres e.g. '3 nodes, 1.5 vCores, 1Gi RAM, 2Gi storage per node' */
+	public get scaleConfiguration(): string | undefined {
+		if (!this._config) {
+			return undefined;
+		}
 
-	/** Returns the service's password */
-	public password(): string | undefined {
-		return this._password;
-	}
+		const cpuLimit = this._config.spec.scheduling?.default?.resources?.limits?.cpu;
+		const ramLimit = this._config.spec.scheduling?.default?.resources?.limits?.memory;
+		const cpuRequest = this._config.spec.scheduling?.default?.resources?.requests?.cpu;
+		const ramRequest = this._config.spec.scheduling?.default?.resources?.requests?.memory;
+		const dataStorage = this._config.spec.storage?.data?.volumes?.[0]?.size;
+		const logStorage = this._config.spec.storage?.logs?.volumes?.[0]?.size;
+		const backupsStorage = this._config.spec.storage?.backups?.volumes?.[0]?.size;
 
-	/** Returns the service's pods */
-	public pods(): V1Pod[] | undefined {
-		return this._pods;
-	}
-
-	/** Refreshes the model */
-	public async refresh() {
-		await Promise.all([
-			this._databaseRouter.getDuskyDatabaseService(this._namespace, this._name).then(response => {
-				this._service = response.body;
-				this.serviceLastUpdated = new Date();
-				this._onServiceUpdated.fire(this._service);
-			}),
-			this._databaseRouter.getDuskyPassword(this._namespace, this._name).then(response => {
-				this._password = response.body;
-				this.passwordLastUpdated = new Date();
-				this._onPasswordUpdated.fire(this._password!);
-			}),
-			this._databaseRouter.getDuskyPods(this._namespace, this._name).then(response => {
-				this._pods = response.body;
-				this.podsLastUpdated = new Date();
-				this._onPodsUpdated.fire(this._pods!);
-			})
-		]);
-	}
-
-	/**
-	 * Updates the service
-	 * @param func A function of modifications to apply to the service
-	 */
-	public async update(func: (service: DuskyObjectModelsDatabaseService) => void): Promise<DuskyObjectModelsDatabaseService> {
-		// Get the latest spec of the service in case it has changed
-		const service = (await this._databaseRouter.getDuskyDatabaseService(this._namespace, this._name)).body;
-		service.status = undefined; // can't update the status
-		func(service);
-
-		return await this._databaseRouter.updateDuskyDatabaseService(this.namespace(), this.name(), service).then(r => {
-			this._service = r.body;
-			return this._service;
-		});
-	}
-
-	/** Deletes the service */
-	public async delete(): Promise<V1Status> {
-		return (await this._databaseRouter.deleteDuskyDatabaseService(this._namespace, this._name)).body;
-	}
-
-	/** Creates a SQL database in the service */
-	public async createDatabase(db: DuskyObjectModelsDatabase): Promise<DuskyObjectModelsDatabase> {
-		return await (await this._databaseRouter.createDuskyDatabase(this.namespace(), this.name(), db)).body;
-	}
-
-	/**
-	 * Returns the IP address and port of the service, preferring external IP over
-	 * internal IP. If either field is not available it will be set to undefined.
-	 */
-	public endpoint(): { ip?: string, port?: number } {
-		const externalIp = this._service?.status?.externalIP;
-		const internalIp = this._service?.status?.internalIP;
-		const externalPort = this._service?.status?.externalPort;
-		const internalPort = this._service?.status?.internalPort;
-
-		return externalIp ? { ip: externalIp, port: externalPort ?? undefined }
-			: internalIp ? { ip: internalIp, port: internalPort ?? undefined }
-				: { ip: undefined, port: undefined };
-	}
-
-	/** Returns the service's configuration e.g. '3 nodes, 1.5 vCores, 1GiB RAM, 2GiB storage per node' */
-	public configuration(): string {
-
-		// TODO: Resource requests and limits can be configured per role. Figure out how
-		//       to display that in the UI. For now, only show the default configuration.
-		const cpuLimit = this._service?.spec?.scheduling?._default?.resources?.limits?.['cpu'];
-		const ramLimit = this._service?.spec?.scheduling?._default?.resources?.limits?.['memory'];
-		const cpuRequest = this._service?.spec?.scheduling?._default?.resources?.requests?.['cpu'];
-		const ramRequest = this._service?.spec?.scheduling?._default?.resources?.requests?.['memory'];
-		const storage = this._service?.spec?.storage?.volumeSize;
-		const nodes = this.pods()?.length;
+		// scale.shards was renamed to scale.workers. Check both for backwards compatibility.
+		const scale = this._config.spec.scale;
+		const nodes = (scale?.workers ?? scale?.shards ?? 0) + 1; // An extra node for the coordinator
 
 		let configuration: string[] = [];
-
-		if (nodes) {
-			configuration.push(`${nodes} ${nodes > 1 ? loc.nodes : loc.node}`);
-		}
+		configuration.push(`${nodes} ${nodes > 1 ? loc.nodes : loc.node}`);
 
 		// Prefer limits if they're provided, otherwise use requests if they're provided
 		if (cpuLimit || cpuRequest) {
-			configuration.push(`${this.formatCores(cpuLimit ?? cpuRequest!)} ${loc.vCores}`);
+			configuration.push(`${cpuLimit ?? cpuRequest!} ${loc.vCores}`);
 		}
 
 		if (ramLimit || ramRequest) {
-			configuration.push(`${this.formatMemory(ramLimit ?? ramRequest!)} ${loc.ram}`);
+			configuration.push(`${ramLimit ?? ramRequest!} ${loc.ram}`);
 		}
 
-		if (storage) {
-			configuration.push(`${this.formatMemory(storage)} ${loc.storagePerNode}`);
+		let storage: string[] = [];
+		if (dataStorage) {
+			storage.push(loc.dataStorage(dataStorage));
+		}
+		if (logStorage) {
+			storage.push(loc.logStorage(logStorage));
+		}
+		if (backupsStorage) {
+			storage.push(loc.backupsStorage(backupsStorage));
+		}
+		if (dataStorage || logStorage || backupsStorage) {
+			storage.push(`${loc.storagePerNode}`);
+			configuration.push(storage.join(' '));
 		}
 
 		return configuration.join(', ');
 	}
 
-	/** Given a V1Pod, returns its PodRole or undefined if the role isn't known */
-	public static getPodRole(pod: V1Pod): PodRole | undefined {
-		const name = pod.metadata?.name;
-		const role = name?.substring(name.lastIndexOf('-'))[1];
-		switch (role) {
-			case 'm': return PodRole.Monitor;
-			case 'r': return PodRole.Router;
-			case 's': return PodRole.Shard;
-			default: return undefined;
+	/** Refreshes the model */
+	public async refresh() {
+		// Only allow one refresh to be happening at a time
+		if (this._refreshPromise) {
+			return this._refreshPromise.promise;
+		}
+		this._refreshPromise = new Deferred();
+		try {
+			this._config = (await this._azApi.az.postgres.arcserver.show(this.info.name, this.controllerModel.info.namespace, this.controllerModel.azAdditionalEnvVars)).stdout;
+			this.configLastUpdated = new Date();
+			this._onConfigUpdated.fire(this._config);
+			this._refreshPromise.resolve();
+		} catch (err) {
+			this._refreshPromise.reject(err);
+			throw err;
+		} finally {
+			this._refreshPromise = undefined;
 		}
 	}
 
-	/** Given a PodRole, returns its localized name */
-	public static getPodRoleName(role?: PodRole): string {
-		switch (role) {
-			case PodRole.Monitor: return loc.monitor;
-			case PodRole.Router: return loc.coordinator;
-			case PodRole.Shard: return loc.worker;
-			default: return '';
+	public async getEngineSettings(): Promise<void> {
+		// Only allow to get engine setting once at a time
+		if (this._engineSettingsPromise) {
+			return this._engineSettingsPromise.promise;
+		}
+		this._engineSettingsPromise = new Deferred();
+
+		try {
+			if (!this._connectionProfile) {
+				await this.getConnectionProfile();
+			}
+
+			// We haven't connected yet so do so now and then store the ID for the active connection
+			if (!this._activeConnectionId) {
+				const result = await azdata.connection.connect(this._connectionProfile!, false, false);
+				if (!result.connected) {
+					throw new Error(result.errorMessage);
+				}
+				this._activeConnectionId = result.connectionId;
+			}
+
+			// TODO Need to make separate calls for worker nodes and coordinator node
+			const provider = azdata.dataprotocol.getProvider<azdata.QueryProvider>(this._connectionProfile!.providerName, azdata.DataProviderType.QueryProvider);
+			const ownerUri = await azdata.connection.getUriForConnection(this._activeConnectionId);
+
+			const skippedEngineSettings: String[] = [
+				'archive_command', 'archive_timeout', 'log_directory', 'log_file_mode', 'log_filename', 'restore_command',
+				'shared_preload_libraries', 'synchronous_commit', 'ssl', 'unix_socket_permissions', 'wal_level'
+			];
+
+			await this.createCoordinatorEngineSettings(provider, ownerUri, skippedEngineSettings);
+
+			const scale = this._config?.spec.scale;
+			const nodes = (scale?.workers ?? scale?.shards ?? 0);
+			if (nodes !== 0) {
+				await this.createWorkerEngineSettings(provider, ownerUri, skippedEngineSettings);
+			}
+
+			this.engineSettingsLastUpdated = new Date();
+			this._engineSettingsPromise.resolve();
+		} catch (err) {
+			this._engineSettingsPromise.reject(err);
+			throw err;
+		} finally {
+			this._engineSettingsPromise = undefined;
 		}
 	}
 
-	/** Given a V1Pod returns its status */
-	public static getPodStatus(pod: V1Pod) {
-		const phase = pod.status?.phase;
-		if (phase !== 'Running') {
-			return phase;
-		}
+	private async createCoordinatorEngineSettings(provider: azdata.QueryProvider, ownerUri: string, skip: String[]): Promise<void> {
+		const engineSettingsCoordinator = await provider.runQueryAndReturn(ownerUri, 'select name, setting, short_desc,min_val, max_val, enumvals, vartype from pg_settings');
 
-		// Pods can be in the running phase while some
-		// containers are crashing, so check those too.
-		for (let c of pod.status?.containerStatuses?.filter(c => !c.ready) ?? []) {
-			const wReason = c.state?.waiting?.reason;
-			const tReason = c.state?.terminated?.reason;
-			if (wReason) { return wReason; }
-			if (tReason) { return tReason; }
-		}
+		this.coordinatorNodeEngineSettings = [];
+		engineSettingsCoordinator.rows.forEach(row => {
+			let rowValues = row.map(c => c.displayValue);
+			let name = rowValues.shift();
+			if (!skip.includes(name!)) {
+				let result: EngineSettingsModel = {
+					parameterName: name,
+					value: rowValues.shift(),
+					description: rowValues.shift(),
+					min: rowValues.shift(),
+					max: rowValues.shift(),
+					options: rowValues.shift(),
+					type: rowValues.shift()
+				};
 
-		return loc.running;
+				this.coordinatorNodeEngineSettings.push(result);
+			}
+		});
+
 	}
 
-	/**
-	 * Converts millicores to cores (600m -> 0.6 cores)
-	 * https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/#meaning-of-cpu
-	 * @param cores The millicores to format e.g. 600m
-	 */
-	private formatCores(cores: string): number {
-		return cores?.endsWith('m') ? +cores.slice(0, -1) / 1000 : +cores;
+	private async createWorkerEngineSettings(provider: azdata.QueryProvider, ownerUri: string, skip: String[]): Promise<void> {
+
+		const engineSettingsWorker = await provider.runQueryAndReturn(ownerUri,
+			`with settings as (select nodename, success, result from run_command_on_workers('select json_agg(pg_settings) from pg_settings') order by success desc, nodename asc)
+			select * from settings limit case when exists(select 1 from settings where success) then 1 end`);
+
+		if (engineSettingsWorker.rows[0][1].displayValue === 'False') {
+			let errorString = engineSettingsWorker.rows.map(row => row[2].displayValue);
+			throw new Error(errorString.join('\n'));
+		}
+
+		let engineSettingsWorkerJSON = JSON.parse(engineSettingsWorker.rows[0][2].displayValue);
+		this.workerNodesEngineSettings = [];
+
+		for (let i = 0; i < engineSettingsWorkerJSON.length; i++) {
+			let rowValues = engineSettingsWorkerJSON[i];
+			let name = rowValues.name;
+			if (!skip.includes(name!)) {
+				let result: EngineSettingsModel = {
+					parameterName: name,
+					value: rowValues.setting,
+					description: rowValues.short_desc,
+					min: rowValues.min_val,
+					max: rowValues.max_val,
+					options: rowValues.enumvals,
+					type: rowValues.vartype
+				};
+
+				this.workerNodesEngineSettings.push(result);
+			}
+		}
+
 	}
 
-	/**
-	 * Formats the memory to end with 'B' e.g:
-	 * 1 -> 1B
-	 * 1K -> 1KB, 1Ki -> 1KiB
-	 * 1M -> 1MB, 1Mi -> 1MiB
-	 * 1G -> 1GB, 1Gi -> 1GiB
-	 * 1T -> 1TB, 1Ti -> 1TiB
-	 * https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/#meaning-of-memory
-	 * @param memory The amount + unit of memory to format e.g. 1K
-	 */
-	private formatMemory(memory: string): string {
-		return memory && !memory.endsWith('B') ? `${memory}B` : memory;
+	protected createConnectionProfile(): azdata.IConnectionProfile {
+		const ipAndPort = parseIpAndPort(this.config?.status.primaryEndpoint || '');
+		return {
+			serverName: `${ipAndPort.ip},${ipAndPort.port}`,
+			databaseName: '',
+			authenticationType: 'SqlLogin',
+			providerName: loc.postgresProviderName,
+			connectionName: '',
+			userName: this._pgInfo.userName || '',
+			password: '',
+			savePassword: true,
+			groupFullName: undefined,
+			saveProfile: true,
+			id: '',
+			groupId: undefined,
+			options: {
+				host: `${ipAndPort.ip}`,
+				port: `${ipAndPort.port}`,
+			}
+		};
+	}
+
+	protected async promptForConnection(connectionProfile: azdata.IConnectionProfile): Promise<void> {
+		const connectToSqlDialog = new ConnectToPGSqlDialog(this.controllerModel, this);
+		connectToSqlDialog.showDialog(loc.connectToPGSql(this.info.name), connectionProfile);
+		let profileFromDialog = await connectToSqlDialog.waitForClose();
+
+		if (profileFromDialog) {
+			this.updateConnectionProfile(profileFromDialog);
+		} else {
+			throw new UserCancelledError();
+		}
+	}
+
+	protected async updateConnectionProfile(connectionProfile: azdata.IConnectionProfile): Promise<void> {
+		this._connectionProfile = connectionProfile;
+		this.info.connectionId = connectionProfile.id;
+		this._pgInfo.userName = connectionProfile.userName;
+		await this._treeDataProvider.saveControllers();
 	}
 }

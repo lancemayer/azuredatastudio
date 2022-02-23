@@ -6,8 +6,9 @@ import { IAction } from 'vs/base/common/actions';
 import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
 import { KeyCode, KeyMod } from 'vs/base/common/keyCodes';
 import {
-	IActionBarOptions, ActionsOrientation, IActionViewItem,
-	IActionOptions
+	IActionBarOptions, ActionsOrientation,
+	IActionOptions,
+	IActionViewItem
 } from 'vs/base/browser/ui/actionbar/actionbar';
 import * as DOM from 'vs/base/browser/dom';
 import * as types from 'vs/base/common/types';
@@ -26,9 +27,9 @@ const defaultOptions: IActionBarOptions = {
 export class OverflowActionBar extends ActionBar {
 	// Elements
 	private _overflow: HTMLElement;
-	private _moreItemElement: HTMLElement;
-	private _moreActionsElement: HTMLElement;
-	private _previousWidth: number;
+	private _moreItemElement?: HTMLElement;
+	private _moreActionsElement?: HTMLElement;
+	private _previousWidth: number = 0;
 
 	constructor(container: HTMLElement, options: IActionBarOptions = defaultOptions) {
 		super(container, options);
@@ -74,7 +75,7 @@ export class OverflowActionBar extends ActionBar {
 				this.createMoreItemElement();
 			}
 
-			this._moreItemElement.style.display = 'block';
+			this._moreItemElement!.style.display = 'block';
 			while (width < fullWidth) {
 				let index = this._actionsList.childNodes.length - 2; // remove the last toolbar action before the more actions '...'
 				if (index > -1) {
@@ -94,7 +95,7 @@ export class OverflowActionBar extends ActionBar {
 					this.collapseItem();
 					break;
 				} else if (!this._overflow.hasChildNodes()) {
-					this._moreItemElement.style.display = 'none';
+					this._moreItemElement!.style.display = 'none';
 				}
 			}
 		}
@@ -117,23 +118,26 @@ export class OverflowActionBar extends ActionBar {
 
 		// change role to menuItem when it's in the overflow
 		if ((<HTMLElement>this._overflow.firstChild).className !== 'taskbarSeparator') {
-			(<HTMLElement>this._overflow.firstChild.firstChild).setAttribute('role', 'menuItem');
+			(<HTMLElement>this._overflow.firstChild!.firstChild).setAttribute('role', 'menuItem');
 		}
 	}
 
 	public restoreItem(): void {
-		let item = this._overflow.removeChild(this._overflow.firstChild);
-		// change role back to button when it's in the toolbar
-		if ((<HTMLElement>item).className !== 'taskbarSeparator') {
-			(<HTMLElement>item.firstChild).setAttribute('role', 'button');
-		}
-		this._actionsList.insertBefore(item, this._actionsList.lastChild);
+		let firstChild = this._overflow.firstChild;
+		if (firstChild) {
+			let item = this._overflow.removeChild(firstChild);
+			// change role back to button when it's in the toolbar
+			if ((<HTMLElement>item).className !== 'taskbarSeparator') {
+				(<HTMLElement>item.firstChild).setAttribute('role', 'button');
+			}
+			this._actionsList.insertBefore(item, this._actionsList.lastChild);
 
-		// move placeholder in this._items if item isn't a separator
-		if (!(<HTMLElement>item).classList.contains('taskbarSeparator')) {
-			let placeHolderIndex = this._items.findIndex(i => i === undefined);
-			let placeHolderItem = this._items.splice(placeHolderIndex, 1);
-			this._items.splice(placeHolderIndex + 1, 0, placeHolderItem[0]);
+			// move placeholder in this._items if item isn't a separator
+			if (!(<HTMLElement>item).classList.contains('taskbarSeparator')) {
+				let placeHolderIndex = this._items.findIndex(i => i === undefined);
+				let placeHolderItem = this._items.splice(placeHolderIndex, 1);
+				this._items.splice(placeHolderIndex + 1, 0, placeHolderItem[0]);
+			}
 		}
 	}
 
@@ -163,7 +167,7 @@ export class OverflowActionBar extends ActionBar {
 			// Close overflow if Escape is pressed
 			if (event.equals(KeyCode.Escape)) {
 				this.hideOverflowDisplay();
-				this._moreActionsElement.focus();
+				this._moreActionsElement!.focus();
 			} else if (event.equals(KeyCode.UpArrow)) {
 				// up arrow on first element in overflow should move focus to the bottom of the overflow
 				if (this._focusedItem === this._actionsList.childElementCount) {
@@ -192,7 +196,7 @@ export class OverflowActionBar extends ActionBar {
 
 		this._moreItemElement.appendChild(this._moreActionsElement);
 		this._actionsList.appendChild(this._moreItemElement);
-		this._items.push(undefined); // add place holder for more item element
+		this._items.push(undefined!); // add place holder for more item element @anthonydresser, im not sure how this is working, vscode indexes into this value all the time...
 	}
 
 	public moreElementOnClick(event: MouseEvent | StandardKeyboardEvent): void {
@@ -215,7 +219,7 @@ export class OverflowActionBar extends ActionBar {
 		this._focusedItem = this._actionsList.childElementCount - 1;
 	}
 
-	protected updateFocusedItem(): void {
+	protected override updateFocusedItem(): void {
 		let actionIndex = 0;
 		for (let i = 0; i < this._actionsList.children.length; i++) {
 			let elem = this._actionsList.children[i];
@@ -251,7 +255,7 @@ export class OverflowActionBar extends ActionBar {
 	 * Push an HTML Element onto the action bar UI in the position specified by options.
 	 * Pushes to the last position if no options are provided.
 	 */
-	public pushElement(element: HTMLElement, options: IActionOptions = {}): void {
+	public override pushElement(element: HTMLElement, options: IActionOptions = {}): void {
 		super.pushElement(element, options);
 		this.resizeToolbar();
 	}
@@ -260,12 +264,12 @@ export class OverflowActionBar extends ActionBar {
 	 * Push an action onto the action bar UI in the position specified by options.
 	 * Pushes to the last position if no options are provided.
 	 */
-	public pushAction(arg: IAction | IAction[], options: IActionOptions = {}): void {
+	public override pushAction(arg: IAction | IAction[], options: IActionOptions = {}): void {
 		super.pushAction(arg, options);
 		this.resizeToolbar();
 	}
 
-	protected focusNext(): void {
+	protected override focusNext(): void {
 		if (typeof this._focusedItem === 'undefined') {
 			this._focusedItem = this._items.length - 1;
 		}
@@ -285,7 +289,7 @@ export class OverflowActionBar extends ActionBar {
 		this.updateFocus();
 	}
 
-	protected focusPrevious(): void {
+	protected override focusPrevious(): void {
 		if (typeof this._focusedItem === 'undefined') {
 			this._focusedItem = 0;
 		}
@@ -310,7 +314,7 @@ export class OverflowActionBar extends ActionBar {
 		this.updateFocus();
 	}
 
-	protected updateFocus(): void {
+	protected override updateFocus(): void {
 		if (typeof this._focusedItem === 'undefined') {
 			this._domNode.focus();
 			return;
@@ -324,7 +328,7 @@ export class OverflowActionBar extends ActionBar {
 			if (i === this._focusedItem) {
 				// placeholder for location of moreActionsElement
 				if (!actionItem) {
-					this._moreActionsElement.focus();
+					this._moreActionsElement!.focus();
 				}
 				else if (types.isFunction(actionItem.focus)) {
 					actionItem.focus();
@@ -337,7 +341,7 @@ export class OverflowActionBar extends ActionBar {
 		}
 	}
 
-	protected cancel(): void {
+	protected override cancel(): void {
 		super.cancel();
 
 		if (this._overflow) {
@@ -345,9 +349,9 @@ export class OverflowActionBar extends ActionBar {
 		}
 	}
 
-	public run(action: IAction, context?: any): Promise<any> {
+	public override async run(action: IAction, context?: any): Promise<void> {
 		this.hideOverflowDisplay();
-		return this._actionRunner.run(action, context);
+		this._actionRunner.run(action, context);
 	}
 
 	public get actionsList(): HTMLElement {
@@ -362,7 +366,7 @@ export class OverflowActionBar extends ActionBar {
 		return this._overflow;
 	}
 
-	public get focusedItem(): number {
+	public get focusedItem(): number | undefined {
 		return this._focusedItem;
 	}
 }

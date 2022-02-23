@@ -14,6 +14,33 @@ const localize = nls.loadMessageBundle();
 const defaultInstallationRoot = '/usr/local/bin';
 export const KubeCtlToolName = 'kubectl';
 
+interface KubeCtlVersion {
+	clientVersion: {
+		gitVersion: string;
+	};
+}
+
+export interface KubeStorageClass {
+	apiVersion: string, // "storage.k8s.io/v1",
+	kind: string, // "StorageClass",
+	metadata: KubeStorageClassMetadata,
+	provisioner: string, // "kubernetes.io/no-provisioner",
+	reclaimPolicy: string, // "Delete",
+	volumeBindingMode: string, // "WaitForFirstConsumer"
+}
+
+export interface KubeStorageClassMetadata {
+	annotations: {
+		'kubectl.kubernetes.io/last-applied-configuration': string, // "{\"apiVersion\":\"storage.k8s.io/v1\",\"kind\":\"StorageClass\",\"metadata\":{\"annotations\":{},\"name\":\"local-storage\"},\"provisioner\":\"kubernetes.io/no-provisioner\",\"reclaimPolicy\":\"Delete\",\"volumeBindingMode\":\"WaitForFirstConsumer\"}\n",
+		'storageclass.kubernetes.io/is-default-class': string, // "true"
+	},
+	creationTimestamp: string, // "2020-08-17T19:55:23Z",
+	name: string, // "local-storage",
+	resourceVersion: string, // "256",
+	selfLink: string, // "/apis/storage.k8s.io/v1/storageclasses/local-storage",
+	uid: string, // "262615e9-618b-4052-b0d4-2ddd02794cb4"
+}
+
 export class KubeCtlTool extends ToolBase {
 	constructor(platformService: IPlatformService) {
 		super(platformService);
@@ -39,11 +66,25 @@ export class KubeCtlTool extends ToolBase {
 		return 'https://kubernetes.io/docs/tasks/tools/install-kubectl';
 	}
 
+	public async getStorageClasses(): Promise<{ storageClasses: string[], defaultStorageClass: string }> {
+		// Ignore any values without metadata - that should never happen but if it doesn't we don't have anything useful to do with it anyways
+		const storageClasses = (JSON.parse(await this.platformService.runCommand('kubectl get sc -o json')).items as KubeStorageClass[])
+			.filter(sc => sc.metadata);
+		return {
+			storageClasses: storageClasses.map(sc => sc.metadata.name),
+			defaultStorageClass: storageClasses.find(sc => sc.metadata.annotations?.['storageclass.kubernetes.io/is-default-class'] === 'true')?.metadata.name ?? ''
+		};
+	}
+
 	protected getVersionFromOutput(output: string): SemVer | undefined {
 		let version: SemVer | undefined = undefined;
 		if (output) {
-			const versionJson = JSON.parse(output);
-			version = new SemVer(`${versionJson.clientVersion.major}.${versionJson.clientVersion.minor}.0`);
+			const versionJson: KubeCtlVersion = JSON.parse(output);
+			if (versionJson && versionJson.clientVersion && versionJson.clientVersion.gitVersion) {
+				version = new SemVer(versionJson.clientVersion.gitVersion);
+			} else {
+				throw new Error(localize('resourceDeployment.invalidKubectlVersionOutput', "Unable to parse the kubectl version command output: \"{0}\"", output));
+			}
 		}
 		return version;
 	}
@@ -57,7 +98,7 @@ export class KubeCtlTool extends ToolBase {
 			command: this.discoveryCommandString('kubectl')
 		};
 	}
-	protected async getSearchPaths(): Promise<string[]> {
+	protected override async getSearchPaths(): Promise<string[]> {
 		switch (this.osDistribution) {
 			case OsDistribution.win32:
 				return [this.storagePath];
@@ -72,7 +113,7 @@ export class KubeCtlTool extends ToolBase {
 		[OsDistribution.others, defaultInstallationCommands]
 	]);
 
-	protected dependenciesByOsType: Map<OsDistribution, dependencyType[]> = new Map<OsDistribution, dependencyType[]>([
+	protected override dependenciesByOsType: Map<OsDistribution, dependencyType[]> = new Map<OsDistribution, dependencyType[]>([
 		[OsDistribution.debian, []],
 		[OsDistribution.win32, []],
 		[OsDistribution.darwin, [dependencyType.Brew]],

@@ -47,6 +47,8 @@ interface NodeRequire {
 	onError: Function;
 	__$__nodeRequire<T>(moduleName: string): T;
 	getStats(): ReadonlyArray<LoaderEvent>;
+	hasDependencyCycle(): boolean;
+	define(amdModuleId: string, dependencies: string[], callback: (...args: any[]) => any): any;
 }
 
 declare var require: NodeRequire;

@@ -79,11 +79,14 @@ function createContext(): TestContext {
 			subscriptions: [],
 			workspaceState: {
 				get: () => {return undefined;},
-				update: () => {return Promise.resolve();}
+				update: () => {return Promise.resolve();},
+				keys: () => []
 			},
 			globalState: {
-				get:  () => {return Promise.resolve();},
-				update: () => {return Promise.resolve();}
+				setKeysForSync: (): void => { },
+				get: (): any | undefined  => { return Promise.resolve();  },
+				update: (): Thenable<void> => { return Promise.resolve(); },
+				keys: () => []
 			},
 			extensionPath: extensionPath,
 			asAbsolutePath: () => {return '';},
@@ -91,7 +94,13 @@ function createContext(): TestContext {
 			globalStoragePath: '',
 			logPath: '',
 			extensionUri: vscode.Uri.parse(''),
-			environmentVariableCollection: { } as any
+			environmentVariableCollection: { } as any,
+			extensionMode: undefined as any,
+			globalStorageUri: vscode.Uri.parse('test://'),
+			logUri: vscode.Uri.parse('test://'),
+			storageUri: undefined,
+			secrets: undefined as any,
+			extension: undefined as any
 		},
 		outputChannel: {
 			name: '',

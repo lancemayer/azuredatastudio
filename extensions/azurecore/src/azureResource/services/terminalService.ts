@@ -2,14 +2,14 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-
+import * as azdata from 'azdata';
 import * as vscode from 'vscode';
 import * as nls from 'vscode-nls';
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
 import * as WS from 'ws';
 
 import { IAzureTerminalService } from '../interfaces';
-import { AzureAccount, AzureAccountSecurityToken, Tenant } from '../../account-provider/interfaces';
+import { AzureAccount, Tenant } from 'azurecore';
 
 const localize = nls.loadMessageBundle();
 
@@ -37,7 +37,7 @@ const handleNeverUsed = async (): Promise<void> => {
 	const option = await vscode.window.showInformationMessage<TerminalMessageItem>(neverUsedString, openAzureShellButton, okButton);
 
 	if (option.action === TerminalOption.OPEN_SITE) {
-		vscode.env.openExternal(vscode.Uri.parse('https://aka.ms/AA83f8f'));
+		void vscode.env.openExternal(vscode.Uri.parse('https://aka.ms/AA83f8f'));
 	}
 };
 
@@ -48,13 +48,13 @@ export class AzureTerminalService implements IAzureTerminalService {
 
 	}
 
-	public async getOrCreateCloudConsole(account: AzureAccount, tenant: Tenant, tokens: { [key: string]: AzureAccountSecurityToken }): Promise<void> {
-		const token = tokens[tenant.id].token;
+	public async getOrCreateCloudConsole(account: AzureAccount, tenant: Tenant): Promise<void> {
+		const token = await azdata.accounts.getAccountSecurityToken(account, tenant.id, azdata.AzureResource.MicrosoftResourceManagement);
 		const settings: AxiosRequestConfig = {
 			headers: {
 				'Accept': 'application/json',
 				'Content-Type': 'application/json',
-				'Authorization': `Bearer ${token}`
+				'Authorization': `Bearer ${token.token}`
 			},
 			validateStatus: () => true
 		};
@@ -93,7 +93,7 @@ export class AzureTerminalService implements IAzureTerminalService {
 		}
 		const consoleUri = provisionResult.data.properties.uri;
 
-		return this.createTerminal(consoleUri, token, account.displayInfo.displayName, preferredShell);
+		return this.createTerminal(consoleUri, token.token, account.displayInfo.displayName, preferredShell);
 	}
 
 
@@ -103,7 +103,7 @@ export class AzureTerminalService implements IAzureTerminalService {
 			}
 		}
 
-		const shells = [new ShellType('PowerShell', 'pwsh'), new ShellType('Bash', 'bash'),];
+		const shells = [new ShellType('PowerShell', 'pwsh'), new ShellType('Bash', 'bash')];
 		const idx = shells.findIndex(s => s.value === preferredShell);
 
 		const prefShell = shells.splice(idx, 1);
@@ -115,7 +115,7 @@ export class AzureTerminalService implements IAzureTerminalService {
 		});
 
 		if (!shell) {
-			vscode.window.showErrorMessage(localize('azure.shellTypeRequired', "You must pick a shell type"));
+			void vscode.window.showErrorMessage(localize('azure.shellTypeRequired', "You must pick a shell type"));
 			return;
 		}
 
@@ -157,7 +157,7 @@ class AzureTerminal implements vscode.Pseudoterminal {
 	}
 
 	async open(initialDimensions: vscode.TerminalDimensions): Promise<void> {
-		this.setDimensions(initialDimensions);
+		await this.setDimensions(initialDimensions);
 	}
 
 	close(): void {
@@ -167,14 +167,19 @@ class AzureTerminal implements vscode.Pseudoterminal {
 		this.socket.removeAllListeners('message');
 		this.socket.removeAllListeners('close');
 
-		this.socket.terminate();
+		this.socket.close();
+
 		if (this.intervalTimer) {
 			clearInterval(this.intervalTimer);
 		}
 	}
 
+	private areSameDimensions(oldDimensions: vscode.TerminalDimensions | undefined, newDimensions: vscode.TerminalDimensions): boolean {
+		return oldDimensions?.columns === newDimensions.columns && oldDimensions?.rows === newDimensions.rows;
+	}
+
 	async setDimensions(dimensions: vscode.TerminalDimensions): Promise<void> {
-		if (!dimensions) {
+		if (!dimensions || this.areSameDimensions(this.terminalDimensions, dimensions)) {
 			return;
 		}
 		this.terminalDimensions = dimensions;
@@ -231,7 +236,7 @@ class AzureTerminal implements vscode.Pseudoterminal {
 		const terminalUri = terminalResult.data?.socketUri;
 
 		if (terminalResult.data.error) {
-			vscode.window.showErrorMessage(terminalResult.data.error.message);
+			void vscode.window.showErrorMessage(terminalResult.data.error.message);
 		}
 
 		if (!terminalUri) {

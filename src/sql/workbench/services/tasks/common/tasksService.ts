@@ -8,12 +8,11 @@ import { TaskNode, TaskStatus, TaskExecutionMode } from 'sql/workbench/services/
 import { IQueryEditorService } from 'sql/workbench/services/queryEditor/common/queryEditorService';
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
 import { Event, Emitter } from 'vs/base/common/event';
-import { ILifecycleService } from 'vs/platform/lifecycle/common/lifecycle';
+import { ILifecycleService } from 'vs/workbench/services/lifecycle/common/lifecycle';
 import { localize } from 'vs/nls';
 import Severity from 'vs/base/common/severity';
 import { IDialogService } from 'vs/platform/dialogs/common/dialogs';
 import { IConnectionManagementService } from 'sql/platform/connection/common/connectionManagement';
-import { find } from 'vs/base/common/arrays';
 
 export const SERVICE_ID = 'taskHistoryService';
 export const ITaskService = createDecorator<ITaskService>(SERVICE_ID);
@@ -60,9 +59,7 @@ export class TaskService implements ITaskService {
 		this._taskQueue = new TaskNode('Root');
 		this._onTaskComplete = new Emitter<TaskNode>();
 		this._onAddNewTask = new Emitter<TaskNode>();
-
-		lifecycleService.onBeforeShutdown(event => event.veto(this.beforeShutdown()));
-
+		lifecycleService.onBeforeShutdown(event => event.veto(this.beforeShutdown(), 'veto.taskservice'));
 	}
 
 	/**
@@ -77,7 +74,7 @@ export class TaskService implements ITaskService {
 	}
 
 	public createNewTask(taskInfo: azdata.TaskInfo) {
-		let databaseName: string = taskInfo.databaseName;
+		let databaseName: string | undefined = taskInfo.databaseName;
 		let serverName: string = taskInfo.serverName;
 		if (taskInfo && taskInfo.connection) {
 			let connectionProfile = this.connectionManagementService.getConnectionProfile(taskInfo.connection.connectionId);
@@ -227,7 +224,7 @@ export class TaskService implements ITaskService {
 
 	private getTaskInQueue(taskId: string): TaskNode | undefined {
 		if (this._taskQueue.hasChildren) {
-			return find(this._taskQueue.children!, x => x.id === taskId);
+			return this._taskQueue.children!.find(x => x.id === taskId);
 		}
 		return undefined;
 	}

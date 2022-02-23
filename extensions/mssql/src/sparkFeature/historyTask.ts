@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import { AppContext } from '../appContext';
 import { getErrorMessage } from '../utils';
 import * as SqlClusterLookUp from '../sqlClusterLookUp';
+import * as loc from '../localizedConstants';
 
 export class OpenSparkYarnHistoryTask {
 	constructor(private appContext: AppContext) {
@@ -15,20 +16,20 @@ export class OpenSparkYarnHistoryTask {
 
 	async execute(sqlConnProfile: azdata.IConnectionProfile, isSpark: boolean): Promise<void> {
 		try {
-			let sqlClusterConnection = SqlClusterLookUp.findSqlClusterConnection(sqlConnProfile, this.appContext);
+			let sqlClusterConnection = await SqlClusterLookUp.findSqlClusterConnection(sqlConnProfile, this.appContext);
 			if (!sqlClusterConnection) {
 				let name = isSpark ? 'Spark' : 'Yarn';
-				this.appContext.apiWrapper.showErrorMessage(`Please connect to the Spark cluster before View ${name} History.`);
+				void vscode.window.showErrorMessage(loc.sparkConnectionRequired(name));
 				return;
 			}
 			if (isSpark) {
-				vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(this.generateSparkHistoryUrl(sqlClusterConnection.host, sqlClusterConnection.port)));
+				void vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(this.generateSparkHistoryUrl(sqlClusterConnection.host, sqlClusterConnection.port)));
 			}
 			else {
-				vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(this.generateYarnHistoryUrl(sqlClusterConnection.host, sqlClusterConnection.port)));
+				void vscode.commands.executeCommand('vscode.open', vscode.Uri.parse(this.generateYarnHistoryUrl(sqlClusterConnection.host, sqlClusterConnection.port)));
 			}
 		} catch (error) {
-			this.appContext.apiWrapper.showErrorMessage(getErrorMessage(error));
+			void vscode.window.showErrorMessage(getErrorMessage(error));
 		}
 	}
 

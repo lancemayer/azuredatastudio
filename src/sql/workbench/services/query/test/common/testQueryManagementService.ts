@@ -26,6 +26,9 @@ export class TestQueryManagementService implements IQueryManagementService {
 	registerRunner(runner: QueryRunner, uri: string): void {
 		return;
 	}
+	getRunner(uri: string): QueryRunner {
+		throw new Error('Method not implemented.');
+	}
 	async cancelQuery(ownerUri: string): Promise<azdata.QueryCancelResult> {
 		return { messages: undefined };
 	}
@@ -49,6 +52,9 @@ export class TestQueryManagementService implements IQueryManagementService {
 	}
 	async disposeQuery(ownerUri: string): Promise<void> {
 		return;
+	}
+	changeConnectionUri(newUri: string, oldUri: string): Promise<void> {
+		throw new Error('Method not implemented.');
 	}
 	saveResults(requestParams: azdata.SaveResultsRequestParams): Promise<azdata.SaveResultRequestResult> {
 		throw new Error('Method not implemented.');

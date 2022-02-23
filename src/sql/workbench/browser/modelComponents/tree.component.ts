@@ -27,6 +27,8 @@ import { values } from 'vs/base/common/collections';
 import { IThemeService } from 'vs/platform/theme/common/themeService';
 import { IComponentDescriptor, IComponent, IModelStore } from 'sql/platform/dashboard/browser/interfaces';
 import { convertSizeToNumber } from 'sql/base/browser/dom';
+import { ILogService } from 'vs/platform/log/common/log';
+import { INotificationService } from 'vs/platform/notification/common/notification';
 
 class Root implements ITreeComponentItem {
 	label = {
@@ -42,10 +44,10 @@ class Root implements ITreeComponentItem {
 @Component({
 	selector: 'modelview-tree',
 	template: `
-		<div #input style="width: 100%;height:100%"></div>
+		<div #input [ngStyle]="CSSStyles"></div>
 	`
 })
-export default class TreeComponent extends ComponentBase implements IComponent, OnDestroy, AfterViewInit {
+export default class TreeComponent extends ComponentBase<azdata.TreeProperties> implements IComponent, OnDestroy, AfterViewInit {
 	@Input() descriptor: IComponentDescriptor;
 	@Input() modelStore: IModelStore;
 	private _tree: Tree;
@@ -57,32 +59,30 @@ export default class TreeComponent extends ComponentBase implements IComponent, 
 		@Inject(forwardRef(() => ChangeDetectorRef)) changeRef: ChangeDetectorRef,
 		@Inject(IThemeService) private themeService: IThemeService,
 		@Inject(IInstantiationService) private _instantiationService: IInstantiationService,
-		@Inject(forwardRef(() => ElementRef)) el: ElementRef
+		@Inject(forwardRef(() => ElementRef)) el: ElementRef,
+		@Inject(ILogService) logService: ILogService,
+		@Inject(INotificationService) private _notificationService: INotificationService
 	) {
-		super(changeRef, el);
-	}
-
-	ngOnInit(): void {
-		this.baseInit();
-
+		super(changeRef, el, logService);
 	}
 
 	ngAfterViewInit(): void {
 		if (this._inputContainer) {
 			this.createTreeControl();
 		}
+		this.baseInit();
 	}
 
-	ngOnDestroy(): void {
+	override ngOnDestroy(): void {
 		this.baseDestroy();
 	}
 
-	public setDataProvider(handle: number, componentId: string, context: any): any {
-		this._dataProvider = new TreeViewDataProvider(handle, componentId, context);
+	public override setDataProvider(handle: number, componentId: string, context: any): any {
+		this._dataProvider = new TreeViewDataProvider(handle, componentId, context, this._notificationService);
 		this.createTreeControl();
 	}
 
-	public refreshDataProvider(itemsToRefreshByHandle: { [treeItemHandle: string]: ITreeComponentItem }): void {
+	public override refreshDataProvider(itemsToRefreshByHandle: { [treeItemHandle: string]: ITreeComponentItem }): void {
 		if (this._dataProvider) {
 			this._dataProvider.getItemsToRefresh(itemsToRefreshByHandle);
 		}
@@ -110,7 +110,7 @@ export default class TreeComponent extends ComponentBase implements IComponent, 
 				{
 					indentPixels: 10,
 					twistiePixels: 20,
-					ariaLabel: 'Tree Node'
+					ariaLabel: this.ariaLabel
 				});
 			this._tree.setInput(new Root());
 			this._tree.domFocus();
@@ -135,7 +135,7 @@ export default class TreeComponent extends ComponentBase implements IComponent, 
 
 	/// IComponent implementation
 
-	public layout(): void {
+	public override layout(): void {
 		if (this._tree) {
 			this.layoutTree();
 			this._tree.refresh();
@@ -157,16 +157,32 @@ export default class TreeComponent extends ComponentBase implements IComponent, 
 		this.layout();
 	}
 
-	public setProperties(properties: { [key: string]: any; }): void {
+	public override setProperties(properties: { [key: string]: any; }): void {
 		super.setProperties(properties);
-		this._treeRenderer.options.withCheckbox = this.withCheckbox;
+		if (this._treeRenderer) {
+			this._treeRenderer.options.withCheckbox = this.withCheckbox;
+		}
+
+		if (this._tree) {
+			// If tree was already initialized, update its properties
+			if (this.ariaLabel) {
+				this._tree.ariaLabel = this.ariaLabel;
+			}
+		}
 	}
 
 	public get withCheckbox(): boolean {
-		return this.getPropertyOrDefault<azdata.TreeProperties, boolean>((props) => props.withCheckbox, false);
+		return this.getPropertyOrDefault<boolean>((props) => props.withCheckbox, false);
 	}
 
 	public set withCheckbox(newValue: boolean) {
-		this.setPropertyFromUI<azdata.TreeProperties, boolean>((properties, value) => { properties.withCheckbox = value; }, newValue);
+		this.setPropertyFromUI<boolean>((properties, value) => { properties.withCheckbox = value; }, newValue);
+	}
+
+	public override get CSSStyles(): azdata.CssStyles {
+		return this.mergeCss(super.CSSStyles, {
+			'width': '100%',
+			'height': '100%'
+		});
 	}
 }

@@ -10,7 +10,7 @@ import { Table } from 'sql/base/browser/ui/table/table';
 import { QueryEditor } from './queryEditor';
 import { CellSelectionModel } from 'sql/base/browser/ui/table/plugins/cellSelectionModel.plugin';
 import { IGridDataProvider } from 'sql/workbench/services/query/common/gridDataProvider';
-import { INotificationService } from 'vs/platform/notification/common/notification';
+import { INotificationService, Severity, NeverShowAgainScope } from 'vs/platform/notification/common/notification';
 import QueryRunner from 'sql/workbench/services/query/common/queryRunner';
 import { GridTableState } from 'sql/workbench/common/editor/query/gridTableState';
 import * as Constants from 'sql/workbench/contrib/extensions/common/constants';
@@ -18,7 +18,11 @@ import { IAdsTelemetryService } from 'sql/platform/telemetry/common/telemetry';
 import * as TelemetryKeys from 'sql/platform/telemetry/common/telemetryKeys';
 import { getErrorMessage } from 'vs/base/common/errors';
 import { SaveFormat } from 'sql/workbench/services/query/common/resultSerializer';
-import { IExtensionRecommendationsService } from 'vs/workbench/services/extensionManagement/common/extensionManagement';
+import { IExtensionRecommendationsService } from 'vs/workbench/services/extensionRecommendations/common/extensionRecommendations';
+import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
+import { IStorageService } from 'vs/platform/storage/common/storage';
+import { getChartMaxRowCount, notifyMaxRowCountExceeded } from 'sql/workbench/contrib/charts/browser/utils';
+import { IEncodingSupport } from 'vs/workbench/services/textfile/common/textfiles';
 
 export interface IGridActionContext {
 	gridDataProvider: IGridDataProvider;
@@ -61,23 +65,33 @@ export class SaveResultAction extends Action {
 		label: string,
 		icon: string,
 		private format: SaveFormat,
-		@INotificationService private notificationService: INotificationService
+		@INotificationService private notificationService: INotificationService,
+		@IEditorService private editorService: IEditorService,
 	) {
 		super(id, label, icon);
 	}
 
-	public async run(context: IGridActionContext): Promise<boolean> {
+	public override async run(context: IGridActionContext): Promise<void> {
+
+		const activeEditor = this.editorService.activeEditorPane as unknown as IEncodingSupport;
+		if (typeof activeEditor.getEncoding === 'function' && activeEditor.getEncoding() !== 'utf8') {
+			this.notificationService.notify({
+				severity: Severity.Info,
+				message: localize('jsonEncoding', "Results encoding will not be saved when exporting to JSON, remember to save with desired encoding once file is created."),
+				neverShowAgain: { id: 'ignoreJsonEncoding', scope: NeverShowAgainScope.GLOBAL }
+			});
+		}
+
 		if (!context.gridDataProvider.canSerialize) {
 			this.notificationService.warn(localize('saveToFileNotSupported', "Save to file is not supported by the backing data source"));
-			return false;
+			return;
 		}
 		try {
 			await context.gridDataProvider.serializeResults(this.format, mapForNumberColumn(context.selection));
 		} catch (error) {
 			this.notificationService.error(getErrorMessage(error));
-			return false;
+			return;
 		}
-		return true;
 	}
 }
 
@@ -92,20 +106,15 @@ export class CopyResultAction extends Action {
 		id: string,
 		label: string,
 		private copyHeader: boolean,
-		private accountForNumberColumn = true
+		@IConfigurationService private configurationService: IConfigurationService
 	) {
 		super(id, label);
 	}
 
-	public run(context: IGridActionContext): Promise<boolean> {
-		if (this.accountForNumberColumn) {
-			context.gridDataProvider.copyResults(
-				mapForNumberColumn(context.selection),
-				this.copyHeader);
-		} else {
-			context.gridDataProvider.copyResults(context.selection, this.copyHeader);
-		}
-		return Promise.resolve(true);
+	public override async run(context: IGridActionContext): Promise<void> {
+		const selection = mapForNumberColumn(context.selection);
+		const includeHeader = this.configurationService.getValue<boolean>('queryEditor.results.copyIncludeHeaders') || this.copyHeader;
+		await context.gridDataProvider.copyResults(selection, includeHeader, context.table.getData());
 	}
 }
 
@@ -117,9 +126,8 @@ export class SelectAllGridAction extends Action {
 		super(SelectAllGridAction.ID, SelectAllGridAction.LABEL);
 	}
 
-	public run(context: IGridActionContext): Promise<boolean> {
+	public override async run(context: IGridActionContext): Promise<void> {
 		context.selectionModel.setSelectedRanges([new Slick.Range(0, 0, context.table.getData().getLength() - 1, context.table.columns.length - 1)]);
-		return Promise.resolve(true);
 	}
 }
 
@@ -132,9 +140,8 @@ export class MaximizeTableAction extends Action {
 		super(MaximizeTableAction.ID, MaximizeTableAction.LABEL, MaximizeTableAction.ICON);
 	}
 
-	public run(context: IGridActionContext): Promise<boolean> {
+	public override async run(context: IGridActionContext): Promise<void> {
 		context.tableState.maximized = true;
-		return Promise.resolve(true);
 	}
 }
 
@@ -147,9 +154,8 @@ export class RestoreTableAction extends Action {
 		super(RestoreTableAction.ID, RestoreTableAction.LABEL, RestoreTableAction.ICON);
 	}
 
-	public run(context: IGridActionContext): Promise<boolean> {
+	public override async run(context: IGridActionContext): Promise<void> {
 		context.tableState.maximized = false;
-		return Promise.resolve(true);
 	}
 }
 
@@ -160,18 +166,32 @@ export class ChartDataAction extends Action {
 
 	constructor(
 		@IEditorService private editorService: IEditorService,
-		@IExtensionRecommendationsService private readonly extensionTipsService: IExtensionRecommendationsService
+		@IExtensionRecommendationsService private readonly extensionTipsService: IExtensionRecommendationsService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IStorageService private readonly storageService: IStorageService,
+		@INotificationService private readonly notificationService: INotificationService,
+		@IAdsTelemetryService private readonly adsTelemetryService: IAdsTelemetryService
 	) {
 		super(ChartDataAction.ID, ChartDataAction.LABEL, ChartDataAction.ICON);
 	}
 
-	public run(context: IGridActionContext): Promise<boolean> {
+	public override async run(context: IGridActionContext): Promise<void> {
 		// show the visualizer extension recommendation notification
 		this.extensionTipsService.promptRecommendedExtensionsByScenario(Constants.visualizerExtensions);
-
+		const maxRowCount = getChartMaxRowCount(this.configurationService);
+		const rowCount = context.table.getData().getLength();
+		const maxRowCountExceeded = rowCount > maxRowCount;
+		if (maxRowCountExceeded) {
+			notifyMaxRowCountExceeded(this.storageService, this.notificationService, this.configurationService);
+		}
+		this.adsTelemetryService.createActionEvent(TelemetryKeys.TelemetryView.ResultsPanel, TelemetryKeys.TelemetryAction.ShowChart)
+			.withAdditionalProperties(
+				{
+					[TelemetryKeys.TelemetryPropertyName.ChartMaxRowCountExceeded]: maxRowCountExceeded
+				})
+			.send();
 		const activeEditor = this.editorService.activeEditorPane as QueryEditor;
 		activeEditor.chart({ batchId: context.batchId, resultId: context.resultId });
-		return Promise.resolve(true);
 	}
 }
 
@@ -187,7 +207,7 @@ export class VisualizerDataAction extends Action {
 		super(VisualizerDataAction.ID, VisualizerDataAction.LABEL, VisualizerDataAction.ICON);
 	}
 
-	public run(context: IGridActionContext): Promise<boolean> {
+	public override async run(context: IGridActionContext): Promise<void> {
 		this.adsTelemetryService.sendActionEvent(
 			TelemetryKeys.TelemetryView.ResultsPanel,
 			TelemetryKeys.TelemetryAction.Click,
@@ -195,6 +215,5 @@ export class VisualizerDataAction extends Action {
 			'VisualizerDataAction'
 		);
 		this.runner.notifyVisualizeRequested(context.batchId, context.resultId);
-		return Promise.resolve(true);
 	}
 }

@@ -4,8 +4,15 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ConfigurationScope } from 'vs/platform/configuration/common/configurationRegistry';
+import { URI } from 'vs/base/common/uri';
+import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
+import { refineServiceDecorator } from 'vs/platform/instantiation/common/instantiation';
+import { Event } from 'vs/base/common/event';
+import { ResourceMap } from 'vs/base/common/map';
 
+// {{SQL CARBON EDIT}}
 export const FOLDER_CONFIG_FOLDER_NAME = '.azuredatastudio';
+export const TASKS_FOLDER_CONFIG_FOLDER_NAME = '.vscode';
 export const FOLDER_SETTINGS_NAME = 'settings';
 export const FOLDER_SETTINGS_PATH = `${FOLDER_CONFIG_FOLDER_NAME}/${FOLDER_SETTINGS_NAME}.json`;
 
@@ -26,7 +33,7 @@ export const TASKS_CONFIGURATION_KEY = 'tasks';
 export const LAUNCH_CONFIGURATION_KEY = 'launch';
 
 export const WORKSPACE_STANDALONE_CONFIGURATIONS = Object.create(null);
-WORKSPACE_STANDALONE_CONFIGURATIONS[TASKS_CONFIGURATION_KEY] = `${FOLDER_CONFIG_FOLDER_NAME}/${TASKS_CONFIGURATION_KEY}.json`;
+WORKSPACE_STANDALONE_CONFIGURATIONS[TASKS_CONFIGURATION_KEY] = `${TASKS_FOLDER_CONFIG_FOLDER_NAME}/${TASKS_CONFIGURATION_KEY}.json`;
 WORKSPACE_STANDALONE_CONFIGURATIONS[LAUNCH_CONFIGURATION_KEY] = `${FOLDER_CONFIG_FOLDER_NAME}/${LAUNCH_CONFIGURATION_KEY}.json`;
 export const USER_STANDALONE_CONFIGURATIONS = Object.create(null);
 USER_STANDALONE_CONFIGURATIONS[TASKS_CONFIGURATION_KEY] = `${TASKS_CONFIGURATION_KEY}.json`;
@@ -35,10 +42,38 @@ export type ConfigurationKey = { type: 'user' | 'workspaces' | 'folder', key: st
 
 export interface IConfigurationCache {
 
+	needsCaching(resource: URI): boolean;
 	read(key: ConfigurationKey): Promise<string>;
 	write(key: ConfigurationKey, content: string): Promise<void>;
 	remove(key: ConfigurationKey): Promise<void>;
 
+}
+
+export type RestrictedSettings = {
+	default: ReadonlyArray<string>;
+	userLocal?: ReadonlyArray<string>;
+	userRemote?: ReadonlyArray<string>;
+	workspace?: ReadonlyArray<string>;
+	workspaceFolder?: ResourceMap<ReadonlyArray<string>>;
+};
+
+export const IWorkbenchConfigurationService = refineServiceDecorator<IConfigurationService, IWorkbenchConfigurationService>(IConfigurationService);
+export interface IWorkbenchConfigurationService extends IConfigurationService {
+	/**
+	 * Restricted settings defined in each configuraiton target
+	 */
+	readonly restrictedSettings: RestrictedSettings;
+
+	/**
+	 * Event that triggers when the restricted settings changes
+	 */
+	readonly onDidChangeRestrictedSettings: Event<RestrictedSettings>;
+
+	/**
+	 * A promise that resolves when the remote configuration is loaded in a remote window.
+	 * The promise is resolved immediately if the window is not remote.
+	 */
+	whenRemoteConfigurationLoaded(): Promise<void>;
 }
 
 export const TASKS_DEFAULT = '{\n\t\"version\": \"2.0.0\",\n\t\"tasks\": []\n}';

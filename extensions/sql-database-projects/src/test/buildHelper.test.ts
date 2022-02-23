@@ -11,16 +11,29 @@ import { BuildHelper } from '../tools/buildHelper';
 
 describe('BuildHelper: Build Helper tests', function (): void {
 
-	it('Should get correct build arguments', async function (): Promise<void> {
+	it('Should get correct build arguments', function (): void {
 		// update settings and validate
 		const buildHelper = new BuildHelper();
-		const resultArg = buildHelper.constructBuildArguments('dummy\\project path\\more space in path', 'dummy\\dll path');
+		const resultArg = buildHelper.constructBuildArguments('dummy\\project path\\more space in path', 'dummy\\dll path', false);
 
 		if (os.platform() === 'win32') {
 			should(resultArg).equal(' build "dummy\\\\project path\\\\more space in path" /p:NetCoreBuild=true /p:NETCoreTargetsPath="dummy\\\\dll path"');
 		}
 		else {
 			should(resultArg).equal(' build "dummy/project path/more space in path" /p:NetCoreBuild=true /p:NETCoreTargetsPath="dummy/dll path"');
+		}
+	});
+
+	it('Should get correct build arguments for sdk style projects', function (): void {
+		// update settings and validate
+		const buildHelper = new BuildHelper();
+		const resultArg = buildHelper.constructBuildArguments('dummy\\project path\\more space in path', 'dummy\\dll path', true);
+
+		if (os.platform() === 'win32') {
+			should(resultArg).equal(' build "dummy\\\\project path\\\\more space in path" /p:NetCoreBuild=true /p:SystemDacpacsLocation=="dummy\\\\dll path"');
+		}
+		else {
+			should(resultArg).equal(' build "dummy/project path/more space in path" /p:NetCoreBuild=true /p:SystemDacpacsLocation="dummy/dll path"');
 		}
 	});
 

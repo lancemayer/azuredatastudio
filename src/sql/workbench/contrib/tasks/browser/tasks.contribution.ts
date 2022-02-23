@@ -12,7 +12,7 @@ import * as lifecycle from 'vs/base/common/lifecycle';
 import * as ext from 'vs/workbench/common/contributions';
 import { ITaskService } from 'sql/workbench/services/tasks/common/tasksService';
 import { IActivityService, NumberBadge } from 'vs/workbench/services/activity/common/activity';
-import { LifecyclePhase } from 'vs/platform/lifecycle/common/lifecycle';
+import { LifecyclePhase } from 'vs/workbench/services/lifecycle/common/lifecycle';
 import { IPanelService } from 'vs/workbench/services/panel/common/panelService';
 import { ToggleTasksAction } from 'sql/workbench/contrib/tasks/browser/tasksActions';
 import { ViewPaneContainer } from 'vs/workbench/browser/parts/views/viewPaneContainer';
@@ -24,7 +24,7 @@ import { TaskHistoryView } from 'sql/workbench/contrib/tasks/browser/tasksView';
 export class StatusUpdater extends lifecycle.Disposable implements ext.IWorkbenchContribution {
 	static ID = 'data.taskhistory.statusUpdater';
 
-	private badgeHandle: lifecycle.IDisposable;
+	private badgeHandle?: lifecycle.IDisposable;
 
 	constructor(
 		@IActivityService private readonly activityBarService: IActivityService,
@@ -55,7 +55,7 @@ export class StatusUpdater extends lifecycle.Disposable implements ext.IWorkbenc
 		return StatusUpdater.ID;
 	}
 
-	public dispose(): void {
+	public override dispose(): void {
 		lifecycle.dispose(this.badgeHandle);
 		super.dispose();
 	}
@@ -75,14 +75,11 @@ registry.registerWorkbenchAction(
 // markers view container
 const VIEW_CONTAINER: ViewContainer = Registry.as<IViewContainersRegistry>(ViewContainerExtensions.ViewContainersRegistry).registerViewContainer({
 	id: TASKS_CONTAINER_ID,
-	name: localize('tasks', "Tasks"),
+	title: localize('tasks', "Tasks"),
 	hideIfEmpty: true,
 	order: 20,
 	ctorDescriptor: new SyncDescriptor(ViewPaneContainer, [TASKS_CONTAINER_ID, { mergeViewWithContainerWhenSingleView: true, donotShowContainerTitleWhenMergedWithContainer: true }]),
-	storageId: `${TASKS_CONTAINER_ID}.storage`,
-	focusCommand: {
-		id: ToggleTasksAction.ID
-	}
+	storageId: `${TASKS_CONTAINER_ID}.storage`
 }, ViewContainerLocation.Panel);
 
 Registry.as<IViewsRegistry>(ViewContainerExtensions.ViewsRegistry).registerViews([{

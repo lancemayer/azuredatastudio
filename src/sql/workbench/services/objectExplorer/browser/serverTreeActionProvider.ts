@@ -4,13 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ITree } from 'vs/base/parts/tree/browser/tree';
-import { IAction } from 'vs/base/common/actions';
+import { IAction, Separator } from 'vs/base/common/actions';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import { IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
 
 import {
-	DisconnectConnectionAction, AddServerAction, EditConnectionAction,
-	DeleteConnectionAction, RefreshAction, EditServerGroupAction
+	DisconnectConnectionAction, EditConnectionAction,
+	DeleteConnectionAction, RefreshAction, EditServerGroupAction, AddServerAction
 } from 'sql/workbench/services/objectExplorer/browser/connectionTreeAction';
 import { TreeNode } from 'sql/workbench/services/objectExplorer/common/treeNode';
 import { NodeType } from 'sql/workbench/services/objectExplorer/common/nodeType';
@@ -24,8 +24,8 @@ import { TreeNodeContextKey } from 'sql/workbench/services/objectExplorer/common
 import { IQueryManagementService } from 'sql/workbench/services/query/common/queryManagement';
 import { ServerInfoContextKey } from 'sql/workbench/services/connection/common/serverInfoContextKey';
 import { fillInActions } from 'vs/platform/actions/browser/menuEntryActionViewItem';
-import { Separator } from 'vs/base/browser/ui/actionbar/actionbar';
-import { firstIndex, find } from 'vs/base/common/arrays';
+import { AsyncServerTree, ServerTreeElement } from 'sql/workbench/services/objectExplorer/browser/asyncServerTree';
+import { ICapabilitiesService } from 'sql/platform/capabilities/common/capabilitiesService';
 
 /**
  *  Provides actions for the server tree elements
@@ -37,44 +37,40 @@ export class ServerTreeActionProvider {
 		@IConnectionManagementService private _connectionManagementService: IConnectionManagementService,
 		@IQueryManagementService private _queryManagementService: IQueryManagementService,
 		@IMenuService private menuService: IMenuService,
-		@IContextKeyService private _contextKeyService: IContextKeyService
+		@IContextKeyService private _contextKeyService: IContextKeyService,
+		@ICapabilitiesService private _capabilitiesService: ICapabilitiesService
 	) {
-	}
-
-	public hasActions(tree: ITree, element: any): boolean {
-		return element instanceof ConnectionProfileGroup || (element instanceof ConnectionProfile) || (element instanceof TreeNode);
 	}
 
 	/**
 	 * Return actions given an element in the tree
 	 */
-	public getActions(tree: ITree, element: any): IAction[] {
+	public getActions(tree: AsyncServerTree | ITree, element: ServerTreeElement): IAction[] {
 		if (element instanceof ConnectionProfile) {
 			return this.getConnectionActions(tree, element);
 		}
 		if (element instanceof ConnectionProfileGroup) {
-			return this.getConnectionProfileGroupActions(tree, element);
+			return this.getConnectionProfileGroupActions(element);
 		}
 		if (element instanceof TreeNode) {
-			return this.getObjectExplorerNodeActions({
-				tree: tree,
-				profile: element.getConnectionProfile(),
-				treeNode: element
-			});
+			const profile = element.getConnectionProfile();
+			if (profile) {
+				return this.getObjectExplorerNodeActions({
+					tree: tree,
+					profile,
+					treeNode: element
+				});
+			}
 		}
-
 		return [];
-	}
-
-	public hasSecondaryActions(tree: ITree, element: any): boolean {
-		return false;
 	}
 
 	/**
 	 * Return actions for connection elements
 	 */
-	public getConnectionActions(tree: ITree, profile: ConnectionProfile): IAction[] {
+	private getConnectionActions(tree: AsyncServerTree | ITree, profile: ConnectionProfile): IAction[] {
 		let node = new TreeNode(NodeType.Server, '', false, '', '', '', undefined, undefined, undefined, undefined);
+		node.connection = profile;
 		return this.getAllActions({
 			tree: tree,
 			profile: profile,
@@ -89,15 +85,17 @@ export class ServerTreeActionProvider {
 
 		// Fill in all actions
 		const builtIn = getDefaultActions(context);
-		const actions = [];
+		const actions: IAction[] = [];
 		const options = { arg: undefined, shouldForwardArgs: true };
 		const groups = menu.getActions(options);
 		let insertIndex: number | undefined = 0;
-		const queryIndex = firstIndex(groups, v => {
+		const queryIndex = groups.findIndex(v => {
 			if (v[0] === '0_query') {
 				return true;
 			} else {
-				insertIndex += v[1].length;
+				if (v[1].length) {
+					insertIndex! += v[1].length;
+				}
 				return false;
 			}
 		});
@@ -108,7 +106,7 @@ export class ServerTreeActionProvider {
 			if (!(actions[insertIndex] instanceof Separator) && builtIn.length > 0) {
 				builtIn.unshift(new Separator());
 			}
-			actions.splice(insertIndex, 0, ...builtIn);
+			actions?.splice(insertIndex, 0, ...builtIn);
 		} else {
 			if (actions.length > 0 && builtIn.length > 0) {
 				builtIn.push(new Separator());
@@ -140,16 +138,18 @@ export class ServerTreeActionProvider {
 	}
 
 	private getContextKeyService(context: ObjectExplorerContext): IContextKeyService {
-		let scopedContextService = this._contextKeyService.createScoped();
+		let scopedContextService = this._contextKeyService.createScoped(context.tree.getHTMLElement());
 		let connectionContextKey = new ConnectionContextKey(scopedContextService, this._queryManagementService);
 		let connectionProfile = context && context.profile;
 		connectionContextKey.set(connectionProfile);
 		let serverInfoContextKey = new ServerInfoContextKey(scopedContextService);
 		if (connectionProfile.id) {
 			let serverInfo = this._connectionManagementService.getServerInfo(connectionProfile.id);
-			serverInfoContextKey.set(serverInfo);
+			if (serverInfo) {
+				serverInfoContextKey.set(serverInfo);
+			}
 		}
-		let treeNodeContextKey = new TreeNodeContextKey(scopedContextService);
+		let treeNodeContextKey = new TreeNodeContextKey(scopedContextService, this._capabilitiesService);
 		if (context.treeNode) {
 			treeNodeContextKey.set(context.treeNode);
 		}
@@ -159,7 +159,8 @@ export class ServerTreeActionProvider {
 	/**
 	 * Return actions for connection group elements
 	 */
-	public getConnectionProfileGroupActions(tree: ITree, element: ConnectionProfileGroup): IAction[] {
+	private getConnectionProfileGroupActions(element: ConnectionProfileGroup): IAction[] {
+		// TODO: Should look into using the MenuRegistry for this
 		return [
 			this._instantiationService.createInstance(AddServerAction, AddServerAction.ID, AddServerAction.LABEL),
 			this._instantiationService.createInstance(EditServerGroupAction, EditServerGroupAction.ID, EditServerGroupAction.LABEL, element),
@@ -177,13 +178,14 @@ export class ServerTreeActionProvider {
 	private getBuiltInNodeActions(context: ObjectExplorerContext): IAction[] {
 		let actions: IAction[] = [];
 		let treeNode = context.treeNode;
-		if (TreeUpdateUtils.isDatabaseNode(treeNode)) {
-			if (TreeUpdateUtils.isAvailableDatabaseNode(treeNode)) {
-			} else {
-				return actions;
+		if (treeNode) {
+			if (TreeUpdateUtils.isDatabaseNode(treeNode)) {
+				if (TreeUpdateUtils.isAvailableDatabaseNode(treeNode)) {
+				} else {
+					return actions;
+				}
 			}
 		}
-
 		// Contribute refresh action for scriptable objects via contribution
 		if (!this.isScriptableObject(context)) {
 			actions.push(this._instantiationService.createInstance(RefreshAction, RefreshAction.ID, RefreshAction.LABEL, context.tree, context.treeNode || context.profile));
@@ -194,7 +196,7 @@ export class ServerTreeActionProvider {
 
 	private isScriptableObject(context: ObjectExplorerContext): boolean {
 		if (context.treeNode) {
-			if (find(NodeType.SCRIPTABLE_OBJECTS, x => x === context.treeNode.nodeTypeId)) {
+			if (NodeType.SCRIPTABLE_OBJECTS.find(x => x === context?.treeNode?.nodeTypeId)) {
 				return true;
 			}
 		}
@@ -203,7 +205,7 @@ export class ServerTreeActionProvider {
 }
 
 interface ObjectExplorerContext {
-	tree: ITree;
+	tree: AsyncServerTree | ITree;
 	profile: ConnectionProfile;
 	treeNode?: TreeNode;
 }

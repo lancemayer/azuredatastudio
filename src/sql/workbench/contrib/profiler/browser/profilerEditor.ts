@@ -24,7 +24,7 @@ import { URI } from 'vs/base/common/uri';
 import { Schemas } from 'vs/base/common/network';
 import * as nls from 'vs/nls';
 import { IModelService } from 'vs/editor/common/services/modelService';
-import { IDisposable } from 'vs/base/common/lifecycle';
+import { DisposableStore, IDisposable } from 'vs/base/common/lifecycle';
 import { Command } from 'vs/editor/browser/editorExtensions';
 import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
 import { KeyMod, KeyCode } from 'vs/base/common/keyCodes';
@@ -33,13 +33,12 @@ import { KeybindingWeight } from 'vs/platform/keybinding/common/keybindingsRegis
 import { CommonFindController, FindStartFocusAction } from 'vs/editor/contrib/find/findController';
 import * as types from 'vs/base/common/types';
 import { attachSelectBoxStyler } from 'vs/platform/theme/common/styler';
-import { DARK, HIGH_CONTRAST } from 'vs/platform/theme/common/themeService';
+import { ColorScheme } from 'vs/platform/theme/common/theme';
 import { CancellationToken } from 'vs/base/common/cancellation';
 import { IStorageService } from 'vs/platform/storage/common/storage';
 import { IView, SplitView, Sizing } from 'vs/base/browser/ui/splitview/splitview';
 import * as DOM from 'vs/base/browser/dom';
-import { BaseEditor } from 'vs/workbench/browser/parts/editor/baseEditor';
-import { EditorOptions } from 'vs/workbench/common/editor';
+import { EditorPane } from 'vs/workbench/browser/parts/editor/editorPane';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { IWorkbenchThemeService, VS_DARK_THEME, VS_HC_THEME } from 'vs/workbench/services/themes/common/workbenchThemeService';
 import { IInstantiationService, ServicesAccessor } from 'vs/platform/instantiation/common/instantiation';
@@ -50,10 +49,11 @@ import { IClipboardService } from 'sql/platform/clipboard/common/clipboardServic
 import { CellSelectionModel } from 'sql/base/browser/ui/table/plugins/cellSelectionModel.plugin';
 import { handleCopyRequest } from 'sql/workbench/contrib/profiler/browser/profilerCopyHandler';
 import { ITextResourcePropertiesService } from 'vs/editor/common/services/textResourceConfigurationService';
-import { find } from 'vs/base/common/arrays';
 import { UntitledTextEditorInput } from 'vs/workbench/services/untitled/common/untitledTextEditorInput';
 import { attachTabbedPanelStyler } from 'sql/workbench/common/styler';
 import { UntitledTextEditorModel } from 'vs/workbench/services/untitled/common/untitledTextEditorModel';
+import { IEditorOptions } from 'vs/platform/editor/common/editor';
+import { IEditorGroup, IEditorGroupsService } from 'vs/workbench/services/editor/common/editorGroupsService';
 
 class BasicView implements IView {
 	public get element(): HTMLElement {
@@ -117,7 +117,9 @@ export interface IDetailData {
 	value: string;
 }
 
-export class ProfilerEditor extends BaseEditor {
+let ProfilerEditorInstanceId = 0;
+
+export class ProfilerEditor extends EditorPane {
 	public static readonly ID: string = 'workbench.editor.profiler';
 
 	private _untitledTextEditorModel: UntitledTextEditorModel;
@@ -156,6 +158,7 @@ export class ProfilerEditor extends BaseEditor {
 
 	private _savedTableViewStates = new Map<ProfilerInput, ProfilerTableViewState>();
 
+	private readonly _disposables = new DisposableStore();
 	constructor(
 		@ITelemetryService telemetryService: ITelemetryService,
 		@IWorkbenchThemeService themeService: IWorkbenchThemeService,
@@ -167,21 +170,32 @@ export class ProfilerEditor extends BaseEditor {
 		@IEditorService editorService: IEditorService,
 		@IStorageService storageService: IStorageService,
 		@IClipboardService private _clipboardService: IClipboardService,
-		@ITextResourcePropertiesService private readonly textResourcePropertiesService: ITextResourcePropertiesService
+		@ITextResourcePropertiesService private readonly textResourcePropertiesService: ITextResourcePropertiesService,
+		@IEditorGroupsService editorGroupsService: IEditorGroupsService
 	) {
 		super(ProfilerEditor.ID, telemetryService, themeService, storageService);
 		this._profilerEditorContextKey = CONTEXT_PROFILER_EDITOR.bindTo(this._contextKeyService);
 
-		if (editorService) {
-			editorService.overrideOpenEditor({
-				open: (editor, options, group) => {
-					if (this.isVisible() && (editor !== this.input || group !== this.group)) {
-						this.saveEditorViewState();
-					}
-					return {};
-				}
-			});
+		if (editorGroupsService) {
+			// Add all the initial groups to be listened to
+			editorGroupsService.whenReady.then(() => editorGroupsService.groups.forEach(group => {
+				this.registerGroupListener(group);
+			}));
+
+			// Additional groups added should also be listened to
+			this._register(editorGroupsService.onDidAddGroup((group) => this.registerGroupListener(group)));
+
+			this._register(this._disposables);
 		}
+	}
+
+	private registerGroupListener(group: IEditorGroup): void {
+		const listener = group.onWillOpenEditor(e => {
+			if (this.isVisible() && (e.editor !== this.input || group !== this.group)) {
+				this.saveEditorViewState();
+			}
+		});
+		this._disposables.add(listener);
 	}
 
 	protected createEditor(parent: HTMLElement): void {
@@ -239,7 +253,7 @@ export class ProfilerEditor extends BaseEditor {
 		this._viewTemplateSelector.setAriaLabel(nls.localize('profiler.viewSelectAccessibleName', "Select View"));
 		this._register(this._viewTemplateSelector.onDidSelect(e => {
 			if (this.input) {
-				this.input.viewTemplate = find(this._viewTemplates, i => i.name === e.selected);
+				this.input.setViewTemplate(this._viewTemplates.find(i => i.name === e.selected));
 			}
 		}));
 		let viewTemplateContainer = document.createElement('div');
@@ -252,7 +266,7 @@ export class ProfilerEditor extends BaseEditor {
 		this._sessionSelector.setAriaLabel(nls.localize('profiler.sessionSelectAccessibleName', "Select Session"));
 		this._register(this._sessionSelector.onDidSelect(e => {
 			if (this.input) {
-				this.input.sessionName = e.selected;
+				this.input.setSessionName(e.selected);
 			}
 		}));
 		let sessionsContainer = document.createElement('div');
@@ -273,13 +287,14 @@ export class ProfilerEditor extends BaseEditor {
 			{ action: this._stopAction },
 			{ action: this._pauseAction },
 			{ element: Taskbar.createTaskbarSeparator() },
+			{ action: this._instantiationService.createInstance(Actions.ProfilerClear, Actions.ProfilerClear.ID, Actions.ProfilerClear.LABEL) },
+			{ element: Taskbar.createTaskbarSeparator() },
 			{ action: this._filterAction },
 			{ action: this._clearFilterAction },
 			{ element: Taskbar.createTaskbarSeparator() },
 			{ element: this._createTextElement(nls.localize('profiler.viewSelectLabel', "Select View:")) },
 			{ element: viewTemplateContainer },
-			{ action: this._autoscrollAction },
-			{ action: this._instantiationService.createInstance(Actions.ProfilerClear, Actions.ProfilerClear.ID, Actions.ProfilerClear.LABEL) }
+			{ action: this._autoscrollAction }
 		]);
 	}
 
@@ -301,17 +316,17 @@ export class ProfilerEditor extends BaseEditor {
 		profilerTableContainer.style.overflow = 'hidden';
 		profilerTableContainer.style.position = 'relative';
 		let theme = this.themeService.getColorTheme();
-		if (theme.type === DARK) {
-			DOM.addClass(profilerTableContainer, VS_DARK_THEME);
-		} else if (theme.type === HIGH_CONTRAST) {
-			DOM.addClass(profilerTableContainer, VS_HC_THEME);
+		if (theme.type === ColorScheme.DARK) {
+			profilerTableContainer.classList.add(VS_DARK_THEME);
+		} else if (theme.type === ColorScheme.HIGH_CONTRAST) {
+			profilerTableContainer.classList.add(VS_HC_THEME);
 		}
 		this.themeService.onDidColorThemeChange(e => {
-			DOM.removeClasses(profilerTableContainer, VS_DARK_THEME, VS_HC_THEME);
-			if (e.type === DARK) {
-				DOM.addClass(profilerTableContainer, VS_DARK_THEME);
-			} else if (e.type === HIGH_CONTRAST) {
-				DOM.addClass(profilerTableContainer, VS_HC_THEME);
+			profilerTableContainer.classList.remove(VS_DARK_THEME, VS_HC_THEME);
+			if (e.type === ColorScheme.DARK) {
+				profilerTableContainer.classList.add(VS_DARK_THEME);
+			} else if (e.type === ColorScheme.HIGH_CONTRAST) {
+				profilerTableContainer.classList.add(VS_HC_THEME);
 			}
 		});
 		this._profilerTableEditor = this._instantiationService.createInstance(ProfilerTableEditor);
@@ -362,8 +377,7 @@ export class ProfilerEditor extends BaseEditor {
 			title: nls.localize('text', "Text"),
 			view: {
 				layout: dim => this._editor.layout(dim),
-				render: parent => parent.appendChild(editorContainer),
-				focus: () => this._editor.focus()
+				render: parent => parent.appendChild(editorContainer)
 			},
 			tabSelectedHandler: expandPanel
 		});
@@ -417,8 +431,7 @@ export class ProfilerEditor extends BaseEditor {
 			title: nls.localize('details', "Details"),
 			view: {
 				layout: dim => this._detailTable.layout(dim),
-				render: parent => parent.appendChild(detailTableContainer),
-				focus: () => this._detailTable.focus()
+				render: parent => parent.appendChild(detailTableContainer)
 			},
 			tabSelectedHandler: expandPanel
 		});
@@ -438,35 +451,35 @@ export class ProfilerEditor extends BaseEditor {
 		editorContainer.className = 'profiler-editor';
 		this._editor.create(editorContainer);
 		this._editor.setVisible(true);
-		this._untitledTextEditorModel = this._instantiationService.createInstance(UntitledTextEditorModel, URI.from({ scheme: Schemas.untitled }), false, undefined, 'sql', undefined);
+		this._untitledTextEditorModel = this._instantiationService.createInstance(UntitledTextEditorModel, URI.from({ scheme: Schemas.untitled, path: `ProfilerTextEditor-${ProfilerEditorInstanceId++}` }), false, undefined, 'sql', undefined);
 		this._editorInput = this._instantiationService.createInstance(UntitledTextEditorInput, this._untitledTextEditorModel);
-		this._editor.setInput(this._editorInput, undefined);
+		this._editor.setInput(this._editorInput, undefined, undefined);
 		this._editorInput.resolve().then(model => this._editorModel = model.textEditorModel);
 		return editorContainer;
 	}
 
-	public get input(): ProfilerInput {
+	public override get input(): ProfilerInput {
 		return this._input as ProfilerInput;
 	}
 
-	public setInput(input: ProfilerInput, options?: EditorOptions): Promise<void> {
+	public override setInput(input: ProfilerInput, options?: IEditorOptions): Promise<void> {
 		let savedViewState = this._savedTableViewStates.get(input);
 
 		this._profilerEditorContextKey.set(true);
-		if (input instanceof ProfilerInput && input.matches(this.input)) {
+		if (input instanceof ProfilerInput && this.input !== undefined && input.matches(this.input)) {
 			if (savedViewState) {
 				this._profilerTableEditor.restoreViewState(savedViewState);
 			}
 			return Promise.resolve(null);
 		}
 
-		return super.setInput(input, options, CancellationToken.None).then(() => {
+		return super.setInput(input, options, undefined, CancellationToken.None).then(() => {
 			this._profilerTableEditor.setInput(input);
 
 			if (input.viewTemplate) {
 				this._viewTemplateSelector.selectWithOptionName(input.viewTemplate.name);
 			} else {
-				input.viewTemplate = find(this._viewTemplates, i => i.name === 'Standard View');
+				input.setViewTemplate(this._viewTemplates.find(i => i.name === 'Standard View'));
 			}
 
 			this._actionBar.context = input;
@@ -491,7 +504,7 @@ export class ProfilerEditor extends BaseEditor {
 		});
 	}
 
-	public clearInput(): void {
+	public override clearInput(): void {
 		this._profilerEditorContextKey.set(false);
 	}
 
@@ -503,11 +516,12 @@ export class ProfilerEditor extends BaseEditor {
 				controller.start({
 					forceRevealReplace: false,
 					seedSearchStringFromGlobalClipboard: false,
-					seedSearchStringFromSelection: (controller.getState().searchString.length === 0),
+					seedSearchStringFromSelection: (controller.getState().searchString.length === 0) ? 'single' : 'none',
 					shouldFocus: FindStartFocusAction.FocusFindInput,
 					shouldAnimate: true,
 					updateSearchScope: false,
-					loop: true
+					loop: true,
+					seedSearchStringFromNonEmptySelection: false
 				});
 			}
 		} else {
@@ -581,11 +595,11 @@ export class ProfilerEditor extends BaseEditor {
 			this._sessionsList = r;
 			if (this._sessionsList.length > 0) {
 				if (!this.input.sessionName) {
-					this.input.sessionName = previousSessionName;
+					this.input.setSessionName(previousSessionName);
 				}
 
 				if (this._sessionsList.indexOf(this.input.sessionName) === -1) {
-					this.input.sessionName = this._sessionsList[0];
+					this.input.setSessionName(this._sessionsList[0]);
 				}
 
 				this._sessionSelector.selectWithOptionName(this.input.sessionName);
@@ -615,7 +629,7 @@ export class ProfilerEditor extends BaseEditor {
 		}
 	}
 
-	public focus() {
+	public override focus() {
 		this._profilerEditorContextKey.set(true);
 		super.focus();
 		let savedViewState = this._savedTableViewStates.get(this.input);

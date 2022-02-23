@@ -10,6 +10,9 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
+const NBFORMAT = 4;
+const NBFORMAT_MINOR = 2;
+
 export class CellTypes {
 	public static readonly Code = 'code';
 	public static readonly Markdown = 'markdown';
@@ -24,13 +27,13 @@ export const pySparkNotebookContent: azdata.nb.INotebookContents = {
 		execution_count: 1
 	}],
 	metadata: {
-		'kernelspec': {
-			'name': 'pysparkkernel',
-			'display_name': 'PySpark'
+		kernelspec: {
+			name: 'pysparkkernel',
+			display_name: 'PySpark'
 		}
 	},
-	nbformat: 4,
-	nbformat_minor: 2
+	nbformat: NBFORMAT,
+	nbformat_minor: NBFORMAT_MINOR
 };
 
 export const notebookContentForCellLanguageTest: azdata.nb.INotebookContents = {
@@ -41,12 +44,13 @@ export const notebookContentForCellLanguageTest: azdata.nb.INotebookContents = {
 		execution_count: 1
 	}],
 	metadata: {
-		'kernelspec': {
-			'name': ''
+		kernelspec: {
+			name: '',
+			display_name: ''
 		},
 	},
-	nbformat: 4,
-	nbformat_minor: 2
+	nbformat: NBFORMAT,
+	nbformat_minor: NBFORMAT_MINOR
 };
 
 export const pythonNotebookMultipleCellsContent: azdata.nb.INotebookContents = {
@@ -72,13 +76,13 @@ export const pythonNotebookMultipleCellsContent: azdata.nb.INotebookContents = {
 		execution_count: 1
 	}],
 	metadata: {
-		'kernelspec': {
-			'name': 'python3',
-			'display_name': 'Python 3'
+		kernelspec: {
+			name: 'python3',
+			display_name: 'Python 3'
 		}
 	},
-	nbformat: 4,
-	nbformat_minor: 2
+	nbformat: NBFORMAT,
+	nbformat_minor: NBFORMAT_MINOR
 };
 
 export const sqlNotebookContent: azdata.nb.INotebookContents = {
@@ -89,13 +93,13 @@ export const sqlNotebookContent: azdata.nb.INotebookContents = {
 		execution_count: 1
 	}],
 	metadata: {
-		'kernelspec': {
-			'name': 'SQL',
-			'display_name': 'SQL'
+		kernelspec: {
+			name: 'SQL',
+			display_name: 'SQL'
 		}
 	},
-	nbformat: 4,
-	nbformat_minor: 2
+	nbformat: NBFORMAT,
+	nbformat_minor: NBFORMAT_MINOR
 };
 
 export const sqlNotebookMultipleCellsContent: azdata.nb.INotebookContents = {
@@ -116,19 +120,19 @@ export const sqlNotebookMultipleCellsContent: azdata.nb.INotebookContents = {
 		execution_count: 1
 	}],
 	metadata: {
-		'kernelspec': {
-			'name': 'SQL',
-			'display_name': 'SQL'
+		kernelspec: {
+			name: 'SQL',
+			display_name: 'SQL'
 		}
 	},
-	nbformat: 4,
-	nbformat_minor: 2
+	nbformat: NBFORMAT,
+	nbformat_minor: NBFORMAT_MINOR
 };
 
 export const pySparkKernelMetadata = {
-	'kernelspec': {
-		'name': 'pysparkkernel',
-		'display_name': 'PySpark'
+	kernelspec: {
+		name: 'pysparkkernel',
+		display_name: 'PySpark'
 	}
 };
 
@@ -138,9 +142,9 @@ export const pySparkKernelSpec = {
 };
 
 export const sqlKernelMetadata = {
-	'kernelspec': {
-		'name': 'SQL',
-		'display_name': 'SQL'
+	kernelspec: {
+		name: 'SQL',
+		display_name: 'SQL'
 	}
 };
 
@@ -150,9 +154,9 @@ export const sqlKernelSpec: azdata.nb.IKernelSpec = {
 };
 
 export const pythonKernelMetadata = {
-	'kernelspec': {
-		'name': 'python3',
-		'display_name': 'Python 3'
+	kernelspec: {
+		name: 'python3',
+		display_name: 'Python 3'
 	}
 };
 
@@ -161,9 +165,11 @@ export const pythonKernelSpec: azdata.nb.IKernelSpec = {
 	display_name: 'Python 3'
 };
 
-export function writeNotebookToFile(pythonNotebook: azdata.nb.INotebookContents, testName: string): vscode.Uri {
-	let fileName = getFileName(testName);
+export function writeNotebookToFile(pythonNotebook: azdata.nb.INotebookContents, relativeFilePath: string): vscode.Uri {
+	let fileName = getTempFilePath(relativeFilePath);
 	let notebookContentString = JSON.stringify(pythonNotebook);
+	// eslint-disable-next-line no-sync
+	fs.mkdirSync(path.dirname(fileName), { recursive: true });
 	// eslint-disable-next-line no-sync
 	fs.writeFileSync(fileName, notebookContentString);
 	console.log(`Local file is created: '${fileName}'`);
@@ -171,9 +177,11 @@ export function writeNotebookToFile(pythonNotebook: azdata.nb.INotebookContents,
 	return uri;
 }
 
-export function getFileName(testName: string): string {
-	if (testName) {
-		return path.join(os.tmpdir(), testName + '.ipynb');
-	}
-	return undefined;
+/**
+ * Creates the path of a file in the temp directory
+ * @param relativeFilePath The relative path of the file in the temp directory
+ * @returns The full path of the file
+ */
+export function getTempFilePath(relativeFilePath: string): string {
+	return path.join(os.tmpdir(), relativeFilePath + '.ipynb');
 }

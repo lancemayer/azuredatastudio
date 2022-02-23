@@ -19,14 +19,15 @@ import { IContextViewService } from 'vs/platform/contextview/browser/contextView
 import { IClipboardService } from 'vs/platform/clipboard/common/clipboardService';
 import { KeyCode } from 'vs/base/common/keyCodes';
 import { IComponent, IComponentDescriptor, IModelStore, ComponentEventType } from 'sql/platform/dashboard/browser/interfaces';
+import { ILogService } from 'vs/platform/log/common/log';
 
 @Component({
 	selector: 'modelview-listBox',
 	template: `
-		<div #input style="width: 100%"></div>
+		<div #input [ngStyle]="CSSStyles"></div>
 	`
 })
-export default class ListBoxComponent extends ComponentBase implements IComponent, OnDestroy, AfterViewInit {
+export default class ListBoxComponent extends ComponentBase<azdata.ListBoxProperties> implements IComponent, OnDestroy, AfterViewInit {
 	@Input() descriptor: IComponentDescriptor;
 	@Input() modelStore: IModelStore;
 	private _input: ListBox;
@@ -38,13 +39,9 @@ export default class ListBoxComponent extends ComponentBase implements IComponen
 		@Inject(IContextViewService) private contextViewService: IContextViewService,
 		@Inject(IClipboardService) private clipboardService: IClipboardService,
 		@Inject(forwardRef(() => ElementRef)) el: ElementRef,
+		@Inject(ILogService) logService: ILogService
 	) {
-		super(changeRef, el);
-	}
-
-	ngOnInit(): void {
-		this.baseInit();
-
+		super(changeRef, el, logService);
 	}
 
 	ngAfterViewInit(): void {
@@ -80,15 +77,10 @@ export default class ListBoxComponent extends ComponentBase implements IComponen
 				});
 			}));
 		}
+		this.baseInit();
 	}
 
-	public validate(): Thenable<boolean> {
-		return super.validate().then(valid => {
-			return valid;
-		});
-	}
-
-	ngOnDestroy(): void {
+	override ngOnDestroy(): void {
 		this.baseDestroy();
 	}
 
@@ -98,28 +90,33 @@ export default class ListBoxComponent extends ComponentBase implements IComponen
 		this.layout();
 	}
 
-	public setProperties(properties: { [key: string]: any; }): void {
+	public override setProperties(properties: { [key: string]: any; }): void {
 		super.setProperties(properties);
 		this._input.setOptions(this.values.map(value => { return { text: value }; }), this.selectedRow);
-
-		this.validate();
 	}
 
 	// CSS-bound properties
 
 	private get values(): string[] {
-		return this.getPropertyOrDefault<azdata.ListBoxProperties, string[]>((props) => props.values, undefined);
+		return this.getPropertyOrDefault<string[]>((props) => props.values, undefined);
 	}
 
 	private set values(newValue: string[]) {
-		this.setPropertyFromUI<azdata.ListBoxProperties, string[]>((props, value) => props.values = value, newValue);
+		this.setPropertyFromUI<string[]>((props, value) => props.values = value, newValue);
 	}
 
 	private get selectedRow(): number {
-		return this.getPropertyOrDefault<azdata.ListBoxProperties, number>((props) => props.selectedRow, undefined);
+		return this.getPropertyOrDefault<number>((props) => props.selectedRow, undefined);
 	}
 
 	private set selectedRow(newValue: number) {
-		this.setPropertyFromUI<azdata.ListBoxProperties, number>((props, value) => props.selectedRow = value, newValue);
+		this.setPropertyFromUI<number>((props, value) => props.selectedRow = value, newValue);
+	}
+
+
+	public override get CSSStyles(): azdata.CssStyles {
+		return this.mergeCss(super.CSSStyles, {
+			'width': '100%'
+		});
 	}
 }

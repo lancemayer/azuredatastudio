@@ -6,7 +6,6 @@
 // This is the place for extensions to expose APIs.
 
 import * as azdata from 'azdata';
-import * as vscode from 'vscode';
 
 /**
  * Covers defining what the mssql extension exports to other extensions
@@ -24,6 +23,10 @@ export const enum extension {
 * The APIs provided by Mssql extension
 */
 export interface IExtension {
+	/**
+	 * Path to the root of the SQL Tools Service folder
+	 */
+	readonly sqlToolsServicePath: string;
 	/**
 	 * Gets the object explorer API that supports querying over the connections supported by this extension
 	 *
@@ -43,6 +46,8 @@ export interface IExtension {
 	readonly dacFx: IDacFxService;
 
 	readonly sqlAssessment: ISqlAssessmentService;
+
+	readonly sqlMigration: ISqlMigrationService;
 }
 
 /**
@@ -116,7 +121,10 @@ export const enum SchemaDifferenceType {
 
 export const enum SchemaCompareEndpointType {
 	Database = 0,
-	Dacpac = 1
+	Dacpac = 1,
+	Project = 2,
+	// must be kept in-sync with SchemaCompareEndpointType in SQL Tools Service
+	// located at \src\Microsoft.SqlTools.ServiceLayer\SchemaCompare\Contracts\SchemaCompareRequest.cs
 }
 
 export interface SchemaCompareEndpointInfo {
@@ -127,6 +135,11 @@ export interface SchemaCompareEndpointInfo {
 	databaseName: string;
 	ownerUri: string;
 	connectionDetails: azdata.ConnectionInfo;
+	connectionName?: string;
+	projectFilePath: string;
+	targetScripts: string[];
+	folderStructure: string;
+	dataSchemaProvider: string;
 }
 
 export interface SchemaCompareObjectId {
@@ -219,6 +232,9 @@ export interface DeploymentOptions {
 	excludeObjectTypes: SchemaObjectType[];
 }
 
+/**
+ * Values from <DacFx>\Product\Source\DeploymentApi\ObjectTypes.cs
+ */
 export const enum SchemaObjectType {
 	Aggregates = 0,
 	ApplicationRoles = 1,
@@ -286,7 +302,9 @@ export const enum SchemaObjectType {
 	ServerAuditSpecifications = 63,
 	ServerRoleMembership = 64,
 	ServerRoles = 65,
-	ServerTriggers = 66
+	ServerTriggers = 66,
+	ExternalStreams = 67,
+	ExternalStreamingJobs = 68
 }
 
 export interface SchemaCompareObjectId {
@@ -295,10 +313,11 @@ export interface SchemaCompareObjectId {
 }
 
 export interface ISchemaCompareService {
-
 	schemaCompare(operationId: string, sourceEndpointInfo: SchemaCompareEndpointInfo, targetEndpointInfo: SchemaCompareEndpointInfo, taskExecutionMode: azdata.TaskExecutionMode, deploymentOptions: DeploymentOptions): Thenable<SchemaCompareResult>;
 	schemaCompareGenerateScript(operationId: string, targetServerName: string, targetDatabaseName: string, taskExecutionMode: azdata.TaskExecutionMode): Thenable<azdata.ResultStatus>;
 	schemaComparePublishChanges(operationId: string, targetServerName: string, targetDatabaseName: string, taskExecutionMode: azdata.TaskExecutionMode): Thenable<azdata.ResultStatus>;
+	schemaComparePublishDatabaseChanges(operationId: string, targetServerName: string, targetDatabaseName: string, taskExecutionMode: azdata.TaskExecutionMode): Thenable<azdata.ResultStatus>;
+	schemaComparePublishProjectChanges(operationId: string, targetProjectPath: string, targetFolderStructure: ExtractTarget, taskExecutionMode: azdata.TaskExecutionMode): Thenable<SchemaComparePublishProjectResult>;
 	schemaCompareGetDefaultOptions(): Thenable<SchemaCompareOptionsResult>;
 	schemaCompareIncludeExcludeNode(operationId: string, diffEntry: DiffEntry, IncludeRequest: boolean, taskExecutionMode: azdata.TaskExecutionMode): Thenable<SchemaCompareIncludeExcludeResult>;
 	schemaCompareOpenScmp(filePath: string): Thenable<SchemaCompareOpenScmpResult>;
@@ -314,6 +333,12 @@ export interface SchemaCompareOpenScmpResult extends azdata.ResultStatus {
 	deploymentOptions: DeploymentOptions;
 	excludedSourceElements: SchemaCompareObjectId[];
 	excludedTargetElements: SchemaCompareObjectId[];
+}
+
+export interface SchemaComparePublishProjectResult extends azdata.ResultStatus {
+	changedFiles: string[];
+	addedFiles: string[];
+	deletedFiles: string[];
 }
 
 //#endregion
@@ -332,10 +357,12 @@ export interface IDacFxService {
 	exportBacpac(databaseName: string, packageFilePath: string, ownerUri: string, taskExecutionMode: azdata.TaskExecutionMode): Thenable<DacFxResult>;
 	importBacpac(packageFilePath: string, databaseName: string, ownerUri: string, taskExecutionMode: azdata.TaskExecutionMode): Thenable<DacFxResult>;
 	extractDacpac(databaseName: string, packageFilePath: string, applicationName: string, applicationVersion: string, ownerUri: string, taskExecutionMode: azdata.TaskExecutionMode): Thenable<DacFxResult>;
-	importDatabaseProject(databaseName: string, targetFilePath: string, applicationName: string, applicationVersion: string, ownerUri: string, extractTarget: ExtractTarget, taskExecutionMode: azdata.TaskExecutionMode): Thenable<DacFxResult>;
-	deployDacpac(packageFilePath: string, databaseName: string, upgradeExisting: boolean, ownerUri: string, taskExecutionMode: azdata.TaskExecutionMode, sqlCommandVariableValues?: Record<string, string>): Thenable<DacFxResult>;
-	generateDeployScript(packageFilePath: string, databaseName: string, ownerUri: string, taskExecutionMode: azdata.TaskExecutionMode, sqlCommandVariableValues?: Record<string, string>): Thenable<DacFxResult>;
+	createProjectFromDatabase(databaseName: string, targetFilePath: string, applicationName: string, applicationVersion: string, ownerUri: string, extractTarget: ExtractTarget, taskExecutionMode: azdata.TaskExecutionMode): Thenable<DacFxResult>;
+	deployDacpac(packageFilePath: string, databaseName: string, upgradeExisting: boolean, ownerUri: string, taskExecutionMode: azdata.TaskExecutionMode, sqlCommandVariableValues?: Record<string, string>, deploymentOptions?: DeploymentOptions): Thenable<DacFxResult>;
+	generateDeployScript(packageFilePath: string, databaseName: string, ownerUri: string, taskExecutionMode: azdata.TaskExecutionMode, sqlCommandVariableValues?: Record<string, string>, deploymentOptions?: DeploymentOptions): Thenable<DacFxResult>;
 	generateDeployPlan(packageFilePath: string, databaseName: string, ownerUri: string, taskExecutionMode: azdata.TaskExecutionMode): Thenable<GenerateDeployPlanResult>;
+	getOptionsFromProfile(profilePath: string): Thenable<DacFxOptionsResult>;
+	validateStreamingJob(packageFilePath: string, createStreamingJobTsql: string): Thenable<ValidateStreamingJobResult>;
 }
 
 export interface DacFxResult extends azdata.ResultStatus {
@@ -344,6 +371,13 @@ export interface DacFxResult extends azdata.ResultStatus {
 
 export interface GenerateDeployPlanResult extends DacFxResult {
 	report: string;
+}
+
+export interface DacFxOptionsResult extends azdata.ResultStatus {
+	deploymentOptions: DeploymentOptions;
+}
+
+export interface ValidateStreamingJobResult extends azdata.ResultStatus {
 }
 
 export interface ExportParams {
@@ -427,7 +461,7 @@ export interface ICmsService {
 	/**
 	 * Connects to or creates a Central management Server
 	 */
-	createCmsServer(name: string, description:string, connectiondetails: azdata.ConnectionInfo, ownerUri: string): Thenable<ListRegisteredServersResult>;
+	createCmsServer(name: string, description: string, connectiondetails: azdata.ConnectionInfo, ownerUri: string): Thenable<ListRegisteredServersResult>;
 
 	/**
 	 * gets all Registered Servers inside a CMS on a particular level
@@ -437,22 +471,22 @@ export interface ICmsService {
 	/**
 	 * Adds a Registered Server inside a CMS on a particular level
 	 */
-	addRegisteredServer (ownerUri: string, relativePath: string, registeredServerName: string, registeredServerDescription:string, connectionDetails:azdata.ConnectionInfo): Thenable<boolean>;
+	addRegisteredServer(ownerUri: string, relativePath: string, registeredServerName: string, registeredServerDescription: string, connectionDetails: azdata.ConnectionInfo): Thenable<boolean>;
 
 	/**
 	 * Removes a Registered Server inside a CMS on a particular level
 	 */
-	removeRegisteredServer (ownerUri: string, relativePath: string, registeredServerName: string): Thenable<boolean>;
+	removeRegisteredServer(ownerUri: string, relativePath: string, registeredServerName: string): Thenable<boolean>;
 
 	/**
 	 * Adds a Server Group inside a CMS on a particular level
 	 */
-	addServerGroup (ownerUri: string, relativePath: string, groupName: string, groupDescription:string): Thenable<boolean>;
+	addServerGroup(ownerUri: string, relativePath: string, groupName: string, groupDescription: string): Thenable<boolean>;
 
 	/**
 	 * Removes a Server Group inside a CMS on a particular level
 	 */
-	removeServerGroup (ownerUri: string, relativePath: string, groupName: string): Thenable<boolean>;
+	removeServerGroup(ownerUri: string, relativePath: string, groupName: string): Thenable<boolean>;
 }
 /**
  * CMS Result interfaces as passed back to Extensions
@@ -489,4 +523,378 @@ export interface ISqlAssessmentService {
 	assessmentInvoke(ownerUri: string, targetType: azdata.sqlAssessment.SqlAssessmentTargetType): Promise<azdata.SqlAssessmentResult>;
 	getAssessmentItems(ownerUri: string, targetType: azdata.sqlAssessment.SqlAssessmentTargetType): Promise<azdata.SqlAssessmentResult>;
 	generateAssessmentScript(items: azdata.SqlAssessmentResultItem[], targetServerName: string, targetDatabaseName: string, taskExecutionMode: azdata.TaskExecutionMode): Promise<azdata.ResultStatus>;
+}
+
+
+/**
+ * Sql Migration
+ */
+
+// SqlMigration interfaces  -----------------------------------------------------------------------
+
+export interface SqlMigrationImpactedObjectInfo {
+	name: string;
+	impactDetail: string;
+	objectType: string;
+}
+
+export interface SqlMigrationAssessmentResultItem {
+	rulesetVersion: string;
+	rulesetName: string;
+	ruleId: string;
+	targetType: string;
+	checkId: string;
+	tags: string[];
+	displayName: string;
+	description: string;
+	helpLink: string;
+	level: string;
+	timestamp: string;
+	kind: azdata.sqlAssessment.SqlAssessmentResultItemKind;
+	message: string;
+	appliesToMigrationTargetPlatform: string;
+	issueCategory: string;
+	databaseName: string;
+	impactedObjects: SqlMigrationImpactedObjectInfo[];
+	databaseRestoreFails: boolean;
+}
+
+export interface ServerTargetReadiness {
+	numberOfDatabasesReadyForMigration: number;
+	numberOfNonOnlineDatabases: number;
+	totalNumberOfDatabases: number;
+}
+
+export interface ErrorModel {
+	errorId: number;
+	message: string;
+	errorSummary: string;
+	possibleCauses: string;
+	guidance: string;
+}
+
+export interface DatabaseTargetReadiness {
+	noSelectionForMigration: boolean;
+	numOfBlockerIssues: number;
+}
+
+export interface DatabaseAssessmentProperties {
+	compatibilityLevel: string;
+	databaseSize: number;
+	isReplicationEnabled: boolean;
+	assessmentTimeInMilliseconds: number;
+	items: SqlMigrationAssessmentResultItem[];
+	errors: ErrorModel[];
+	sqlManagedInstanceTargetReadiness: DatabaseTargetReadiness;
+	name: string;
+}
+
+export interface ServerAssessmentProperties {
+	cpuCoreCount: number;
+	physicalServerMemory: number;
+	serverHostPlatform: string;
+	serverVersion: string;
+	serverEngineEdition: string;
+	serverEdition: string;
+	isClustered: boolean;
+	numberOfUserDatabases: number;
+	sqlAssessmentStatus: number;
+	assessedDatabaseCount: number;
+	sqlManagedInstanceTargetReadiness: ServerTargetReadiness;
+	items: SqlMigrationAssessmentResultItem[];
+	errors: ErrorModel[];
+	databases: DatabaseAssessmentProperties[];
+	name: string;
+}
+
+export interface AssessmentResult {
+	startTime: string;
+	endedTime: string;
+	assessmentResult: ServerAssessmentProperties;
+	rawAssessmentResult: any;
+	errors: ErrorModel[];
+}
+
+// SKU recommendation interfaces, mirrored from Microsoft.SqlServer.Migration.SkuRecommendation
+export interface AzureSqlSkuCategory {
+	sqlTargetPlatform: AzureSqlTargetPlatform;
+	computeTier: ComputeTier;
+}
+
+export interface AzureSqlSkuPaaSCategory extends AzureSqlSkuCategory {
+	sqlPurchasingModel: AzureSqlPurchasingModel;
+	sqlServiceTier: AzureSqlPaaSServiceTier;
+	hardwareType: AzureSqlPaaSHardwareType;
+}
+
+export interface AzureSqlSkuIaaSCategory extends AzureSqlSkuCategory {
+	virtualMachineFamilyType: VirtualMachineFamilyType;
+}
+
+export interface AzureManagedDiskSku {
+	tier: AzureManagedDiskTier;
+	size: string;
+	caching: AzureManagedDiskCaching;
+}
+
+export interface AzureVirtualMachineSku {
+	virtualMachineFamily: VirtualMachineFamily;
+	sizeName: string;
+	computeSize: number;
+	azureSkuName: string;
+	vCPUsAvailable: number;
+}
+
+export interface AzureSqlSkuMonthlyCost {
+	computeCost: number;
+	storageCost: number;
+	totalCost: number;
+}
+
+export interface AzureSqlSku {
+	category: AzureSqlSkuPaaSCategory | AzureSqlSkuIaaSCategory;
+	computeSize: number;
+	predictedDataSizeInMb: number;
+	predictedLogSizeInMb: number;
+}
+
+export interface AzureSqlPaaSSku extends AzureSqlSku {
+	category: AzureSqlSkuPaaSCategory;
+	storageMaxSizeInMb: number;
+}
+
+export interface AzureSqlIaaSSku extends AzureSqlSku {
+	category: AzureSqlSkuIaaSCategory;
+	virtualMachineSize: AzureVirtualMachineSku;
+	dataDiskSizes: AzureManagedDiskSku[];
+	logDiskSizes: AzureManagedDiskSku[];
+	tempDbDiskSizes: AzureManagedDiskSku[];
+}
+
+export interface SkuRecommendationResultItem {
+	sqlInstanceName: string;
+	databaseName: string;
+	targetSku: AzureSqlIaaSSku | AzureSqlPaaSSku;
+	monthlyCost: AzureSqlSkuMonthlyCost;
+	ranking: number;
+	positiveJustifications: string[];
+	negativeJustifications: string[];
+}
+
+export interface SqlInstanceRequirements {
+	cpuRequirementInCores: number;
+	dataStorageRequirementInMB: number;
+	logStorageRequirementInMB: number;
+	memoryRequirementInMB: number;
+	dataIOPSRequirement: number;
+	logIOPSRequirement: number;
+	ioLatencyRequirementInMs: number;
+	ioThroughputRequirementInMBps: number;
+	tempDBSizeInMB: number;
+	dataPointsStartTime: string;
+	dataPointsEndTime: string;
+	aggregationTargetPercentile: number;
+	perfDataCollectionIntervalInSeconds: number;
+	databaseLevelRequirements: SqlDatabaseRequirements[];
+	numberOfDataPointsAnalyzed: number;
+}
+
+export interface SqlDatabaseRequirements {
+	cpuRequirementInCores: number;
+	dataIOPSRequirement: number;
+	logIOPSRequirement: number;
+	ioLatencyRequirementInMs: number;
+	ioThroughputRequirementInMBps: number;
+	dataStorageRequirementInMB: number;
+	logStorageRequirementInMB: number;
+	databaseName: string;
+	memoryRequirementInMB: number;
+	cpuRequirementInPercentageOfTotalInstance: number;
+	numberOfDataPointsAnalyzed: number;
+	fileLevelRequirements: SqlFileRequirements[];
+}
+
+export interface SqlFileRequirements {
+	fileName: string;
+	fileType: DatabaseFileType;
+	sizeInMB: number;
+	readLatencyInMs: number;
+	writeLatencyInMs: number;
+	iopsRequirement: number;
+	ioThroughputRequirementInMBps: number;
+	numberOfDataPointsAnalyzed: number;
+}
+
+export interface PaaSSkuRecommendationResultItem extends SkuRecommendationResultItem {
+	targetSku: AzureSqlPaaSSku;
+}
+
+export interface IaaSSkuRecommendationResultItem extends SkuRecommendationResultItem {
+	targetSku: AzureSqlIaaSSku;
+}
+
+export interface SkuRecommendationResult {
+	sqlDbRecommendationResults: PaaSSkuRecommendationResultItem[];
+	sqlMiRecommendationResults: PaaSSkuRecommendationResultItem[];
+	sqlVmRecommendationResults: IaaSSkuRecommendationResultItem[];
+	instanceRequirements: SqlInstanceRequirements;
+}
+
+// SKU recommendation enums, mirrored from Microsoft.SqlServer.Migration.SkuRecommendation
+export const enum DatabaseFileType {
+	Rows = 0,
+	Log = 1,
+	Filestream = 2,
+	NotSupported = 3,
+	Fulltext = 4
+}
+
+export const enum AzureSqlTargetPlatform {
+	AzureSqlDatabase = 0,
+	AzureSqlManagedInstance = 1,
+	AzureSqlVirtualMachine = 2
+}
+
+export const enum ComputeTier {
+	Provisioned = 0,
+	ServerLess = 1
+}
+
+export const enum AzureManagedDiskTier {
+	Standard = 0,
+	Premium = 1,
+	Ultra = 2
+}
+
+export const enum AzureManagedDiskCaching {
+	NotApplicable = 0,
+	None = 1,
+	ReadOnly = 2,
+	ReadWrite = 3
+}
+
+export const enum AzureSqlPurchasingModel {
+	vCore = 0,
+}
+
+export const enum AzureSqlPaaSServiceTier {
+	GeneralPurpose = 0,
+	BusinessCritical,
+	HyperScale,
+}
+
+export const enum AzureSqlPaaSHardwareType {
+	Gen5 = 0,
+	PremiumSeries,
+	PremiumSeriesMemoryOptimized
+}
+
+export const enum VirtualMachineFamilyType {
+	GeneralPurpose,
+	ComputeOptimized,
+	MemoryOptimized,
+	StorageOptimized,
+	GPU,
+	HighPerformanceCompute
+}
+
+export const enum VirtualMachineFamily {
+	basicAFamily,
+	standardA0_A7Family,
+	standardAv2Family,
+	standardBSFamily,
+	standardDFamily,
+	standardDv2Family,
+	standardDv2PromoFamily,
+	standardDADSv5Family,
+	standardDASv4Family,
+	standardDASv5Family,
+	standardDAv4Family,
+	standardDDSv4Family,
+	standardDDSv5Family,
+	standardDDv4Family,
+	standardDDv5Family,
+	standardDSv3Family,
+	standardDSv4Family,
+	standardDSv5Family,
+	standardDv3Family,
+	standardDv4Family,
+	standardDv5Family,
+	standardDCADSv5Family,
+	standardDCASv5Family,
+	standardDCSv2Family,
+	standardDSFamily,
+	standardDSv2Family,
+	standardDSv2PromoFamily,
+	standardEIDSv5Family,
+	standardEIDv5Family,
+	standardEISv5Family,
+	standardEIv5Family,
+	standardEADSv5Family,
+	standardEASv4Family,
+	standardEASv5Family,
+	standardEDSv4Family,
+	standardEDSv5Family,
+	standardEBDSv5Family,
+	standardESv3Family,
+	standardESv4Family,
+	standardESv5Family,
+	standardEBSv5Family,
+	standardEAv4Family,
+	standardEDv4Family,
+	standardEDv5Family,
+	standardEv3Family,
+	standardEv4Family,
+	standardEv5Family,
+	standardEISv3Family,
+	standardEIv3Family,
+	standardXEIDSv4Family,
+	standardXEISv4Family,
+	standardECADSv5Family,
+	standardECASv5Family,
+	standardECIADSv5Family,
+	standardECIASv5Family,
+	standardFFamily,
+	standardFSFamily,
+	standardFSv2Family,
+	standardGFamily,
+	standardGSFamily,
+	standardHFamily,
+	standardHPromoFamily,
+	standardLSFamily,
+	standardLSv2Family,
+	standardMSFamily,
+	standardMDSMediumMemoryv2Family,
+	standardMSMediumMemoryv2Family,
+	standardMIDSMediumMemoryv2Family,
+	standardMISMediumMemoryv2Family,
+	standardMSv2Family,
+	standardNCSv3Family,
+	StandardNCASv3_T4Family,
+	standardNVSv2Family,
+	standardNVSv3Family,
+	standardNVSv4Family
+}
+
+export interface StartPerfDataCollectionResult {
+	dateTimeStarted: Date;
+}
+
+export interface StopPerfDataCollectionResult {
+	dateTimeStopped: Date;
+}
+
+export interface RefreshPerfDataCollectionResult {
+	isCollecting: boolean;
+	messages: string[];
+	errors: string[];
+	refreshTime: Date;
+}
+
+export interface ISqlMigrationService {
+	getAssessments(ownerUri: string, databases: string[]): Promise<AssessmentResult | undefined>;
+	getSkuRecommendations(dataFolder: string, perfQueryIntervalInSec: number, targetPlatforms: string[], targetSqlInstance: string, targetPercentile: number, scalingFactor: number, startTime: string, endTime: string, includePreviewSkus: boolean, databaseAllowList: string[]): Promise<SkuRecommendationResult | undefined>;
+	startPerfDataCollection(ownerUri: string, dataFolder: string, perfQueryIntervalInSec: number, staticQueryIntervalInSec: number, numberOfIterations: number): Promise<StartPerfDataCollectionResult | undefined>;
+	stopPerfDataCollection(): Promise<StopPerfDataCollectionResult | undefined>;
+	refreshPerfDataCollection(lastRefreshedTime: Date): Promise<RefreshPerfDataCollectionResult | undefined>;
 }

@@ -4,6 +4,7 @@
 	"files.exclude": {
 		".git": true,
 		".build": true,
+		".profile-oss": true,
 		"**/.DS_Store": true,
 		"build/**/*.js": {
 			"when": "$(basename).ts"
@@ -26,6 +27,7 @@
 		"test/automation/out/**": true,
 		"test/integration/browser/out/**": true,
 		"src/vs/base/test/node/uri.test.data.txt": true,
+		"src/vs/workbench/test/browser/api/extHostDocumentData.test.perf-data.ts": true,
 		"src/vs/server": false
 	},
 	"lcov.path": [
@@ -72,8 +74,13 @@
 	},
 	"gulp.autoDetect": "off",
 	"files.insertFinalNewline": true,
-  "[typescript]": {
+	"[plaintext]": {
+		"files.insertFinalNewline": false,
+	},
+	"[typescript]": {
 		"editor.defaultFormatter": "vscode.typescript-language-features"
 	},
-	"typescript.tsc.autoDetect": "off"
+	"typescript.tsc.autoDetect": "off",
+	"notebook.experimental.useMarkdownRenderer": true,
+	"testing.autoRun.mode": "rerun",
 }

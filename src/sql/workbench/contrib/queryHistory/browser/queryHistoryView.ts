@@ -20,8 +20,7 @@ import { IExpandableTree } from 'sql/workbench/services/objectExplorer/browser/t
 import { IQueryHistoryService } from 'sql/workbench/services/queryHistory/common/queryHistoryService';
 import { QueryHistoryNode } from 'sql/workbench/contrib/queryHistory/browser/queryHistoryNode';
 import { QueryHistoryInfo } from 'sql/workbench/services/queryHistory/common/queryHistoryInfo';
-import { IAction } from 'vs/base/common/actions';
-import { ViewPane, IViewPaneOptions } from 'vs/workbench/browser/parts/views/viewPaneContainer';
+import { ViewPane, IViewPaneOptions } from 'vs/workbench/browser/parts/views/viewPane';
 import { IViewDescriptorService } from 'vs/workbench/common/views';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
@@ -34,8 +33,8 @@ import { IOpenerService } from 'vs/platform/opener/common/opener';
  * QueryHistoryView implements the dynamic tree view for displaying Query History
  */
 export class QueryHistoryView extends ViewPane {
-	private _messages: HTMLElement;
-	private _tree: ITree;
+	private _messages!: HTMLElement;
+	private _tree!: ITree;
 	private _actionProvider: QueryHistoryActionProvider;
 
 	constructor(
@@ -58,7 +57,7 @@ export class QueryHistoryView extends ViewPane {
 	/**
 	 * Render the view body
 	 */
-	public renderBody(container: HTMLElement): void {
+	public override renderBody(container: HTMLElement): void {
 		// Add div to display no task executed message
 		this._messages = append(container, $('div.no-queries-message'));
 
@@ -87,11 +86,10 @@ export class QueryHistoryView extends ViewPane {
 		const controller = instantiationService.createInstance(QueryHistoryController, this._actionProvider);
 		const dnd = new DefaultDragAndDrop();
 		const filter = new DefaultFilter();
-		const sorter = null;
 		const accessibilityProvider = new DefaultAccessibilityProvider();
 
 		return new Tree(treeContainer, {
-			dataSource, renderer, controller, dnd, filter, sorter, accessibilityProvider
+			dataSource, renderer, controller, dnd, filter, sorter: undefined, accessibilityProvider
 		}, {
 			indentPixels: 10,
 			twistiePixels: 20,
@@ -103,15 +101,13 @@ export class QueryHistoryView extends ViewPane {
 		let selectedElement: any;
 		let targetsToExpand: any[];
 
-		if (this._tree) {
-			const selection = this._tree.getSelection();
-			if (selection && selection.length === 1) {
-				selectedElement = <any>selection[0];
-			}
-			// convert to old VS Code tree interface with expandable methods
-			const expandableTree: IExpandableTree = <IExpandableTree>this._tree;
-			targetsToExpand = expandableTree.getExpandedElements();
+		const selection = this._tree.getSelection();
+		if (selection && selection.length === 1) {
+			selectedElement = <any>selection[0];
 		}
+		// convert to old VS Code tree interface with expandable methods
+		const expandableTree: IExpandableTree = <IExpandableTree>this._tree;
+		targetsToExpand = expandableTree.getExpandedElements();
 
 		const nodes: QueryHistoryNode[] = this.queryHistoryService.getQueryHistoryInfos().map(i => new QueryHistoryNode(i));
 
@@ -140,23 +136,18 @@ export class QueryHistoryView extends ViewPane {
 	/**
 	 * set the layout of the view
 	 */
-	public layout(height: number): void {
+	public override layout(height: number): void {
 		this._tree.layout(height);
 	}
 
 	/**
 	 * set the visibility of the view
 	 */
-	public setVisible(visible: boolean): void {
+	public override setVisible(visible: boolean): void {
 		if (visible) {
 			this._tree.onVisible();
 		} else {
 			this._tree.onHidden();
 		}
-	}
-
-
-	public getActions(): IAction[] {
-		return this._actionProvider.getActions(undefined);
 	}
 }

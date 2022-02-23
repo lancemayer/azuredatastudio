@@ -22,6 +22,10 @@ export interface IMonarchLanguage {
 	 */
 	ignoreCase?: boolean;
 	/**
+	 * is the language unicode-aware? (i.e., /\u{1D306}/)
+	 */
+	unicode?: boolean;
+	/**
 	 * if no match in the tokenizer assign this token class (default 'source')
 	 */
 	defaultToken?: string;
@@ -37,6 +41,15 @@ export interface IMonarchLanguage {
 	 * attach this to every token class (by default '.' + name)
 	 */
 	tokenPostfix?: string;
+	/**
+	 * include line feeds (in the form of a \n character) at the end of lines
+	 * Defaults to false
+	 */
+	includeLF?: boolean;
+	/**
+	 * Other keys that can be referred to by the tokenizer.
+	 */
+	[key: string]: any;
 }
 
 /**

@@ -18,7 +18,6 @@ import * as types from 'vs/base/common/types';
 import { mixin } from 'vs/base/common/objects';
 import { Disposable } from 'vs/base/common/lifecycle';
 import { ScrollbarVisibility } from 'vs/base/common/scrollable';
-import { firstIndex } from 'vs/base/common/arrays';
 import * as nls from 'vs/nls';
 import { TabHeaderComponent } from 'sql/base/browser/ui/panel/tabHeader.component';
 import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
@@ -107,7 +106,7 @@ export class PanelComponent extends Disposable implements IThemable {
 	private _actionbar?: ActionBar;
 	private _mru: TabComponent[] = [];
 	private _tabExpanded: boolean = true;
-	private _styleElement: HTMLStyleElement;
+	private _styleElement!: HTMLStyleElement;
 
 	protected AutoScrollbarVisibility = ScrollbarVisibility.Auto; // used by angular template
 	protected HiddenScrollbarVisibility = ScrollbarVisibility.Hidden; // used by angular template
@@ -250,7 +249,7 @@ export class PanelComponent extends Disposable implements IThemable {
 	 * Select on the next tab
 	 */
 	public selectOnNextTab(): void {
-		let activeIndex = firstIndex(this._tabs.toArray(), i => i === this._activeTab);
+		let activeIndex = this._tabs.toArray().findIndex(i => i === this._activeTab);
 		let nextTabIndex = activeIndex + 1;
 		if (nextTabIndex === this._tabs.length) {
 			nextTabIndex = 0;
@@ -266,7 +265,7 @@ export class PanelComponent extends Disposable implements IThemable {
 	public updateTab(tabId: string, config: { title?: string, iconClass?: string }): void {
 		// First find the tab and update it with the new values. Then manually refresh the
 		// tab header since it won't detect changes made to the corresponding tab by itself.
-		let tabHeader: TabHeaderComponent;
+		let tabHeader: TabHeaderComponent | undefined;
 		const tabHeaders = this._tabHeaders.toArray();
 		const tab = this._tabs.find((item, i) => {
 			if (item.identifier === tabId) {
@@ -284,7 +283,7 @@ export class PanelComponent extends Disposable implements IThemable {
 	}
 
 	private findAndRemoveTabFromMRU(tab: TabComponent): void {
-		let mruIndex = firstIndex(this._mru, i => i === tab);
+		let mruIndex = this._mru.findIndex(i => i === tab);
 
 		if (mruIndex !== -1) {
 			// Remove old index

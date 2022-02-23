@@ -82,14 +82,15 @@ export class JupyterKernel implements nb.IKernel {
 		let specImpl = await this.kernelImpl.getSpec();
 		return {
 			name: specImpl.name,
-			display_name: specImpl.display_name
+			display_name: specImpl.display_name,
+			language: specImpl.language
 		};
 	}
 
 	requestExecute(content: nb.IExecuteRequest, disposeOnDone?: boolean): nb.IFuture {
 		content.code = Array.isArray(content.code) ? content.code.join('') : content.code;
 		content.code = content.code.replace(/\r+\n/gm, '\n'); // Remove \r (if it exists) from newlines
-		let futureImpl = this.kernelImpl.requestExecute(content as KernelMessage.IExecuteRequest, disposeOnDone);
+		let futureImpl = this.kernelImpl.requestExecute(content as KernelMessage.IExecuteRequest & { cellIndex: number }, disposeOnDone);
 		return new JupyterFuture(futureImpl);
 	}
 

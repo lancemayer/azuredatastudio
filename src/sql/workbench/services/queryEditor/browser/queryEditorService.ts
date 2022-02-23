@@ -5,9 +5,9 @@
 
 import { QueryResultsInput } from 'sql/workbench/common/editor/query/queryResultsInput';
 import { EditDataInput } from 'sql/workbench/browser/editData/editDataInput';
-import { IConnectableInput } from 'sql/platform/connection/common/connectionManagement';
+import { ConnectionType, IConnectableInput, IConnectionCompletionOptions, IConnectionManagementService } from 'sql/platform/connection/common/connectionManagement';
 import { IQueryEditorService, INewSqlEditorOptions } from 'sql/workbench/services/queryEditor/common/queryEditorService';
-import { UntitledQueryEditorInput } from 'sql/workbench/common/editor/query/untitledQueryEditorInput';
+import { UntitledQueryEditorInput } from 'sql/base/query/browser/untitledQueryEditorInput';
 
 import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
@@ -19,6 +19,11 @@ import { IUntitledTextEditorService } from 'vs/workbench/services/untitled/commo
 import { UntitledTextEditorInput } from 'vs/workbench/services/untitled/common/untitledTextEditorInput';
 import { UntitledTextEditorModel } from 'vs/workbench/services/untitled/common/untitledTextEditorModel';
 import { mixin } from 'vs/base/common/objects';
+import { IQueryEditorConfiguration } from 'sql/platform/query/common/query';
+import { getCurrentGlobalConnection } from 'sql/workbench/browser/taskUtilities';
+import { IObjectExplorerService } from 'sql/workbench/services/objectExplorer/browser/objectExplorerService';
+import { onUnexpectedError } from 'vs/base/common/errors';
+import { IConnectionProfile } from 'sql/platform/connection/common/interfaces';
 
 const defaults: INewSqlEditorOptions = {
 	open: true
@@ -35,37 +40,58 @@ export class QueryEditorService implements IQueryEditorService {
 		@IUntitledTextEditorService private _untitledEditorService: IUntitledTextEditorService,
 		@IInstantiationService private _instantiationService: IInstantiationService,
 		@IEditorService private _editorService: IEditorService,
-		@IConfigurationService private _configurationService: IConfigurationService
+		@IConfigurationService private _configurationService: IConfigurationService,
+		@IConnectionManagementService private _connectionManagementService: IConnectionManagementService,
+		@IObjectExplorerService private _objectExplorerService: IObjectExplorerService
 	) {
 	}
 
 	////// Public functions
 
 	/**
-	 * Creates new untitled document for SQL query and opens in new editor tab
+	 * Creates new untitled document for SQL/Kusto query and opens in new editor tab
 	 */
-	public async newSqlEditor(options: INewSqlEditorOptions = {}): Promise<IConnectableInput> {
+	public async newSqlEditor(options: INewSqlEditorOptions = {}, connectionProviderName?: string): Promise<UntitledQueryEditorInput> {
 		options = mixin(options, defaults, false);
 		// Create file path and file URI
-		let filePath = await this.createUntitledSqlFilePath();
-		let docUri: URI = URI.from({ scheme: Schemas.untitled, path: filePath });
+		let docUri: URI = options.resource ?? URI.from({ scheme: Schemas.untitled, path: await this.createUntitledSqlFilePath(connectionProviderName) });
 
 		// Create a sql document pane with accoutrements
-		const fileInput = this._editorService.createEditorInput({ forceUntitled: true, resource: docUri, mode: 'sql' }) as UntitledTextEditorInput;
-		let untitledEditorModel = await fileInput.resolve() as UntitledTextEditorModel;
+		const mode = this._connectionManagementService.getProviderLanguageMode(connectionProviderName);
+		const fileInput = this._editorService.createEditorInput({ forceUntitled: true, resource: docUri, mode: mode }) as UntitledTextEditorInput;
+		// Set the mode explicitely to stop the language detection service from changing the mode unexpectedly.
+		// The mode parameter used when creating the editorInput is used as preferred mode,
+		// the language detection service won't do the language change only if the mode is explicitely set.
+		fileInput.setMode(mode);
+		let untitledEditorModel = await fileInput.resolve();
 		if (options.initalContent) {
 			untitledEditorModel.textEditorModel.setValue(options.initalContent);
-			if (options.dirty === false || (options.dirty === undefined && !this._configurationService.getValue<boolean>('sql.promptToSaveGeneratedFiles'))) {
-				untitledEditorModel.setDirty(false);
+			if (options.dirty === false || (options.dirty === undefined && !this._configurationService.getValue<IQueryEditorConfiguration>('queryEditor').promptToSaveGeneratedFiles)) {
+				(untitledEditorModel as UntitledTextEditorModel).setDirty(false);
 			}
 		}
 
 		const queryResultsInput: QueryResultsInput = this._instantiationService.createInstance(QueryResultsInput, docUri.toString());
 		let queryInput = this._instantiationService.createInstance(UntitledQueryEditorInput, options.description, fileInput, queryResultsInput);
+		let profile: IConnectionProfile | undefined = undefined;
+		// If we're told to connect then get the connection before opening the editor since it will try to get the connection for the current
+		// active editor and so we need to get this before opening a new one.
+		if (options.connectWithGlobal) {
+			profile = getCurrentGlobalConnection(this._objectExplorerService, this._connectionManagementService, this._editorService);
+		}
 		if (options.open) {
 			await this._editorService.openEditor(queryInput, { pinned: true });
 		}
-
+		if (profile) {
+			const options: IConnectionCompletionOptions = {
+				params: { connectionType: ConnectionType.editor, runQueryOnCompletion: undefined, input: queryInput },
+				saveTheConnection: false,
+				showDashboard: false,
+				showConnectionDialogOnError: true,
+				showFirewallRuleOnError: true
+			};
+			this._connectionManagementService.connect(profile, queryInput.uri, options).catch(err => onUnexpectedError(err));
+		}
 		return queryInput;
 	}
 
@@ -81,9 +107,9 @@ export class QueryEditorService implements IQueryEditorService {
 
 		// Create a sql document pane with accoutrements
 		const fileInput = this._editorService.createEditorInput({ forceUntitled: true, resource: docUri, mode: 'sql' }) as UntitledTextEditorInput;
-		const m = await fileInput.resolve() as UntitledTextEditorModel;
+		const m = await fileInput.resolve();
 		//when associatedResource editor is created it is dirty, this must be set to false to be able to detect changes to the editor.
-		m.setDirty(false);
+		(m as UntitledTextEditorModel).setDirty(false);
 		// Create an EditDataInput for editing
 		const resultsInput: EditDataResultsInput = this._instantiationService.createInstance(EditDataResultsInput, docUri.toString());
 		let editDataInput: EditDataInput = this._instantiationService.createInstance(EditDataInput, docUri, schemaName, tableName, fileInput, sqlContent, resultsInput);
@@ -93,14 +119,17 @@ export class QueryEditorService implements IQueryEditorService {
 			//Setting the value of the textEditorModel to sqlContent marks editor as dirty, editDataInput handles it.
 			m.textEditorModel.setValue(sqlContent);
 		}
-		const editor = await this._editorService.openEditor(editDataInput, { pinned: true });
+		const editor = (await this._editorService.openEditor(editDataInput, { pinned: true }))!;
 		let params = editor.input as EditDataInput;
 		return params;
 	}
 
 	////// Private functions
+	private createUntitledSqlFilePath(providerName?: string): Promise<string> {
+		if (providerName === 'LOGANALYTICS' || providerName === 'KUSTO') {
+			return this.createPrefixedSqlFilePath('KQLQuery');
+		}
 
-	private createUntitledSqlFilePath(): Promise<string> {
 		return this.createPrefixedSqlFilePath('SQLQuery');
 	}
 

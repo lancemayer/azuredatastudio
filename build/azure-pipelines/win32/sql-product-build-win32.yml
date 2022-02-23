@@ -1,27 +1,7 @@
 steps:
-  - powershell: |
-      mkdir .build -ea 0
-      "$env:BUILD_SOURCEVERSION" | Out-File -Encoding ascii -NoNewLine .build\commit
-      "$env:VSCODE_QUALITY" | Out-File -Encoding ascii -NoNewLine .build\quality
-    displayName: Prepare cache flag
-
-  - task: 1ESLighthouseEng.PipelineArtifactCaching.RestoreCacheV1.RestoreCache@1
-    inputs:
-      keyfile: 'build/.cachesalt, .build/commit, .build/quality'
-      targetfolder: '.build, out-build, out-vscode-min, out-vscode-reh-min, out-vscode-reh-web-min'
-      vstsFeed: 'BuildCache'
-      platformIndependent: true
-      alias: 'Compilation'
-
-  - powershell: |
-      $ErrorActionPreference = "Stop"
-      exit 1
-    displayName: Check RestoreCache
-    condition: and(succeeded(), ne(variables['CacheRestored-Compilation'], 'true'))
-
   - task: NodeTool@0
     inputs:
-      versionSpec: "10.15.1"
+      versionSpec: "14.x"
 
   - task: geeklearningio.gl-vsts-tasks-yarn.yarn-installer-task.YarnInstaller@3
     inputs:
@@ -33,18 +13,29 @@ steps:
       addToPath: true
 
   - task: AzureKeyVault@1
-    displayName: 'Azure Key Vault: Get Secrets'
     inputs:
       azureSubscription: 'ClientToolsInfra_670062 (88d5392f-a34f-4769-b405-f597fc533613)'
       KeyVaultName: ado-secrets
-      SecretsFilter: 'github-distro-mixin-password'
+      SecretsFilter: 'github-distro-mixin-password,standalone-extensions-uri'
+    displayName: 'Azure Key Vault: Get Secrets'
+
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      artifact: Compilation
+    displayName: Download compilation output
+
+  - powershell: |
+      . build/azure-pipelines/win32/exec.ps1
+      $ErrorActionPreference = "Stop"
+      exec { tar -xf $(Pipeline.Workspace)/compilation.tar.gz }
+    displayName: Extract compilation output
 
   - powershell: |
       . build/azure-pipelines/win32/exec.ps1
       $ErrorActionPreference = "Stop"
       "machine github.com`nlogin azuredatastudio`npassword $(github-distro-mixin-password)" | Out-File "$env:USERPROFILE\_netrc" -Encoding ASCII
 
-      exec { git config user.email "andresse@microsoft.com" }
+      exec { git config user.email "sqltools@service.microsoft.com" }
       exec { git config user.name "AzureDataStudio" }
     displayName: Prepare tooling
 
@@ -54,35 +45,52 @@ steps:
       git merge $(node -p "require('./package.json').distro")
     displayName: Merge distro
 
-  - task: 1ESLighthouseEng.PipelineArtifactCaching.RestoreCacheV1.RestoreCache@1
+  - powershell: |
+      . build/azure-pipelines/win32/exec.ps1
+      $ErrorActionPreference = "Stop"
+      exec { node build/azure-pipelines/common/sql-computeNodeModulesCacheKey.js > .build/yarnlockhash }
+    displayName: Prepare yarn cache key
+
+  - task: Cache@2
     inputs:
-      keyfile: 'build/.cachesalt, .yarnrc, remote/.yarnrc, **/yarn.lock, !**/node_modules/**/yarn.lock, !**/.*/**/yarn.lock, !samples/**/yarn.lock'
-      targetfolder: '**/node_modules, !**/node_modules/**/node_modules, !samples/**/node_modules'
-      vstsFeed: 'BuildCache'
+      key: 'nodeModules | $(Agent.OS) | .build/yarnlockhash'
+      path: .build/node_modules_cache
+      cacheHitVar: NODE_MODULES_RESTORED
+    displayName: Restore Cache - Node Modules
+    continueOnError: true
+
+  - powershell: |
+      . build/azure-pipelines/win32/exec.ps1
+      $ErrorActionPreference = "Stop"
+      exec { 7z.exe x .build/node_modules_cache/cache.7z -aos }
+    condition: and(succeeded(), eq(variables.NODE_MODULES_RESTORED, 'true'))
+    displayName: Extract node_modules archive
 
   - powershell: |
       . build/azure-pipelines/win32/exec.ps1
       $ErrorActionPreference = "Stop"
       $env:CHILD_CONCURRENCY="1"
       exec { yarn --frozen-lockfile }
-    displayName: Install dependencies
     env:
       GITHUB_TOKEN: $(github-distro-mixin-password)
-    condition: and(succeeded(), ne(variables['CacheRestored'], 'true'))
+    condition: and(succeeded(), ne(variables.NODE_MODULES_RESTORED, 'true'))
+    displayName: Install dependencies
 
-  - task: 1ESLighthouseEng.PipelineArtifactCaching.SaveCacheV1.SaveCache@1
-    inputs:
-      keyfile: 'build/.cachesalt, .yarnrc, remote/.yarnrc, **/yarn.lock, !**/node_modules/**/yarn.lock, !**/.*/**/yarn.lock, !samples/**/yarn.lock'
-      targetfolder: '**/node_modules, !**/node_modules/**/node_modules, !samples/**/node_modules'
-      vstsFeed: 'BuildCache'
-    condition: and(succeeded(), ne(variables['CacheRestored'], 'true'))
+  - powershell: |
+      . build/azure-pipelines/win32/exec.ps1
+      $ErrorActionPreference = "Stop"
+      exec { node build/azure-pipelines/common/listNodeModules.js .build/node_modules_list.txt }
+      exec { mkdir -Force .build/node_modules_cache }
+      exec { 7z.exe a .build/node_modules_cache/cache.7z -mx3 `@.build/node_modules_list.txt }
+    condition: and(succeeded(), ne(variables.NODE_MODULES_RESTORED, 'true'))
+    displayName: Create node_modules archive
 
   - powershell: |
       . build/azure-pipelines/win32/exec.ps1
       $ErrorActionPreference = "Stop"
       exec { yarn postinstall }
     displayName: Run postinstall scripts
-    condition: and(succeeded(), eq(variables['CacheRestored'], 'true'))
+    condition: and(succeeded(), eq(variables.NODE_MODULES_RESTORED, 'true'))
 
   - powershell: |
       . build/azure-pipelines/win32/exec.ps1
@@ -95,13 +103,35 @@ steps:
       $ErrorActionPreference = "Stop"
       exec { yarn gulp "package-rebuild-extensions" }
       exec { yarn gulp "vscode-win32-x64-min-ci" }
-      exec { yarn gulp "vscode-reh-win32-x64-min-ci" }
-      exec { yarn gulp "vscode-reh-web-win32-x64-min-ci" }
       exec { yarn gulp "vscode-win32-x64-code-helper" }
       exec { yarn gulp "vscode-win32-x64-inno-updater" }
     displayName: Build
     env:
       VSCODE_MIXIN_PASSWORD: $(github-distro-mixin-password)
+
+  - task: UniversalPackages@0
+    displayName: Download SAW Python package
+    inputs:
+      command: 'download'
+      downloadDirectory: '$(agent.builddirectory)\azuredatastudio-win32-x64\resources\app\ads-python'
+      feedsToUse: 'internal'
+      vstsFeed: '2191dd5f-4aec-491b-ac50-568bbc331c8a'
+      vstsFeedPackage: '2e355f03-a97e-499a-949b-f02d62b6160c'
+      vstsPackageVersion: '*'
+    condition: and(succeeded(), eq(variables['VSCODE_QUALITY'], 'saw'))
+
+  - powershell: |
+      # Install TSGOps specific extensions
+      $ErrorActionPreference = "Stop"
+      $tempFilePath = (New-TemporaryFile).FullName
+      $zipFilePath = $tempFilePath + ".zip"
+      $extensionUri = "$(standalone-extensions-uri)"
+      $adsExtensionPath = "$(agent.builddirectory)\azuredatastudio-win32-x64\resources\app\extensions"
+      Invoke-WebRequest -Uri $extensionUri -OutFile $tempFilePath
+      Move-Item $tempFilePath $zipFilePath
+      Expand-Archive $zipFilePath -DestinationPath $adsExtensionPath
+    displayName: Install SAW Extensions
+    condition: and(succeeded(), eq(variables['VSCODE_QUALITY'], 'saw'))
 
   # - powershell: | @anthonydresser unit tests timeout never existing the node process
   #     . build/azure-pipelines/win32/exec.ps1
@@ -120,24 +150,24 @@ steps:
       $AppRoot = "$(agent.builddirectory)\azuredatastudio-win32-x64"
       $AppProductJson = Get-Content -Raw -Path "$AppRoot\resources\app\product.json" | ConvertFrom-Json
       $AppNameShort = $AppProductJson.nameShort
-      exec { $env:INTEGRATION_TEST_ELECTRON_PATH = "$AppRoot\$AppNameShort.exe"; $env:VSCODE_REMOTE_SERVER_PATH = "$(agent.builddirectory)\azuredatastudio-reh-win32-x64"; .\scripts\test-integration.bat --build --tfs "Integration Tests" }
+      # exec { $env:INTEGRATION_TEST_ELECTRON_PATH = "$AppRoot\$AppNameShort.exe"; $env:VSCODE_REMOTE_SERVER_PATH = "$(agent.builddirectory)\azuredatastudio-reh-win32-x64"; .\scripts\test-integration.bat --build --tfs "Integration Tests" }
     displayName: Run integration tests (Electron)
     condition: and(succeeded(), eq(variables['RUN_TESTS'], 'true'))
 
-  - powershell: |
-      . build/azure-pipelines/win32/exec.ps1
-      $ErrorActionPreference = "Stop"
-      exec { .\scripts\test-unstable.bat --build --tfs }
-    continueOnError: true
-    condition: and(succeeded(), eq(variables['RUN_UNSTABLE_TESTS'], 'true'))
-    displayName: Run unstable tests
+  # - powershell: |
+  #     . build/azure-pipelines/win32/exec.ps1
+  #     $ErrorActionPreference = "Stop"
+  #     exec { .\scripts\test-unstable.bat --build --tfs }
+  #   continueOnError: true
+  #   condition: and(succeeded(), eq(variables['RUN_UNSTABLE_TESTS'], 'true'))
+  #   displayName: Run unstable tests
 
   - task: SFP.build-tasks.custom-build-task-1.EsrpCodeSigning@1
     displayName: 'Sign out code'
     inputs:
       ConnectedServiceName: 'Code Signing'
       FolderPath: '$(agent.builddirectory)/azuredatastudio-win32-x64'
-      Pattern: '*.exe,*.node,resources/app/node_modules.asar.unpacked/*.dll,swiftshader/*.dll,d3dcompiler_47.dll,libGLESv2.dll,ffmpeg.dll,libEGL.dll,Microsoft.SqlTools.Hosting.dll,Microsoft.SqlTools.ResourceProvider.Core.dll,Microsoft.SqlTools.ResourceProvider.DefaultImpl.dll,MicrosoftSqlToolsCredentials.dll,MicrosoftSqlToolsServiceLayer.dll,Newtonsoft.Json.dll,SqlSerializationService.dll,SqlToolsResourceProviderService.dll,Microsoft.SqlServer.*.dll,Microsoft.Data.Tools.Sql.BatchParser.dll'
+      Pattern: '*.exe,*.node,resources/app/node_modules.asar.unpacked/*.dll,swiftshader/*.dll,d3dcompiler_47.dll,vulkan-1.dll,libGLESv2.dll,ffmpeg.dll,libEGL.dll,Microsoft.SqlTools.Hosting.dll,Microsoft.SqlTools.ResourceProvider.Core.dll,Microsoft.SqlTools.ResourceProvider.DefaultImpl.dll,MicrosoftSqlToolsCredentials.dll,MicrosoftSqlToolsServiceLayer.dll,Newtonsoft.Json.dll,SqlSerializationService.dll,SqlToolsResourceProviderService.dll,Microsoft.SqlServer.*.dll,Microsoft.Data.Tools.Sql.BatchParser.dll'
       signConfigType: inlineSignParams
       inlineOperation: |
         [
@@ -257,6 +287,12 @@ steps:
       archiveType: tar
       archiveFile: '$(Build.BinariesDirectory)/source.tar.gz'
 
+  - task: AzureArtifacts.manifest-generator-task.manifest-generator-task.ManifestGeneratorTask@0
+    displayName: 'SBOM Generation Task'
+    inputs:
+      BuildDropPath: '$(Build.ArtifactStagingDirectory)'
+      PackageName: 'Azure Data Studio'
+
   - task: PublishBuildArtifacts@1
     displayName: 'Publish Artifact: build scripts source'
     inputs:
@@ -279,7 +315,7 @@ steps:
       searchFolder: '$(Build.SourcesDirectory)'
       failTaskOnFailedTests: true
     continueOnError: true
-    condition: and(succeeded(), eq(variables['RUN_UNSTABLE_TESTS'], 'true'))
+    condition: and(succeededOrFailed(), eq(variables['RUN_UNSTABLE_TESTS'], 'true'))
 
   - task: ms.vss-governance-buildtask.governance-build-task-component-detection.ComponentGovernanceComponentDetection@0
     displayName: 'Component Detection'

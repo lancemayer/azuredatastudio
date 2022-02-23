@@ -4,15 +4,13 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Button } from 'sql/base/browser/ui/button/button';
-import { Modal } from 'sql/workbench/browser/modal/modal';
+import { HideReason, Modal } from 'sql/workbench/browser/modal/modal';
 import * as TelemetryKeys from 'sql/platform/telemetry/common/telemetryKeys';
-import { attachButtonStyler } from 'sql/platform/theme/common/styler';
 import { IThemeService } from 'vs/platform/theme/common/themeService';
 import { Event, Emitter } from 'vs/base/common/event';
 import { IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
 import { IClipboardService } from 'vs/platform/clipboard/common/clipboardService';
 import { localize } from 'vs/nls';
-import { toDisposable } from 'vs/base/common/lifecycle';
 import * as DOM from 'vs/base/browser/dom';
 import { ILogService } from 'vs/platform/log/common/log';
 import { IWebviewService, WebviewElement } from 'vs/workbench/contrib/webview/browser/webview';
@@ -21,21 +19,20 @@ import { ITextResourcePropertiesService } from 'vs/editor/common/services/textRe
 import { IAdsTelemetryService } from 'sql/platform/telemetry/common/telemetry';
 import { attachModalDialogStyler } from 'sql/workbench/common/styler';
 import { ILayoutService } from 'vs/platform/layout/browser/layoutService';
+import { attachButtonStyler } from 'vs/platform/theme/common/styler';
 
 export class WebViewDialog extends Modal {
 
-	private _body: HTMLElement;
-	private _okButton: Button;
+	private _body?: HTMLElement;
+	private _okButton?: Button;
 	private _okLabel: string;
 	private _closeLabel: string;
-	private _webview: WebviewElement;
-	private _html: string;
-	private _headerTitle: string;
+	private _webview?: WebviewElement;
+	private _html?: string;
+	private _headerTitle?: string;
 
 	private _onOk = new Emitter<void>();
 	public onOk: Event<void> = this._onOk.event;
-	private _onClosed = new Emitter<void>();
-	public onClosed: Event<void> = this._onClosed.event;
 	private _onMessage = new Emitter<any>();
 
 	private readonly id = generateUuid();
@@ -50,16 +47,16 @@ export class WebViewDialog extends Modal {
 		@IWebviewService private readonly webviewService: IWebviewService,
 		@ITextResourcePropertiesService textResourcePropertiesService: ITextResourcePropertiesService
 	) {
-		super('', TelemetryKeys.WebView, telemetryService, layoutService, clipboardService, themeService, logService, textResourcePropertiesService, contextKeyService, { isFlyout: false, hasTitleIcon: true });
+		super('', TelemetryKeys.ModalDialogName.WebView, telemetryService, layoutService, clipboardService, themeService, logService, textResourcePropertiesService, contextKeyService, { dialogStyle: 'normal', hasTitleIcon: true });
 		this._okLabel = localize('webViewDialog.ok', "OK");
 		this._closeLabel = localize('webViewDialog.close', "Close");
 	}
 
-	public set html(value: string) {
+	public setHtml(value: string) {
 		this._html = value;
 	}
 
-	public get html(): string {
+	public get html(): string | undefined {
 		return this._html;
 	}
 
@@ -79,11 +76,11 @@ export class WebViewDialog extends Modal {
 		return this._closeLabel;
 	}
 
-	public set headerTitle(value: string) {
+	public setHeaderTitle(value: string) {
 		this._headerTitle = value;
 	}
 
-	public get headerTitle(): string {
+	public get headerTitle(): string | undefined {
 		return this._headerTitle;
 	}
 
@@ -101,14 +98,13 @@ export class WebViewDialog extends Modal {
 		this._register(this._webview.onMessage(message => this._onMessage.fire(message)));
 
 		this._register(this._webview);
-		this._register(toDisposable(() => this._webview = null));
 	}
 
 	get onMessage(): Event<any> {
 		return this._onMessage.event;
 	}
 
-	public render() {
+	public override render() {
 		super.render();
 		this._register(attachModalDialogStyler(this, this._themeService));
 
@@ -121,37 +117,40 @@ export class WebViewDialog extends Modal {
 	}
 
 	private updateDialogBody(): void {
-		this._webview.html = this.html;
+		if (this.html) {
+			this._webview!.html = this.html;
+		}
 	}
 
 	/* espace key */
-	protected onClose() {
+	protected override onClose() {
 		this.ok();
 	}
 
 	/* enter key */
-	protected onAccept() {
+	protected override onAccept() {
 		this.ok();
 	}
 
 	public ok(): void {
 		this._onOk.fire();
-		this.close();
+		this.close('ok');
 	}
 
-	public close() {
-		this.hide();
-		this._onClosed.fire();
+	public close(hideReason: HideReason = 'close') {
+		this.hide(hideReason);
 	}
 
 	public sendMessage(message: any): void {
-		this._webview.sendMessage(message);
+		if (this._webview) {
+			this._webview.postMessage(message);
+		}
 	}
 
 	public open() {
-		this.title = this.headerTitle;
+		this.title = this.headerTitle ?? '';
 		this.updateDialogBody();
 		this.show();
-		this._okButton.focus();
+		this._okButton!.focus();
 	}
 }

@@ -13,7 +13,7 @@ import { getErrorMessage } from 'vs/base/common/errors';
 
 import { IClientSession, IClientSessionOptions } from 'sql/workbench/services/notebook/browser/models/modelInterfaces';
 import { Deferred } from 'sql/base/common/promise';
-import { INotebookManager } from 'sql/workbench/services/notebook/browser/notebookService';
+import { IExecuteManager } from 'sql/workbench/services/notebook/browser/notebookService';
 import { IConnectionProfile } from 'sql/platform/connection/common/interfaces';
 
 type KernelChangeHandler = (kernel: nb.IKernelChangedArgs) => Promise<void>;
@@ -30,28 +30,29 @@ export class ClientSession implements IClientSession {
 	private _unhandledMessageEmitter = new Emitter<nb.IMessage>();
 	private _propertyChangedEmitter = new Emitter<'path' | 'name' | 'type'>();
 	private _notebookUri: URI;
-	private _type: string;
-	private _name: string;
+	private _type: string = '';
+	private _name: string = '';
 	private _isReady: boolean;
 	private _ready: Deferred<void>;
 	private _kernelChangeCompleted: Deferred<void>;
-	private _kernelDisplayName: string;
-	private _errorMessage: string;
-	private _cachedKernelSpec: nb.IKernelSpec;
+	private _kernelDisplayName: string = '';
+	private _errorMessage: string = '';
+	private _cachedKernelSpec: nb.IKernelSpec | undefined;
 	private _kernelChangeHandlers: KernelChangeHandler[] = [];
 	private _defaultKernel: nb.IKernelSpec;
 
 	//#endregion
 
-	private _serverLoadFinished: Promise<void>;
-	private _session: nb.ISession;
-	private isServerStarted: boolean;
-	private notebookManager: INotebookManager;
+	private _serverLoadFinished: Promise<void> = Promise.resolve();
+	private _session: nb.ISession | undefined;
+	private _isServerStarted: boolean = false;
+	private _executeManager: IExecuteManager;
 	private _kernelConfigActions: ((kernelName: string) => Promise<any>)[] = [];
+	private _connectionId: string = '';
 
 	constructor(private options: IClientSessionOptions) {
 		this._notebookUri = options.notebookUri;
-		this.notebookManager = options.notebookManager;
+		this._executeManager = options.executeManager;
 		this._isReady = false;
 		this._ready = new Deferred<void>();
 		this._kernelChangeCompleted = new Deferred<void>();
@@ -71,28 +72,31 @@ export class ClientSession implements IClientSession {
 		this._isReady = true;
 		this._ready.resolve();
 		if (!this.isInErrorState && this._session && this._session.kernel) {
-			await this.notifyKernelChanged(undefined, this._session.kernel);
+			await this.notifyKernelChanged(this._session.kernel);
 		}
 	}
 
 	private async startServer(kernelSpec: nb.IKernelSpec): Promise<void> {
-		let serverManager = this.notebookManager.serverManager;
+		if (!this._executeManager) {
+			throw new Error(localize('NoExecuteManager', "Server could not start because a provider was not defined for this notebook file type."));
+		}
+		let serverManager = this._executeManager.serverManager;
 		if (serverManager) {
 			await serverManager.startServer(kernelSpec);
 			if (!serverManager.isStarted) {
 				throw new Error(localize('ServerNotStarted', "Server did not start for unknown reason"));
 			}
-			this.isServerStarted = serverManager.isStarted;
+			this._isServerStarted = serverManager.isStarted;
 		} else {
-			this.isServerStarted = true;
+			this._isServerStarted = true;
 		}
 	}
 
 	private async initializeSession(): Promise<void> {
 		await this._serverLoadFinished;
-		if (this.isServerStarted) {
-			if (!this.notebookManager.sessionManager.isReady) {
-				await this.notebookManager.sessionManager.ready;
+		if (this._isServerStarted) {
+			if (!this._executeManager.sessionManager.isReady) {
+				await this._executeManager.sessionManager.ready;
 			}
 			if (this._defaultKernel) {
 				await this.startSessionInstance(this._defaultKernel.name);
@@ -104,7 +108,7 @@ export class ClientSession implements IClientSession {
 		let session: nb.ISession;
 		try {
 			// TODO #3164 should use URI instead of path for startNew
-			session = await this.notebookManager.sessionManager.startNew({
+			session = await this._executeManager.sessionManager.startNew({
 				path: this.notebookUri.fsPath,
 				kernelName: kernelName
 				// TODO add kernel name if saved in the document
@@ -114,7 +118,7 @@ export class ClientSession implements IClientSession {
 			// TODO move registration
 			if (err && err.response && err.response.status === 501) {
 				this.options.notificationService.warn(localize('kernelRequiresConnection', "Kernel {0} was not found. The default kernel will be used instead.", kernelName));
-				session = await this.notebookManager.sessionManager.startNew({
+				session = await this._executeManager.sessionManager.startNew({
 					path: this.notebookUri.fsPath,
 					kernelName: undefined
 				});
@@ -172,7 +176,7 @@ export class ClientSession implements IClientSession {
 	public get propertyChanged(): Event<'path' | 'name' | 'type'> {
 		return this._propertyChangedEmitter.event;
 	}
-	public get kernel(): nb.IKernel | null {
+	public get kernel(): nb.IKernel | undefined {
 		return this._session ? this._session.kernel : undefined;
 	}
 	public get notebookUri(): URI {
@@ -209,7 +213,7 @@ export class ClientSession implements IClientSession {
 		return !!this._errorMessage;
 	}
 
-	public get cachedKernelSpec(): nb.IKernelSpec {
+	public get cachedKernelSpec(): nb.IKernelSpec | undefined {
 		return this._cachedKernelSpec;
 	}
 	//#endregion
@@ -218,29 +222,31 @@ export class ClientSession implements IClientSession {
 	/**
 	 * Change the current kernel associated with the document.
 	 */
-	async changeKernel(options: nb.IKernelSpec, oldValue?: nb.IKernel): Promise<nb.IKernel> {
+	async changeKernel(options: nb.IKernelSpec, oldValue?: nb.IKernel): Promise<nb.IKernel | undefined> {
 		this._kernelChangeCompleted = new Deferred<void>();
 		this._isReady = false;
 		let oldKernel = oldValue ? oldValue : this.kernel;
 
 		let kernel = await this.doChangeKernel(options);
 		try {
-			await kernel.ready;
+			await kernel?.ready;
 		} catch (error) {
 			// Cleanup some state before re-throwing
-			this._isReady = kernel.isReady;
+			this._isReady = kernel ? kernel.isReady : false;
 			this._kernelChangeCompleted.resolve();
 			throw error;
 		}
-		let newKernel = this._session ? kernel : this._session.kernel;
-		this._isReady = kernel.isReady;
+		let newKernel = this._session ? this._session.kernel : kernel;
+		this._isReady = kernel ? kernel.isReady : false;
 		await this.updateCachedKernelSpec();
 		// Send resolution events to listeners
-		await this.notifyKernelChanged(oldKernel, newKernel);
+		if (newKernel) {
+			await this.notifyKernelChanged(newKernel, oldKernel);
+		}
 		return kernel;
 	}
 
-	private async notifyKernelChanged(oldKernel: nb.IKernel, newKernel: nb.IKernel): Promise<void> {
+	private async notifyKernelChanged(newKernel: nb.IKernel, oldKernel?: nb.IKernel): Promise<void> {
 		let changeArgs: nb.IKernelChangedArgs = {
 			oldValue: oldKernel,
 			newValue: newKernel
@@ -266,8 +272,8 @@ export class ClientSession implements IClientSession {
 	/**
 	 * Helper method to either call ChangeKernel on current session, or start a new session
 	 */
-	private async doChangeKernel(options: nb.IKernelSpec): Promise<nb.IKernel> {
-		let kernel: nb.IKernel;
+	private async doChangeKernel(options: nb.IKernelSpec): Promise<nb.IKernel | undefined> {
+		let kernel: nb.IKernel | undefined;
 		if (this._session) {
 			kernel = await this._session.changeKernel(options);
 			await this.runKernelConfigActions(kernel.name);
@@ -288,8 +294,9 @@ export class ClientSession implements IClientSession {
 			// TODO is there any case where skipping causes errors? So far it seems like it gets called twice
 			return;
 		}
-		if (connection.id !== '-1') {
+		if (connection.id !== '-1' && connection.id !== this._connectionId && this._session) {
 			await this._session.configureConnection(connection);
+			this._connectionId = connection.id;
 		}
 	}
 
@@ -300,8 +307,8 @@ export class ClientSession implements IClientSession {
 	 */
 	public async shutdown(): Promise<void> {
 		// Always try to shut down session
-		if (this._session && this._session.id && this.notebookManager && this.notebookManager.sessionManager) {
-			await this.notebookManager.sessionManager.shutdown(this._session.id);
+		if (this._session && this._session.id && this._executeManager && this._executeManager.sessionManager) {
+			await this._executeManager.sessionManager.shutdown(this._session.id);
 		}
 	}
 

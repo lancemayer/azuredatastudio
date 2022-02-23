@@ -10,12 +10,11 @@ import { through, readable, ThroughStream } from 'event-stream';
 import * as File from 'vinyl';
 import * as Is from 'is';
 import * as xml2js from 'xml2js';
-import * as glob from 'glob';
 import * as https from 'https';
 import * as gulp from 'gulp';
 import * as fancyLog from 'fancy-log';
 import * as ansiColors from 'ansi-colors';
-import * as iconv from 'iconv-lite';
+import * as iconv from 'iconv-lite-umd';
 
 const NUMBER_OF_CONCURRENT_DOWNLOADS = 4;
 
@@ -31,10 +30,6 @@ export interface Language {
 
 export interface InnoSetup {
 	codePage: string; //code page for encoding (http://www.jrsoftware.org/ishelp/index.php?topic=langoptionssection)
-	defaultInfo?: {
-		name: string; // inno setup language name
-		id: string; // locale identifier (https://msdn.microsoft.com/en-us/library/dd318693.aspx)
-	};
 }
 
 export const defaultLanguages: Language[] = [
@@ -64,7 +59,7 @@ export const externalExtensionsWithTranslations = {
 };
 
 
-interface Map<V> {
+export interface Map<V> {	// {{SQL CARBON EDIT}} Needed in locfunc.
 	[key: string]: V;
 }
 
@@ -79,7 +74,7 @@ export interface Resource {
 	project: string;
 }
 
-interface ParsedXLF {
+export interface ParsedXLF {	// {{SQL CARBON EDIT}} Needed in locfunc.
 	messages: Map<string>;
 	originalFilePath: string;
 	language: string;
@@ -198,14 +193,17 @@ export class XLF {
 	public toString(): string {
 		this.appendHeader();
 
-		for (let file in this.files) {
+		const files = Object.keys(this.files).sort();
+		for (const file of files) {
 			this.appendNewLine(`<file original="${file}" source-language="en" datatype="plaintext"><body>`, 2);
-			for (let item of this.files[file]) {
+			const items = this.files[file].sort((a: Item, b: Item) => {
+				return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+			});
+			for (const item of items) {
 				this.addStringItem(file, item);
 			}
-			this.appendNewLine('</body></file>', 2);
+			this.appendNewLine('</body></file>');
 		}
-
 		this.appendFooter();
 		return this.buffer.join('\r\n');
 	}
@@ -339,13 +337,14 @@ export class XLF {
 
 							let val = unit.target[0];
 							if (typeof val !== 'string') {
-								val = val._;
+								// We allow empty source values so support them for translations as well.
+								val = val._ ? val._ : '';
 							}
-							if (key && val) {
-								messages[key] = decodeEntities(val);
-							} else {
-								reject(new Error(`XLF parsing error: XLIFF file ${originalFilePath} does not contain full localization data. ID or target translation for one of the trans-unit nodes is not present.`));
+							if (!key) {
+								reject(new Error(`XLF parsing error: trans-unit ${JSON.stringify(unit, undefined, 0)} defined in file ${originalFilePath} is missing the ID attribute.`));
+								return;
 							}
+							messages[key] = decodeEntities(val);
 						});
 						files.push({ messages: messages, originalFilePath: originalFilePath, language: language.toLowerCase() });
 					}
@@ -610,7 +609,7 @@ const editorProject: string = 'vscode-editor',
 	setupProject: string = 'vscode-setup';
 
 // {{SQL CARBON EDIT}}
-const sqlopsProject: string = 'sqlops-core';
+const adsProject: string = 'ads-core';
 
 export function getResource(sourceFile: string): Resource {
 	let resource: string;
@@ -637,7 +636,7 @@ export function getResource(sourceFile: string): Resource {
 
 	// {{SQL CARBON EDIT}}
 	else if (/^sql/.test(sourceFile)) {
-		return { name: 'sql', project: sqlopsProject };
+		return { name: 'sql', project: adsProject };
 	}
 
 	throw new Error(`Could not identify the XLF bundle for ${sourceFile}`);
@@ -651,7 +650,11 @@ export function createXlfFilesForCoreBundle(): ThroughStream {
 			if (file.isBuffer()) {
 				const xlfs: Map<XLF> = Object.create(null);
 				const json: BundledFormat = JSON.parse((file.contents as Buffer).toString('utf8'));
-				for (let coreModule in json.keys) {
+				// {{SQL CARBON EDIT}} - Must sort the keys for easier translation.
+				let sortedKeys = Object.keys(json.keys).sort();
+				for (let i = 0; i < sortedKeys.length; i++) {
+					let coreModule = sortedKeys[i];
+					// {{SQL CARBON EDIT}} - End
 					const projectResource = getResource(coreModule);
 					const resource = projectResource.name;
 					const project = projectResource.project;
@@ -770,12 +773,11 @@ export function createXlfFilesForIsl(): ThroughStream {
 	return through(function (this: ThroughStream, file: File) {
 		let projectName: string,
 			resourceFile: string;
-		if (path.basename(file.path) === 'Default.isl') {
+		if (path.basename(file.path) === 'messages.en.isl') {
 			projectName = setupProject;
-			resourceFile = 'setup_default.xlf';
+			resourceFile = 'messages.xlf';
 		} else {
-			projectName = workbenchProject;
-			resourceFile = 'setup_messages.xlf';
+			throw new Error(`Unknown input file ${file.path}`);
 		}
 
 		let xlf = new XLF(projectName),
@@ -1004,7 +1006,7 @@ function createResource(project: string, slug: string, xlfFile: File, apiHostnam
  * https://dev.befoolish.co/tx-docs/public/projects/updating-content#what-happens-when-you-update-files
  */
 function updateResource(project: string, slug: string, xlfFile: File, apiHostname: string, credentials: string): Promise<any> {
-	return new Promise((resolve, reject) => {
+	return new Promise<void>((resolve, reject) => {
 		const data = JSON.stringify({ content: xlfFile.contents.toString() });
 		const options = {
 			hostname: apiHostname,
@@ -1041,35 +1043,6 @@ function updateResource(project: string, slug: string, xlfFile: File, apiHostnam
 		request.write(data);
 		request.end();
 	});
-}
-
-// cache resources
-let _coreAndExtensionResources: Resource[];
-
-export function pullCoreAndExtensionsXlfFiles(apiHostname: string, username: string, password: string, language: Language, externalExtensions?: Map<string>): NodeJS.ReadableStream {
-	if (!_coreAndExtensionResources) {
-		_coreAndExtensionResources = [];
-		// editor and workbench
-		const json = JSON.parse(fs.readFileSync('./build/lib/i18n.resources.json', 'utf8'));
-		_coreAndExtensionResources.push(...json.editor);
-		_coreAndExtensionResources.push(...json.workbench);
-
-		// extensions
-		let extensionsToLocalize = Object.create(null);
-		glob.sync('.build/extensions/**/*.nls.json').forEach(extension => extensionsToLocalize[extension.split('/')[2]] = true);
-		glob.sync('.build/extensions/*/node_modules/vscode-nls').forEach(extension => extensionsToLocalize[extension.split('/')[2]] = true);
-
-		Object.keys(extensionsToLocalize).forEach(extension => {
-			_coreAndExtensionResources.push({ name: extension, project: extensionsProject });
-		});
-
-		if (externalExtensions) {
-			for (let resourceName in externalExtensions) {
-				_coreAndExtensionResources.push({ name: resourceName, project: extensionsProject });
-			}
-		}
-	}
-	return pullXlfFiles(apiHostname, username, password, language, _coreAndExtensionResources);
 }
 
 export function pullSetupXlfFiles(apiHostname: string, username: string, password: string, language: Language, includeDefault: boolean): NodeJS.ReadableStream {
@@ -1166,7 +1139,7 @@ export function prepareI18nFiles(): ThroughStream {
 	});
 }
 
-function createI18nFile(originalFilePath: string, messages: any): File {
+export function createI18nFile(originalFilePath: string, messages: any): File { // {{SQL CARBON EDIT}} Needed for locfunc.
 	let result = Object.create(null);
 	result[''] = [
 		'--------------------------------------------------------------------------------------------',
@@ -1189,23 +1162,18 @@ function createI18nFile(originalFilePath: string, messages: any): File {
 	});
 }
 
-interface I18nPack {
+export interface I18nPack {	// {{SQL CARBON EDIT}} Needed in locfunc.
 	version: string;
 	contents: {
 		[path: string]: Map<string>;
 	};
 }
 
-const i18nPackVersion = "1.0.0";
+export const i18nPackVersion = '1.0.0'; // {{SQL CARBON EDIT}} Needed in locfunc.
 
 export interface TranslationPath {
 	id: string;
 	resourceName: string;
-}
-
-export function pullI18nPackFiles(apiHostname: string, username: string, password: string, language: Language, resultingTranslationPaths: TranslationPath[]): NodeJS.ReadableStream {
-	return pullCoreAndExtensionsXlfFiles(apiHostname, username, password, language, externalExtensionsWithTranslations)
-		.pipe(prepareI18nPackFiles(externalExtensionsWithTranslations, resultingTranslationPaths, language.id === 'ps'));
 }
 
 export function prepareI18nPackFiles(externalExtensions: Map<string>, resultingTranslationPaths: TranslationPath[], pseudo = false): NodeJS.ReadWriteStream {
@@ -1214,9 +1182,10 @@ export function prepareI18nPackFiles(externalExtensions: Map<string>, resultingT
 	let extensionsPacks: Map<I18nPack> = {};
 	let errors: any[] = [];
 	return through(function (this: ThroughStream, xlf: File) {
-		let project = path.basename(path.dirname(xlf.relative));
+		let project = path.basename(path.dirname(path.dirname(xlf.relative)));
 		let resource = path.basename(xlf.relative, '.xlf');
 		let contents = xlf.contents.toString();
+		log(`Found ${project}: ${resource}`);
 		let parsePromise = pseudo ? XLF.parsePseudo(contents) : XLF.parse(contents);
 		parsePromises.push(parsePromise);
 		parsePromise.then(
@@ -1285,9 +1254,6 @@ export function prepareIslFiles(language: Language, innoSetupConfig: InnoSetup):
 		parsePromise.then(
 			resolvedFiles => {
 				resolvedFiles.forEach(file => {
-					if (path.basename(file.originalFilePath) === 'Default' && !innoSetupConfig.defaultInfo) {
-						return;
-					}
 					let translatedFile = createIslFile(file.originalFilePath, file.messages, language, innoSetupConfig);
 					stream.queue(translatedFile);
 				});
@@ -1316,27 +1282,15 @@ function createIslFile(originalFilePath: string, messages: Map<string>, language
 		if (line.length > 0) {
 			let firstChar = line.charAt(0);
 			if (firstChar === '[' || firstChar === ';') {
-				if (line === '; *** Inno Setup version 5.5.3+ English messages ***') {
-					content.push(`; *** Inno Setup version 5.5.3+ ${innoSetup.defaultInfo!.name} messages ***`);
-				} else {
-					content.push(line);
-				}
+				content.push(line);
 			} else {
 				let sections: string[] = line.split('=');
 				let key = sections[0];
 				let translated = line;
 				if (key) {
-					if (key === 'LanguageName') {
-						translated = `${key}=${innoSetup.defaultInfo!.name}`;
-					} else if (key === 'LanguageID') {
-						translated = `${key}=${innoSetup.defaultInfo!.id}`;
-					} else if (key === 'LanguageCodePage') {
-						translated = `${key}=${innoSetup.codePage.substr(2)}`;
-					} else {
-						let translatedMessage = messages[key];
-						if (translatedMessage) {
-							translated = `${key}=${translatedMessage}`;
-						}
+					let translatedMessage = messages[key];
+					if (translatedMessage) {
+						translated = `${key}=${translatedMessage}`;
 					}
 				}
 
@@ -1347,10 +1301,11 @@ function createIslFile(originalFilePath: string, messages: Map<string>, language
 
 	const basename = path.basename(originalFilePath);
 	const filePath = `${basename}.${language.id}.isl`;
+	const encoded = iconv.encode(Buffer.from(content.join('\r\n'), 'utf8').toString(), innoSetup.codePage);
 
 	return new File({
 		path: filePath,
-		contents: iconv.encode(Buffer.from(content.join('\r\n'), 'utf8').toString(), innoSetup.codePage)
+		contents: Buffer.from(encoded),
 	});
 }
 

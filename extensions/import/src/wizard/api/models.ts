@@ -19,6 +19,8 @@ export interface ImportDataModel {
 	schema: string;
 	filePath: string;
 	fileType: string;
+	originalProseColumns: ColumnMetadata[];
+	newFileSelected: boolean;
 }
 
 /**
@@ -30,3 +32,5 @@ export interface ColumnMetadata {
 	primaryKey: boolean;
 	nullable: boolean;
 }
+
+export type ColumnMetadataArray = (string | number | boolean)[];

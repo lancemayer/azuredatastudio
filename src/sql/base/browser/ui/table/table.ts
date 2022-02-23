@@ -8,7 +8,7 @@ import 'vs/css!./media/slick.grid';
 import 'vs/css!./media/slickColorTheme';
 
 import { TableDataView } from './tableDataView';
-import { IDisposableDataProvider, ITableSorter, ITableMouseEvent, ITableConfiguration, ITableStyles } from 'sql/base/browser/ui/table/interfaces';
+import { ITableSorter, ITableMouseEvent, ITableConfiguration, ITableStyles } from 'sql/base/browser/ui/table/interfaces';
 
 import * as DOM from 'vs/base/browser/dom';
 import { mixin } from 'vs/base/common/objects';
@@ -19,6 +19,7 @@ import { isArray, isBoolean } from 'vs/base/common/types';
 import { Event, Emitter } from 'vs/base/common/event';
 import { range } from 'vs/base/common/arrays';
 import { AsyncDataProvider } from 'sql/base/browser/ui/table/asyncDataView';
+import { IDisposableDataProvider } from 'sql/base/common/dataProvider';
 
 function getDefaultOptions<T>(): Slick.GridOptions<T> {
 	return <Slick.GridOptions<T>>{
@@ -78,17 +79,17 @@ export class Table<T extends Slick.SlickData> extends Widget implements IDisposa
 
 		this._container = document.createElement('div');
 		this._container.className = 'monaco-table';
-		this._register(DOM.addDisposableListener(this._container, DOM.EventType.FOCUS, () => {
+		this._register(DOM.addDisposableListener(this._container, DOM.EventType.FOCUS, (e: FocusEvent) => {
 			clearTimeout(this._classChangeTimeout);
 			this._classChangeTimeout = setTimeout(() => {
-				DOM.addClass(this._container, 'focused');
+				this._container.classList.add('focused');
 			}, 100);
 		}, true));
 
 		this._register(DOM.addDisposableListener(this._container, DOM.EventType.BLUR, () => {
 			clearTimeout(this._classChangeTimeout);
 			this._classChangeTimeout = setTimeout(() => {
-				DOM.removeClass(this._container, 'focused');
+				this._container.classList.remove('focused');
 			}, 100);
 		}, true));
 
@@ -99,7 +100,7 @@ export class Table<T extends Slick.SlickData> extends Widget implements IDisposa
 		this.styleElement = DOM.createStyleSheet(this._container);
 		this._grid = new Slick.Grid<T>(this._tableContainer, this._data, this._columns, newOptions);
 		this.idPrefix = this._tableContainer.classList[0];
-		DOM.addClass(this._container, this.idPrefix);
+		this._container.classList.add(this.idPrefix);
 		if (configuration && configuration.sorter) {
 			this._sorter = configuration.sorter;
 			this._grid.onSort.subscribe((e, args) => {
@@ -122,7 +123,7 @@ export class Table<T extends Slick.SlickData> extends Widget implements IDisposa
 		this._grid.onColumnsResized.subscribe(() => this._onColumnResize.fire());
 	}
 
-	public rerenderGrid(start: number, end: number) {
+	public rerenderGrid() {
 		this._grid.updateRowCount();
 		this._grid.setColumns(this._grid.getColumns());
 		this._grid.invalidateAllRows();
@@ -138,7 +139,7 @@ export class Table<T extends Slick.SlickData> extends Widget implements IDisposa
 		});
 	}
 
-	public dispose() {
+	public override dispose() {
 		this._container.remove();
 		super.dispose();
 	}
@@ -239,6 +240,10 @@ export class Table<T extends Slick.SlickData> extends Widget implements IDisposa
 
 	registerPlugin(plugin: Slick.Plugin<T>): void {
 		this._grid.registerPlugin(plugin);
+	}
+
+	unregisterPlugin(plugin: Slick.Plugin<T>): void {
+		this._grid.unregisterPlugin(plugin);
 	}
 
 	/**
@@ -395,5 +400,9 @@ export class Table<T extends Slick.SlickData> extends Widget implements IDisposa
 
 	public set ariaLabel(value: string) {
 		this._tableContainer.setAttribute('aria-label', value);
+	}
+
+	public get container(): HTMLElement {
+		return this._tableContainer;
 	}
 }

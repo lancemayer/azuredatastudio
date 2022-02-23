@@ -25,9 +25,12 @@ import { ISerializationService } from 'sql/platform/serialization/common/seriali
 import { IFileBrowserService } from 'sql/workbench/services/fileBrowser/common/interfaces';
 import { IExtHostContext } from 'vs/workbench/api/common/extHost.protocol';
 import { extHostNamedCustomer } from 'vs/workbench/api/common/extHostCustomers';
-import { assign } from 'vs/base/common/objects';
 import { serializableToMap } from 'sql/base/common/map';
 import { IAssessmentService } from 'sql/workbench/services/assessment/common/interfaces';
+import { IDataGridProviderService } from 'sql/workbench/services/dataGridProvider/common/dataGridProviderService';
+import { IAdsTelemetryService, ITelemetryEventProperties } from 'sql/platform/telemetry/common/telemetry';
+import * as TelemetryKeys from 'sql/platform/telemetry/common/telemetryKeys';
+import { ITableDesignerService } from 'sql/workbench/services/tableDesigner/common/interface';
 
 /**
  * Main thread class for handling data protocol management registration.
@@ -55,7 +58,10 @@ export class MainThreadDataProtocol extends Disposable implements MainThreadData
 		@IProfilerService private _profilerService: IProfilerService,
 		@ISerializationService private _serializationService: ISerializationService,
 		@IFileBrowserService private _fileBrowserService: IFileBrowserService,
-		@IAssessmentService private _assessmentService: IAssessmentService
+		@IAssessmentService private _assessmentService: IAssessmentService,
+		@IDataGridProviderService private _dataGridProviderService: IDataGridProviderService,
+		@IAdsTelemetryService private _telemetryService: IAdsTelemetryService,
+		@ITableDesignerService private _tableDesignerService: ITableDesignerService
 	) {
 		super();
 		if (extHostContext) {
@@ -127,6 +133,9 @@ export class MainThreadDataProtocol extends Disposable implements MainThreadData
 			},
 			disposeQuery(ownerUri: string): Promise<void> {
 				return Promise.resolve(self._proxy.$disposeQuery(handle, ownerUri));
+			},
+			connectionUriChanged(newUri: string, oldUri: string): Promise<void> {
+				return Promise.resolve(self._proxy.$connectionUriChanged(handle, newUri, oldUri));
 			},
 			saveResults(requestParams: azdata.SaveResultsRequestParams): Promise<azdata.SaveResultRequestResult> {
 				let saveResultsFeatureInfo = self._serializationService.getSaveResultsFeatureMetadataProvider(requestParams.ownerUri);
@@ -466,11 +475,61 @@ export class MainThreadDataProtocol extends Disposable implements MainThreadData
 
 		return undefined;
 	}
+
+	public $registerDataGridProvider(providerId: string, title: string, handle: number): void {
+		const self = this;
+		this._dataGridProviderService.registerProvider(providerId, <azdata.DataGridProvider>{
+			providerId: providerId,
+			title: title,
+			getDataGridItems(): Thenable<azdata.DataGridItem[]> {
+				self._telemetryService.createActionEvent(TelemetryKeys.TelemetryView.Shell, TelemetryKeys.TelemetryAction.GetDataGridItems)
+					.withAdditionalProperties({
+						provider: providerId
+					}).send();
+				return self._proxy.$getDataGridItems(handle);
+			},
+			getDataGridColumns(): Thenable<azdata.DataGridColumn[]> {
+				self._telemetryService.createActionEvent(TelemetryKeys.TelemetryView.Shell, TelemetryKeys.TelemetryAction.GetDataGridColumns)
+					.withAdditionalProperties({
+						provider: providerId
+					}).send();
+				return self._proxy.$getDataGridColumns(handle);
+			}
+		});
+	}
+
 	public $registerCapabilitiesServiceProvider(providerId: string, handle: number): Promise<any> {
 		const self = this;
 		this._capabilitiesService.registerProvider(<azdata.CapabilitiesProvider>{
 			getServerCapabilities(client: azdata.DataProtocolClientCapabilities): Thenable<azdata.DataProtocolServerCapabilities> {
 				return self._proxy.$getServerCapabilities(handle, client);
+			}
+		});
+
+		return undefined;
+	}
+
+	$registerTableDesignerProvider(providerId: string, handle: number): Promise<any> {
+		const self = this;
+		this._tableDesignerService.registerProvider(providerId, <azdata.designers.TableDesignerProvider>{
+			providerId: providerId,
+			initializeTableDesigner(tableInfo: azdata.designers.TableInfo): Thenable<azdata.designers.TableDesignerInfo> {
+				return self._proxy.$initializeTableDesigner(handle, tableInfo);
+			},
+			processTableEdit(table, edit): Thenable<azdata.designers.DesignerEditResult> {
+				return self._proxy.$processTableDesignerEdit(handle, table, edit);
+			},
+			publishChanges(tableInfo: azdata.designers.TableInfo): Thenable<azdata.designers.PublishChangesResult> {
+				return self._proxy.$publishTableDesignerChanges(handle, tableInfo);
+			},
+			generateScript(tableInfo: azdata.designers.TableInfo): Thenable<string> {
+				return self._proxy.$generateScriptForTableDesigner(handle, tableInfo);
+			},
+			generatePreviewReport(tableInfo: azdata.designers.TableInfo): Thenable<string> {
+				return self._proxy.$generatePreviewReportForTableDesigner(handle, tableInfo);
+			},
+			disposeTableDesigner(tableInfo: azdata.designers.TableInfo): Thenable<void> {
+				return self._proxy.$disposeTableDesigner(handle, tableInfo);
 			}
 		});
 
@@ -542,7 +601,7 @@ export class MainThreadDataProtocol extends Disposable implements MainThreadData
 	}
 
 	public $onObjectExplorerNodeExpanded(providerId: string, expandResponse: azdata.ObjectExplorerExpandInfo): void {
-		let expandInfo: NodeExpandInfoWithProviderId = assign({ providerId: providerId }, expandResponse);
+		let expandInfo: NodeExpandInfoWithProviderId = Object.assign({ providerId: providerId }, expandResponse);
 		this._objectExplorerService.onNodeExpanded(expandInfo);
 	}
 
@@ -584,6 +643,11 @@ export class MainThreadDataProtocol extends Disposable implements MainThreadData
 	// SQL Server Agent handlers
 	public $onJobDataUpdated(handle: Number): void {
 		this._jobManagementService.fireOnDidChange();
+	}
+
+	// Table Designer
+	public $openTableDesigner(providerId: string, tableInfo: azdata.designers.TableInfo, telemetryInfo?: ITelemetryEventProperties): void {
+		this._tableDesignerService.openTableDesigner(providerId, tableInfo, telemetryInfo);
 	}
 
 	public $unregisterProvider(handle: number): Promise<any> {

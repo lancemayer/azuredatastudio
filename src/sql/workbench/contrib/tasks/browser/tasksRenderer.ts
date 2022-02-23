@@ -67,32 +67,33 @@ export class TaskHistoryRenderer implements IRenderer {
 	 * Render a element, given an object bag returned by the template
 	 */
 	public renderElement(tree: ITree, element: TaskNode, templateId: string, templateData: ITaskHistoryTemplateData): void {
-		let taskStatus;
+		let taskStatus: string;
 		if (element) {
 			templateData.icon.className = 'task-icon';
 			switch (element.status) {
+				case TaskStatus.SucceededWithWarning:
 				case TaskStatus.Succeeded:
-					dom.addClass(templateData.icon, TaskHistoryRenderer.SUCCESS_CLASS);
+					templateData.icon.classList.add(TaskHistoryRenderer.SUCCESS_CLASS);
 					taskStatus = localize('succeeded', "succeeded");
 					break;
 				case TaskStatus.Failed:
-					dom.addClass(templateData.icon, TaskHistoryRenderer.FAIL_CLASS);
+					templateData.icon.classList.add(TaskHistoryRenderer.FAIL_CLASS);
 					taskStatus = localize('failed', "failed");
 					break;
 				case TaskStatus.InProgress:
-					dom.addClass(templateData.icon, TaskHistoryRenderer.INPROGRESS_CLASS);
+					templateData.icon.classList.add(TaskHistoryRenderer.INPROGRESS_CLASS);
 					taskStatus = localize('inProgress', "in progress");
 					break;
 				case TaskStatus.NotStarted:
-					dom.addClass(templateData.icon, TaskHistoryRenderer.NOTSTARTED_CLASS);
+					templateData.icon.classList.add(TaskHistoryRenderer.NOTSTARTED_CLASS);
 					taskStatus = localize('notStarted', "not started");
 					break;
 				case TaskStatus.Canceled:
-					dom.addClass(templateData.icon, TaskHistoryRenderer.CANCELED_CLASS);
+					templateData.icon.classList.add(TaskHistoryRenderer.CANCELED_CLASS);
 					taskStatus = localize('canceled', "canceled");
 					break;
 				case TaskStatus.Canceling:
-					dom.addClass(templateData.icon, TaskHistoryRenderer.INPROGRESS_CLASS);
+					templateData.icon.classList.add(TaskHistoryRenderer.INPROGRESS_CLASS);
 					taskStatus = localize('canceling', "canceling");
 					break;
 			}
@@ -103,7 +104,7 @@ export class TaskHistoryRenderer implements IRenderer {
 			templateData.label.textContent = element.taskName + ' ' + taskStatus;
 			templateData.label.title = templateData.label.textContent;
 
-			let description: string;
+			let description: string | undefined;
 			// Determine the target name and set hover text equal to that
 			// show target location if there is one, otherwise show server and database name
 			if (element.targetLocation) {
@@ -115,7 +116,7 @@ export class TaskHistoryRenderer implements IRenderer {
 				}
 			}
 
-			templateData.description.textContent = description;
+			templateData.description.textContent = description ?? '';
 			templateData.description.title = templateData.description.textContent;
 
 			this.timer(element, templateData.time);

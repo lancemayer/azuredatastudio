@@ -5,11 +5,10 @@
 
 import { localize } from 'vs/nls';
 import { tocData as vstocData, ITOCEntry } from 'vs/workbench/contrib/preferences/browser/settingsLayout';
-import { assign } from 'vs/base/common/objects';
 
 // Copy existing table of contents and append
-export const tocData: ITOCEntry = assign({}, vstocData);
-let sqlTocItems: ITOCEntry[] = [{
+export const tocData: ITOCEntry<string> = Object.assign({}, vstocData);
+let sqlTocItems: ITOCEntry<string>[] = [{
 	id: 'data',
 	label: localize('data', "Data"),
 	children: [
@@ -19,24 +18,14 @@ let sqlTocItems: ITOCEntry[] = [{
 			settings: ['startup.alwaysShowServersView', 'connection.*', 'serverGroup.*', 'datasource.*']
 		},
 		{
-			id: 'data/query',
-			label: localize('query', "Query"),
-			settings: ['sql.query.*', 'resultsGrid.*']
+			id: 'data/queryEditor',
+			label: localize('queryEditor', "Query Editor"),
+			settings: ['queryEditor.*']
 		},
 		{
 			id: 'data/notebook',
 			label: localize('notebook', "Notebook"),
 			settings: ['notebook.*']
-		},
-		{
-			id: 'data/sql',
-			label: localize('sql', "SQL"),
-			settings: ['sql.*']
-		},
-		{
-			id: 'data/mssql',
-			label: localize('mssql', "Microsoft SQL Server"),
-			settings: ['mssql.*']
 		},
 		{
 			id: 'data/dashboard',
@@ -47,7 +36,17 @@ let sqlTocItems: ITOCEntry[] = [{
 			id: 'data/profiler',
 			label: localize('profiler', "Profiler"),
 			settings: ['profiler.*']
+		},
+		{
+			id: 'data/builtinCharts',
+			label: localize('builtinCharts', "Built-in Charts"),
+			settings: ['builtinCharts.*']
+		},
+		{
+			id: 'data/tableDesigner',
+			label: localize('tableDesigner', "Table Designer"),
+			settings: ['tableDesigner.*']
 		}
 	]
 }];
-tocData.children.push(...sqlTocItems);
+tocData.children!.push(...sqlTocItems);

@@ -3,9 +3,8 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Account } from 'azdata';
-
-import { azureResource } from '../azure-resource';
+import { AzureAccount } from 'azurecore';
+import { azureResource } from 'azureResource';
 import { IAzureResourceSubscriptionFilterService, IAzureResourceCacheService } from '../interfaces';
 
 interface AzureResourceSelectedSubscriptionsCache {
@@ -21,7 +20,7 @@ export class AzureResourceSubscriptionFilterService implements IAzureResourceSub
 		this._cacheKey = this._cacheService.generateKey('selectedSubscriptions');
 	}
 
-	public async getSelectedSubscriptions(account: Account): Promise<azureResource.AzureResourceSubscription[]> {
+	public async getSelectedSubscriptions(account: AzureAccount): Promise<azureResource.AzureResourceSubscription[]> {
 		let selectedSubscriptions: azureResource.AzureResourceSubscription[] = [];
 
 		const cache = this._cacheService.get<AzureResourceSelectedSubscriptionsCache>(this._cacheKey);
@@ -32,7 +31,7 @@ export class AzureResourceSubscriptionFilterService implements IAzureResourceSub
 		return selectedSubscriptions;
 	}
 
-	public async saveSelectedSubscriptions(account: Account, selectedSubscriptions: azureResource.AzureResourceSubscription[]): Promise<void> {
+	public async saveSelectedSubscriptions(account: AzureAccount, selectedSubscriptions: azureResource.AzureResourceSubscription[]): Promise<void> {
 		let selectedSubscriptionsCache: { [accountId: string]: azureResource.AzureResourceSubscription[] } = {};
 
 		const cache = this._cacheService.get<AzureResourceSelectedSubscriptionsCache>(this._cacheKey);
@@ -46,11 +45,11 @@ export class AzureResourceSubscriptionFilterService implements IAzureResourceSub
 
 		selectedSubscriptionsCache[account.key.accountId] = selectedSubscriptions;
 
-		this._cacheService.update<AzureResourceSelectedSubscriptionsCache>(this._cacheKey, { selectedSubscriptions: selectedSubscriptionsCache });
+		await this._cacheService.update<AzureResourceSelectedSubscriptionsCache>(this._cacheKey, { selectedSubscriptions: selectedSubscriptionsCache });
 
 		const filters: string[] = [];
 		for (const accountId in selectedSubscriptionsCache) {
-			filters.push(...selectedSubscriptionsCache[accountId].map((subcription) => `${accountId}/${subcription.id}/${subcription.name}`));
+			filters.push(...selectedSubscriptionsCache[accountId].map((subscription) => `${accountId}/${subscription.id}/${subscription.name}`));
 		}
 	}
 

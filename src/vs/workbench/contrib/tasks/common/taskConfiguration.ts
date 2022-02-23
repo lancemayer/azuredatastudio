@@ -23,8 +23,8 @@ import * as Tasks from './tasks';
 import { TaskDefinitionRegistry } from './taskDefinitionRegistry';
 import { ConfiguredInput } from 'vs/workbench/services/configurationResolver/common/configurationResolver';
 import { URI } from 'vs/base/common/uri';
-import { USER_TASKS_GROUP_KEY } from 'vs/workbench/contrib/tasks/common/taskService';
-
+import { USER_TASKS_GROUP_KEY, ShellExecutionSupportedContext, ProcessExecutionSupportedContext } from 'vs/workbench/contrib/tasks/common/taskService';
+import { IContextKeyService, RawContextKey } from 'vs/platform/contextkey/common/contextkey';
 
 export const enum ShellQuoting {
 	/**
@@ -130,6 +130,11 @@ export interface PresentationOptionsConfig {
 	 * Controls whether the task is executed in a specific terminal group using split panes.
 	 */
 	group?: string;
+
+	/**
+	 * Controls whether the terminal that the task runs in is closed when the task completes.
+	 */
+	close?: boolean;
 }
 
 export interface RunOptionsConfig {
@@ -420,6 +425,7 @@ export interface BaseTaskRunnerConfiguration {
 	 * The group
 	 */
 	group?: string | GroupKind;
+
 	/**
 	 * Controls the behavior of the used terminal
 	 */
@@ -709,6 +715,7 @@ interface ParseContext {
 	schemaVersion: Tasks.JsonSchemaVersion;
 	platform: Platform;
 	taskLoadIssues: string[];
+	contextKeyService: IContextKeyService;
 }
 
 
@@ -828,7 +835,7 @@ namespace CommandOptions {
 namespace CommandConfiguration {
 
 	export namespace PresentationOptions {
-		const properties: MetaData<Tasks.PresentationOptions, void>[] = [{ property: 'echo' }, { property: 'reveal' }, { property: 'revealProblems' }, { property: 'focus' }, { property: 'panel' }, { property: 'showReuseMessage' }, { property: 'clear' }, { property: 'group' }];
+		const properties: MetaData<Tasks.PresentationOptions, void>[] = [{ property: 'echo' }, { property: 'reveal' }, { property: 'revealProblems' }, { property: 'focus' }, { property: 'panel' }, { property: 'showReuseMessage' }, { property: 'clear' }, { property: 'group' }, { property: 'close' }];
 
 		interface PresentationOptionsShape extends LegacyCommandProperties {
 			presentation?: PresentationOptionsConfig;
@@ -843,6 +850,7 @@ namespace CommandConfiguration {
 			let showReuseMessage: boolean;
 			let clear: boolean;
 			let group: string | undefined;
+			let close: boolean | undefined;
 			let hasProps = false;
 			if (Types.isBoolean(config.echoCommand)) {
 				echo = config.echoCommand;
@@ -878,12 +886,15 @@ namespace CommandConfiguration {
 				if (Types.isString(presentation.group)) {
 					group = presentation.group;
 				}
+				if (Types.isBoolean(presentation.close)) {
+					close = presentation.close;
+				}
 				hasProps = true;
 			}
 			if (!hasProps) {
 				return undefined;
 			}
-			return { echo: echo!, reveal: reveal!, revealProblems: revealProblems!, focus: focus!, panel: panel!, showReuseMessage: showReuseMessage!, clear: clear!, group };
+			return { echo: echo!, reveal: reveal!, revealProblems: revealProblems!, focus: focus!, panel: panel!, showReuseMessage: showReuseMessage!, clear: clear!, group, close: close };
 		}
 
 		export function assignProperties(target: Tasks.PresentationOptions, source: Tasks.PresentationOptions | undefined): Tasks.PresentationOptions | undefined {
@@ -1219,25 +1230,31 @@ const partialSource: Partial<Tasks.TaskSource> = {
 	config: undefined
 };
 
-namespace GroupKind {
-	export function from(this: void, external: string | GroupKind | undefined): [string, Tasks.GroupType] | undefined {
+export namespace GroupKind {
+	export function from(this: void, external: string | GroupKind | undefined): Tasks.TaskGroup | undefined {
 		if (external === undefined) {
 			return undefined;
-		}
-		if (Types.isString(external)) {
-			if (Tasks.TaskGroup.is(external)) {
-				return [external, Tasks.GroupType.user];
-			} else {
-				return undefined;
-			}
-		}
-		if (!Types.isString(external.kind) || !Tasks.TaskGroup.is(external.kind)) {
-			return undefined;
-		}
-		let group: string = external.kind;
-		let isDefault: boolean = !!external.isDefault;
+		} else if (Types.isString(external) && Tasks.TaskGroup.is(external)) {
+			return { _id: external, isDefault: false };
+		} else if (Types.isString(external.kind) && Tasks.TaskGroup.is(external.kind)) {
+			let group: string = external.kind;
+			let isDefault: boolean = !!external.isDefault;
 
-		return [group, isDefault ? Tasks.GroupType.default : Tasks.GroupType.user];
+			return { _id: group, isDefault };
+		}
+		return undefined;
+	}
+
+	export function to(group: Tasks.TaskGroup | string): GroupKind | string {
+		if (Types.isString(group)) {
+			return group;
+		} else if (!group.isDefault) {
+			return group._id;
+		}
+		return {
+			kind: group._id,
+			isDefault: group.isDefault
+		};
 	}
 }
 
@@ -1315,18 +1332,7 @@ namespace ConfigurationProperties {
 		if (external.promptOnClose !== undefined) {
 			result.promptOnClose = !!external.promptOnClose;
 		}
-		if (external.group !== undefined) {
-			if (Types.isString(external.group) && Tasks.TaskGroup.is(external.group)) {
-				result.group = external.group;
-				result.groupType = Tasks.GroupType.user;
-			} else {
-				let values = GroupKind.from(external.group);
-				if (values) {
-					result.group = values[0];
-					result.groupType = values[1];
-				}
-			}
-		}
+		result.group = GroupKind.from(external.group);
 		if (external.dependsOn !== undefined) {
 			if (Types.isArray(external.dependsOn)) {
 				result.dependsOn = external.dependsOn.reduce((dependencies: Tasks.TaskDependency[], item): Tasks.TaskDependency[] => {
@@ -1433,15 +1439,15 @@ namespace ConfiguringTask {
 		let taskSource: Tasks.FileBasedTaskSource;
 		switch (source) {
 			case TaskConfigSource.User: {
-				taskSource = Objects.assign({} as Tasks.UserTaskSource, partialSource, { kind: Tasks.TaskSourceKind.User, config: configElement });
+				taskSource = Object.assign({} as Tasks.UserTaskSource, partialSource, { kind: Tasks.TaskSourceKind.User, config: configElement });
 				break;
 			}
 			case TaskConfigSource.WorkspaceFile: {
-				taskSource = Objects.assign({} as Tasks.WorkspaceFileTaskSource, partialSource, { kind: Tasks.TaskSourceKind.WorkspaceFile, config: configElement });
+				taskSource = Object.assign({} as Tasks.WorkspaceFileTaskSource, partialSource, { kind: Tasks.TaskSourceKind.WorkspaceFile, config: configElement });
 				break;
 			}
 			default: {
-				taskSource = Objects.assign({} as Tasks.WorkspaceTaskSource, partialSource, { kind: Tasks.TaskSourceKind.Workspace, config: configElement });
+				taskSource = Object.assign({} as Tasks.WorkspaceTaskSource, partialSource, { kind: Tasks.TaskSourceKind.Workspace, config: configElement });
 				break;
 			}
 		}
@@ -1456,7 +1462,7 @@ namespace ConfiguringTask {
 		);
 		let configuration = ConfigurationProperties.from(external, context, true, source, typeDeclaration.properties);
 		if (configuration) {
-			result.configurationProperties = Objects.assign(result.configurationProperties, configuration);
+			result.configurationProperties = Object.assign(result.configurationProperties, configuration);
 			if (result.configurationProperties.name) {
 				result._label = result.configurationProperties.name;
 			} else {
@@ -1505,15 +1511,15 @@ namespace CustomTask {
 		let taskSource: Tasks.FileBasedTaskSource;
 		switch (source) {
 			case TaskConfigSource.User: {
-				taskSource = Objects.assign({} as Tasks.UserTaskSource, partialSource, { kind: Tasks.TaskSourceKind.User, config: { index, element: external, file: '.vscode/tasks.json', workspaceFolder: context.workspaceFolder } });
+				taskSource = Object.assign({} as Tasks.UserTaskSource, partialSource, { kind: Tasks.TaskSourceKind.User, config: { index, element: external, file: '.vscode/tasks.json', workspaceFolder: context.workspaceFolder } });
 				break;
 			}
 			case TaskConfigSource.WorkspaceFile: {
-				taskSource = Objects.assign({} as Tasks.WorkspaceFileTaskSource, partialSource, { kind: Tasks.TaskSourceKind.WorkspaceFile, config: { index, element: external, file: '.vscode/tasks.json', workspaceFolder: context.workspaceFolder, workspace: context.workspace } });
+				taskSource = Object.assign({} as Tasks.WorkspaceFileTaskSource, partialSource, { kind: Tasks.TaskSourceKind.WorkspaceFile, config: { index, element: external, file: '.vscode/tasks.json', workspaceFolder: context.workspaceFolder, workspace: context.workspace } });
 				break;
 			}
 			default: {
-				taskSource = Objects.assign({} as Tasks.WorkspaceTaskSource, partialSource, { kind: Tasks.TaskSourceKind.Workspace, config: { index, element: external, file: '.vscode/tasks.json', workspaceFolder: context.workspaceFolder } });
+				taskSource = Object.assign({} as Tasks.WorkspaceTaskSource, partialSource, { kind: Tasks.TaskSourceKind.Workspace, config: { index, element: external, file: '.vscode/tasks.json', workspaceFolder: context.workspaceFolder } });
 				break;
 			}
 		}
@@ -1533,7 +1539,7 @@ namespace CustomTask {
 		);
 		let configuration = ConfigurationProperties.from(external, context, false, source);
 		if (configuration) {
-			result.configurationProperties = Objects.assign(result.configurationProperties, configuration);
+			result.configurationProperties = Object.assign(result.configurationProperties, configuration);
 		}
 		let supportLegacy: boolean = true; //context.schemaVersion === Tasks.JsonSchemaVersion.V2_0_0;
 		if (supportLegacy) {
@@ -1588,15 +1594,12 @@ namespace CustomTask {
 		if (task.configurationProperties.problemMatchers === undefined) {
 			task.configurationProperties.problemMatchers = EMPTY_ARRAY;
 		}
-		if (task.configurationProperties.group !== undefined && task.configurationProperties.groupType === undefined) {
-			task.configurationProperties.groupType = Tasks.GroupType.user;
-		}
 	}
 
 	export function createCustomTask(contributedTask: Tasks.ContributedTask, configuredProps: Tasks.ConfiguringTask | Tasks.CustomTask): Tasks.CustomTask {
 		let result: Tasks.CustomTask = new Tasks.CustomTask(
 			configuredProps._id,
-			Objects.assign({}, configuredProps._source, { customizes: contributedTask.defines }),
+			Object.assign({}, configuredProps._source, { customizes: contributedTask.defines }),
 			configuredProps.configurationProperties.name || contributedTask._label,
 			Tasks.CUSTOMIZED_TASK_TYPE,
 			contributedTask.command,
@@ -1611,7 +1614,6 @@ namespace CustomTask {
 		let resultConfigProps: Tasks.ConfigurationProperties = result.configurationProperties;
 
 		assignProperty(resultConfigProps, configuredProps.configurationProperties, 'group');
-		assignProperty(resultConfigProps, configuredProps.configurationProperties, 'groupType');
 		assignProperty(resultConfigProps, configuredProps.configurationProperties, 'isBackground');
 		assignProperty(resultConfigProps, configuredProps.configurationProperties, 'dependsOn');
 		assignProperty(resultConfigProps, configuredProps.configurationProperties, 'problemMatchers');
@@ -1624,7 +1626,6 @@ namespace CustomTask {
 
 		let contributedConfigProps: Tasks.ConfigurationProperties = contributedTask.configurationProperties;
 		fillProperty(resultConfigProps, contributedConfigProps, 'group');
-		fillProperty(resultConfigProps, contributedConfigProps, 'groupType');
 		fillProperty(resultConfigProps, contributedConfigProps, 'isBackground');
 		fillProperty(resultConfigProps, contributedConfigProps, 'dependsOn');
 		fillProperty(resultConfigProps, contributedConfigProps, 'problemMatchers');
@@ -1656,6 +1657,11 @@ namespace TaskParser {
 		return customize === undefined && (type === undefined || type === null || type === Tasks.CUSTOMIZED_TASK_TYPE || type === 'shell' || type === 'process');
 	}
 
+	const builtinTypeContextMap: IStringDictionary<RawContextKey<boolean>> = {
+		shell: ShellExecutionSupportedContext,
+		process: ProcessExecutionSupportedContext
+	};
+
 	export function from(this: void, externals: Array<CustomTask | ConfiguringTask> | undefined, globals: Globals, context: ParseContext, source: TaskConfigSource): TaskParseResult {
 		let result: TaskParseResult = { custom: [], configured: [] };
 		if (!externals) {
@@ -1667,6 +1673,27 @@ namespace TaskParser {
 		const baseLoadIssues = Objects.deepClone(context.taskLoadIssues);
 		for (let index = 0; index < externals.length; index++) {
 			let external = externals[index];
+			const definition = external.type ? TaskDefinitionRegistry.get(external.type) : undefined;
+			let typeNotSupported: boolean = false;
+			if (definition && definition.when && !context.contextKeyService.contextMatchesRules(definition.when)) {
+				typeNotSupported = true;
+			} else if (!definition && external.type) {
+				for (const key of Object.keys(builtinTypeContextMap)) {
+					if (external.type === key) {
+						typeNotSupported = !ShellExecutionSupportedContext.evaluate(context.contextKeyService.getContext(null));
+						break;
+					}
+				}
+			}
+
+			if (typeNotSupported) {
+				context.problemReporter.info(nls.localize(
+					'taskConfiguration.providerUnavailable', 'Warning: {0} tasks are unavailable in the current environment.\n',
+					external.type
+				));
+				continue;
+			}
+
 			if (isCustomTask(external)) {
 				let customTask = CustomTask.from(external, context, index, source);
 				if (customTask) {
@@ -1714,12 +1741,15 @@ namespace TaskParser {
 			}
 			context.taskLoadIssues = Objects.deepClone(baseLoadIssues);
 		}
-		if ((defaultBuildTask.rank > -1) && (defaultBuildTask.rank < 2) && defaultBuildTask.task) {
+		// There is some special logic for tasks with the labels "build" and "test".
+		// Even if they are not marked as a task group Build or Test, we automagically group them as such.
+		// However, if they are already grouped as Build or Test, we don't need to add this grouping.
+		const defaultBuildGroupName = Types.isString(defaultBuildTask.task?.configurationProperties.group) ? defaultBuildTask.task?.configurationProperties.group : defaultBuildTask.task?.configurationProperties.group?._id;
+		const defaultTestTaskGroupName = Types.isString(defaultTestTask.task?.configurationProperties.group) ? defaultTestTask.task?.configurationProperties.group : defaultTestTask.task?.configurationProperties.group?._id;
+		if ((defaultBuildGroupName !== Tasks.TaskGroup.Build._id) && (defaultBuildTask.rank > -1) && (defaultBuildTask.rank < 2) && defaultBuildTask.task) {
 			defaultBuildTask.task.configurationProperties.group = Tasks.TaskGroup.Build;
-			defaultBuildTask.task.configurationProperties.groupType = Tasks.GroupType.user;
-		} else if ((defaultTestTask.rank > -1) && (defaultTestTask.rank < 2) && defaultTestTask.task) {
+		} else if ((defaultTestTaskGroupName !== Tasks.TaskGroup.Test._id) && (defaultTestTask.rank > -1) && (defaultTestTask.rank < 2) && defaultTestTask.task) {
 			defaultTestTask.task.configurationProperties.group = Tasks.TaskGroup.Test;
-			defaultTestTask.task.configurationProperties.groupType = Tasks.GroupType.user;
 		}
 
 		return result;
@@ -1976,7 +2006,7 @@ class ConfigurationParser {
 		this.uuidMap = uuidMap;
 	}
 
-	public run(fileConfig: ExternalTaskRunnerConfiguration, source: TaskConfigSource): ParseResult {
+	public run(fileConfig: ExternalTaskRunnerConfiguration, source: TaskConfigSource, contextKeyService: IContextKeyService): ParseResult {
 		let engine = ExecutionEngine.from(fileConfig);
 		let schemaVersion = JsonSchemaVersion.from(fileConfig);
 		let context: ParseContext = {
@@ -1988,7 +2018,8 @@ class ConfigurationParser {
 			engine,
 			schemaVersion,
 			platform: this.platform,
-			taskLoadIssues: []
+			taskLoadIssues: [],
+			contextKeyService
 		};
 		let taskParseResult = this.createTaskRunnerConfiguration(fileConfig, context, source);
 		return {
@@ -2024,7 +2055,7 @@ class ConfigurationParser {
 			}
 			context.problemReporter.error(
 				nls.localize(
-					'TaskParse.noOsSpecificGlobalTasks',
+					{ key: 'TaskParse.noOsSpecificGlobalTasks', comment: ['\"Task version 2.0.0\" refers to the 2.0.0 version of the task system. The \"version 2.0.0\" is not localizable as it is a json key and value.'] },
 					'Task version 2.0.0 doesn\'t support global OS specific tasks. Convert them to a task with a OS specific command. Affected tasks are:\n{0}', taskContent.join('\n'))
 			);
 		}
@@ -2043,7 +2074,7 @@ class ConfigurationParser {
 			let name = Tasks.CommandString.value(globals.command.name);
 			let task: Tasks.CustomTask = new Tasks.CustomTask(
 				context.uuidMap.getUUID(name),
-				Objects.assign({} as Tasks.WorkspaceTaskSource, source, { config: { index: -1, element: fileConfig, workspaceFolder: context.workspaceFolder } }),
+				Object.assign({} as Tasks.WorkspaceTaskSource, source, { config: { index: -1, element: fileConfig, workspaceFolder: context.workspaceFolder } }),
 				name,
 				Tasks.CUSTOMIZED_TASK_TYPE,
 				{
@@ -2062,10 +2093,9 @@ class ConfigurationParser {
 					problemMatchers: matchers,
 				}
 			);
-			let value = GroupKind.from(fileConfig.group);
-			if (value) {
-				task.configurationProperties.group = value[0];
-				task.configurationProperties.groupType = value[1];
+			let taskGroupKind = GroupKind.from(fileConfig.group);
+			if (taskGroupKind !== undefined) {
+				task.configurationProperties.group = taskGroupKind;
 			} else if (fileConfig.group === 'none') {
 				task.configurationProperties.group = undefined;
 			}
@@ -2081,7 +2111,7 @@ class ConfigurationParser {
 
 let uuidMaps: Map<TaskConfigSource, Map<string, UUIDMap>> = new Map();
 let recentUuidMaps: Map<TaskConfigSource, Map<string, UUIDMap>> = new Map();
-export function parse(workspaceFolder: IWorkspaceFolder, workspace: IWorkspace | undefined, platform: Platform, configuration: ExternalTaskRunnerConfiguration, logger: IProblemReporter, source: TaskConfigSource, isRecents: boolean = false): ParseResult {
+export function parse(workspaceFolder: IWorkspaceFolder, workspace: IWorkspace | undefined, platform: Platform, configuration: ExternalTaskRunnerConfiguration, logger: IProblemReporter, source: TaskConfigSource, contextKeyService: IContextKeyService, isRecents: boolean = false): ParseResult {
 	let recentOrOtherMaps = isRecents ? recentUuidMaps : uuidMaps;
 	let selectedUuidMaps = recentOrOtherMaps.get(source);
 	if (!selectedUuidMaps) {
@@ -2095,7 +2125,7 @@ export function parse(workspaceFolder: IWorkspaceFolder, workspace: IWorkspace |
 	}
 	try {
 		uuidMap.start();
-		return (new ConfigurationParser(workspaceFolder, workspace, platform, logger, uuidMap)).run(configuration, source);
+		return (new ConfigurationParser(workspaceFolder, workspace, platform, logger, uuidMap)).run(configuration, source, contextKeyService);
 	} finally {
 		uuidMap.finish();
 	}

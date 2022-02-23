@@ -3,10 +3,9 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 import 'vs/css!./media/flexContainer';
-
 import { Component, Input, Inject, ChangeDetectorRef, forwardRef, ElementRef, OnDestroy } from '@angular/core';
 
-import { FlexItemLayout, SplitViewLayout } from 'azdata';
+import { FlexItemLayout, SplitViewLayout, SplitViewContainer, CssStyles } from 'azdata';
 import { FlexItem } from './flexContainer.component';
 import { ContainerBase, ComponentBase } from 'sql/workbench/browser/modelComponents/componentBase';
 import { Event } from 'vs/base/common/event';
@@ -22,7 +21,7 @@ class SplitPane implements IView {
 	maximumSize: number;
 	onDidChange: Event<number> = Event.None;
 	size: number;
-	component: ComponentBase;
+	component: ComponentBase<SplitViewContainer>;
 	layout(size: number): void {
 		this.size = size;
 		try {
@@ -38,8 +37,7 @@ class SplitPane implements IView {
 
 @Component({
 	template: `
-		<div *ngIf="items" class="splitViewContainer" [style.flexFlow]="flexFlow" [style.justifyContent]="justifyContent" [style.position]="position"
-				[style.alignItems]="alignItems" [style.alignContent]="alignContent" [style.height]="height" [style.width]="width">
+		<div *ngIf="items" class="splitViewContainer" [ngStyle]="CSSStyles">
 			<div *ngFor="let item of items" [style.flex]="getItemFlex(item)" [style.textAlign]="textAlign" [style.order]="getItemOrder(item)" [ngStyle]="getItemStyles(item)">
 				<model-component-wrapper [descriptor]="item.descriptor" [modelStore]="modelStore">
 				</model-component-wrapper>
@@ -48,7 +46,7 @@ class SplitPane implements IView {
 	`
 })
 
-export default class SplitViewContainer extends ContainerBase<FlexItemLayout> implements IComponent, OnDestroy {
+export default class SplitViewContainerImpl extends ContainerBase<FlexItemLayout> implements IComponent, OnDestroy {
 	@Input() descriptor: IComponentDescriptor;
 	@Input() modelStore: IModelStore;
 	private _flexFlow: string;
@@ -66,28 +64,25 @@ export default class SplitViewContainer extends ContainerBase<FlexItemLayout> im
 	constructor(
 		@Inject(forwardRef(() => ChangeDetectorRef)) changeRef: ChangeDetectorRef,
 		@Inject(forwardRef(() => ElementRef)) el: ElementRef,
-		@Inject(ILogService) private readonly logService: ILogService
+		@Inject(ILogService) logService: ILogService
 	) {
-		super(changeRef, el);
+		super(changeRef, el, logService);
 		this._flexFlow = '';	// default
 		this._justifyContent = '';	// default
 		this._orientation = Orientation.VERTICAL; // default
 	}
 
-	ngOnInit(): void {
-		this.baseInit();
-	}
-
-	ngOnDestroy(): void {
+	override ngOnDestroy(): void {
 		this.baseDestroy();
 	}
 
 	ngAfterViewInit(): void {
 		this._splitView = this._register(new SplitView(this._el.nativeElement, { orientation: this._orientation }));
+		this.baseInit();
 	}
 
 	private GetCorrespondingView(component: IComponent, orientation: Orientation): IView {
-		let c = component as ComponentBase;
+		let c = component as ComponentBase<SplitViewContainer>;
 		let basicView: SplitPane = new SplitPane();
 		basicView.orientation = orientation;
 		basicView.element = c.getHtml();
@@ -141,11 +136,11 @@ export default class SplitViewContainer extends ContainerBase<FlexItemLayout> im
 		return this._alignItems;
 	}
 
-	public get height(): string {
+	public override get height(): string {
 		return this._height;
 	}
 
-	public get width(): string {
+	public override get width(): string {
 		return this._width;
 	}
 
@@ -157,7 +152,7 @@ export default class SplitViewContainer extends ContainerBase<FlexItemLayout> im
 		return this._textAlign;
 	}
 
-	public get position(): string {
+	public override get position(): string {
 		return this._position;
 	}
 
@@ -168,10 +163,24 @@ export default class SplitViewContainer extends ContainerBase<FlexItemLayout> im
 	public getItemFlex(item: FlexItem): string {
 		return item.config ? item.config.flex : '1 1 auto';
 	}
+
 	public getItemOrder(item: FlexItem): number {
 		return item.config ? item.config.order : 0;
 	}
-	public getItemStyles(item: FlexItem): { [key: string]: string } {
+
+	public getItemStyles(item: FlexItem): CssStyles {
 		return item.config && item.config.CSSStyles ? item.config.CSSStyles : {};
+	}
+
+	public override get CSSStyles(): CssStyles {
+		return this.mergeCss(super.CSSStyles, {
+			'width': this.getWidth(),
+			'height': this.getHeight(),
+			'flexFlow': this.flexFlow,
+			'justifyContent': this.justifyContent,
+			'position': this.position,
+			'alignItems': this.alignItems,
+			'alignContent': this.alignContent
+		});
 	}
 }

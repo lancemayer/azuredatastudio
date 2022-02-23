@@ -52,33 +52,33 @@ suite('Suggest', function () {
 	});
 
 	test('sort - snippet inline', async function () {
-		const items = await provideSuggestionItems(model, new Position(1, 1), new CompletionOptions(SnippetSortOrder.Inline));
-		assert.equal(items.length, 3);
-		assert.equal(items[0].completion.label, 'aaa');
-		assert.equal(items[1].completion.label, 'fff');
-		assert.equal(items[2].completion.label, 'zzz');
+		const { items } = await provideSuggestionItems(model, new Position(1, 1), new CompletionOptions(SnippetSortOrder.Inline));
+		assert.strictEqual(items.length, 3);
+		assert.strictEqual(items[0].completion.label, 'aaa');
+		assert.strictEqual(items[1].completion.label, 'fff');
+		assert.strictEqual(items[2].completion.label, 'zzz');
 	});
 
 	test('sort - snippet top', async function () {
-		const items = await provideSuggestionItems(model, new Position(1, 1), new CompletionOptions(SnippetSortOrder.Top));
-		assert.equal(items.length, 3);
-		assert.equal(items[0].completion.label, 'aaa');
-		assert.equal(items[1].completion.label, 'zzz');
-		assert.equal(items[2].completion.label, 'fff');
+		const { items } = await provideSuggestionItems(model, new Position(1, 1), new CompletionOptions(SnippetSortOrder.Top));
+		assert.strictEqual(items.length, 3);
+		assert.strictEqual(items[0].completion.label, 'aaa');
+		assert.strictEqual(items[1].completion.label, 'zzz');
+		assert.strictEqual(items[2].completion.label, 'fff');
 	});
 
 	test('sort - snippet bottom', async function () {
-		const items = await provideSuggestionItems(model, new Position(1, 1), new CompletionOptions(SnippetSortOrder.Bottom));
-		assert.equal(items.length, 3);
-		assert.equal(items[0].completion.label, 'fff');
-		assert.equal(items[1].completion.label, 'aaa');
-		assert.equal(items[2].completion.label, 'zzz');
+		const { items } = await provideSuggestionItems(model, new Position(1, 1), new CompletionOptions(SnippetSortOrder.Bottom));
+		assert.strictEqual(items.length, 3);
+		assert.strictEqual(items[0].completion.label, 'fff');
+		assert.strictEqual(items[1].completion.label, 'aaa');
+		assert.strictEqual(items[2].completion.label, 'zzz');
 	});
 
 	test('sort - snippet none', async function () {
-		const items = await provideSuggestionItems(model, new Position(1, 1), new CompletionOptions(undefined, new Set<CompletionItemKind>().add(CompletionItemKind.Snippet)));
-		assert.equal(items.length, 1);
-		assert.equal(items[0].completion.label, 'fff');
+		const { items } = await provideSuggestionItems(model, new Position(1, 1), new CompletionOptions(undefined, new Set<CompletionItemKind>().add(CompletionItemKind.Snippet)));
+		assert.strictEqual(items.length, 1);
+		assert.strictEqual(items[0].completion.label, 'fff');
 	});
 
 	test('only from', function () {
@@ -99,10 +99,10 @@ suite('Suggest', function () {
 		};
 		const registration = CompletionProviderRegistry.register({ pattern: 'bar/path', scheme: 'foo' }, foo);
 
-		provideSuggestionItems(model, new Position(1, 1), new CompletionOptions(undefined, undefined, new Set<CompletionItemProvider>().add(foo))).then(items => {
+		provideSuggestionItems(model, new Position(1, 1), new CompletionOptions(undefined, undefined, new Set<CompletionItemProvider>().add(foo))).then(({ items }) => {
 			registration.dispose();
 
-			assert.equal(items.length, 1);
+			assert.strictEqual(items.length, 1);
 			assert.ok(items[0].provider === foo);
 		});
 	});
@@ -138,15 +138,15 @@ suite('Suggest', function () {
 		};
 
 		const registration = CompletionProviderRegistry.register({ pattern: 'bar/path', scheme: 'foo' }, foo);
-		const items = await provideSuggestionItems(model, new Position(0, 0), new CompletionOptions(undefined, undefined, new Set<CompletionItemProvider>().add(foo)));
+		const { items } = await provideSuggestionItems(model, new Position(0, 0), new CompletionOptions(undefined, undefined, new Set<CompletionItemProvider>().add(foo)));
 		registration.dispose();
 
-		assert.equal(items.length, 2);
+		assert.strictEqual(items.length, 2);
 		const [a, b] = items;
 
-		assert.equal(a.completion.label, 'one');
-		assert.equal(a.isInvalid, false);
-		assert.equal(b.completion.label, 'two');
-		assert.equal(b.isInvalid, true);
+		assert.strictEqual(a.completion.label, 'one');
+		assert.strictEqual(a.isInvalid, false);
+		assert.strictEqual(b.completion.label, 'two');
+		assert.strictEqual(b.isInvalid, true);
 	});
 });

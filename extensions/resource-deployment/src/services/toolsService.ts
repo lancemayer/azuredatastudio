@@ -5,9 +5,9 @@
 import { ITool } from '../interfaces';
 import { DockerTool } from './tools/dockerTool';
 import { AzCliTool } from './tools/azCliTool';
-import { AzdataTool } from './tools/azdataTool';
 import { KubeCtlTool } from './tools/kubeCtlTool';
 import { IPlatformService } from './platformService';
+import { AzdataTool } from './tools/azdataTool';
 
 export interface IToolsService {
 	getToolByName(toolName: string): ITool | undefined;

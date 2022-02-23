@@ -3,6 +3,7 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import './mainThreadAzureAccount';
 import './mainThreadAccountManagement';
 import './mainThreadBackgroundTaskManagement';
 import './mainThreadConnectionManagement';
@@ -20,3 +21,4 @@ import './mainThreadObjectExplorer';
 import './mainThreadQueryEditor';
 import './mainThreadResourceProvider';
 import './mainThreadTasks';
+import './mainThreadWorkspace';

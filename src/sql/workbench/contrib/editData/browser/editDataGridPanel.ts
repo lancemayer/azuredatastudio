@@ -30,7 +30,7 @@ import { KeyCode } from 'vs/base/common/keyCodes';
 import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
 import { EditUpdateCellResult } from 'azdata';
 import { ILogService } from 'vs/platform/log/common/log';
-import { deepClone, assign } from 'vs/base/common/objects';
+import { deepClone } from 'vs/base/common/objects';
 import { Event } from 'vs/base/common/event';
 import { equals } from 'vs/base/common/arrays';
 import * as DOM from 'vs/base/browser/dom';
@@ -39,7 +39,8 @@ import { onUnexpectedError } from 'vs/base/common/errors';
 export class EditDataGridPanel extends GridParentComponent {
 	// The time(in milliseconds) we wait before refreshing the grid.
 	// We use clearTimeout and setTimeout pair to avoid unnecessary refreshes.
-	private refreshGridTimeoutInMs = 200;
+	// Timeout is set to allow the grid to refresh fully before allowing a manual refresh.
+	private refreshGridTimeoutInMs = 1000;
 
 	// The timeout handle for the refresh grid task
 	private refreshGridTimeoutHandle: any;
@@ -66,6 +67,7 @@ export class EditDataGridPanel extends GridParentComponent {
 	private rowIdMappings: { [gridRowId: number]: number } = {};
 	private dirtyCells: number[] = [];
 	protected plugins = new Array<Slick.Plugin<any>>();
+	private newlinePattern: string;
 	// List of column names with their indexes stored.
 	private columnNameToIndex: { [columnNumber: number]: string } = {};
 	// Edit Data functions
@@ -77,6 +79,7 @@ export class EditDataGridPanel extends GridParentComponent {
 	public loadDataFunction: (offset: number, count: number) => Promise<{}[]>;
 	public onBeforeAppendCell: (row: number, column: number) => string;
 	public onGridRendered: (event: Slick.OnRenderedEventArgs<any>) => void;
+	public onRefreshComplete: Promise<void>;
 
 	private savedViewState: {
 		gridSelections: Slick.Range[];
@@ -90,13 +93,13 @@ export class EditDataGridPanel extends GridParentComponent {
 		onRestoreViewState: Event<void>,
 		@IInstantiationService protected instantiationService: IInstantiationService,
 		@INotificationService protected notificationService: INotificationService,
-		@IContextMenuService protected contextMenuService: IContextMenuService,
-		@IKeybindingService protected keybindingService: IKeybindingService,
-		@IContextKeyService protected contextKeyService: IContextKeyService,
-		@IConfigurationService protected configurationService: IConfigurationService,
-		@IClipboardService protected clipboardService: IClipboardService,
-		@IQueryEditorService protected queryEditorService: IQueryEditorService,
-		@ILogService protected logService: ILogService
+		@IContextMenuService contextMenuService: IContextMenuService,
+		@IKeybindingService keybindingService: IKeybindingService,
+		@IContextKeyService contextKeyService: IContextKeyService,
+		@IConfigurationService configurationService: IConfigurationService,
+		@IClipboardService clipboardService: IClipboardService,
+		@IQueryEditorService queryEditorService: IQueryEditorService,
+		@ILogService logService: ILogService
 	) {
 		super(contextMenuService, keybindingService, contextKeyService, configurationService, clipboardService, queryEditorService, logService);
 		this.nativeElement = document.createElement('div');
@@ -131,7 +134,7 @@ export class EditDataGridPanel extends GridParentComponent {
 					self.handleMessage(self, event);
 					break;
 				case 'resultSet':
-					self.handleResultSet(self, event);
+					this.onRefreshComplete = self.handleResultSet(self, event);
 					break;
 				case 'editSessionReady':
 					self.handleEditSessionReady(self, event);
@@ -144,7 +147,7 @@ export class EditDataGridPanel extends GridParentComponent {
 		this.dataService.onLoaded();
 	}
 
-	public render(container: HTMLElement): void {
+	public override render(container: HTMLElement): void {
 		container.appendChild(this.nativeElement);
 	}
 
@@ -185,15 +188,18 @@ export class EditDataGridPanel extends GridParentComponent {
 			// render line breaks and strips them, updating the value.
 			/* tslint:disable:no-null-keyword */
 			let valueMissing = value === undefined || value === null || (Services.DBCellValue.isDBCellValue(value) && value.isNull);
+			let isStringNull = (Services.DBCellValue.isDBCellValue(value) && !value.isNull && value.displayValue === 'NULL');
 			if (valueMissing) {
-				/* tslint:disable:no-null-keyword */
-				returnVal = null;
+				returnVal = 'NULL';
+			}
+			else if (isStringNull) {
+				returnVal = '\'NULL\'';
 			}
 			else if (Services.DBCellValue.isDBCellValue(value)) {
-				returnVal = this.spacefyLinebreaks(value.displayValue);
+				returnVal = this.replaceLinebreaks(value.displayValue);
 			}
 			else if (typeof value === 'string') {
-				returnVal = this.spacefyLinebreaks(value);
+				returnVal = this.replaceLinebreaks(value);
 			}
 			return returnVal;
 		};
@@ -357,9 +363,9 @@ export class EditDataGridPanel extends GridParentComponent {
 		}
 	}
 
-	handleResultSet(self: EditDataGridPanel, event: any): void {
+	async handleResultSet(self: EditDataGridPanel, event: any): Promise<void> {
 		// Clone the data before altering it to avoid impacting other subscribers
-		let resultSet = assign({}, event.data);
+		let resultSet = Object.assign({}, event.data);
 		if (!resultSet.complete) {
 			return;
 		}
@@ -384,7 +390,7 @@ export class EditDataGridPanel extends GridParentComponent {
 				self.windowSize,
 				index => { return {}; },
 				resultSet.rowCount,
-				this.loadDataFunction,
+				await this.loadDataFunction,
 			),
 			columnDefinitions: [rowNumberColumn.getColumnDefinition()].concat(resultSet.columnInfo.map((c, i) => {
 				let columnIndex = (i + 1).toString();
@@ -409,14 +415,7 @@ export class EditDataGridPanel extends GridParentComponent {
 		if (self.placeHolderDataSets[0]) {
 			this.refreshDatasets();
 		}
-		self.refreshGrid();
-
-		// Setup the state of the selected cell
-		this.resetCurrentCell();
-		this.removingNewRow = false;
-		this.newRowVisible = false;
-		this.dirtyCells = [];
-
+		await self.refreshGrid(true);
 	}
 
 	/**
@@ -431,11 +430,19 @@ export class EditDataGridPanel extends GridParentComponent {
 	/**
 	 * Replace the line breaks with space.
 	 */
-	private spacefyLinebreaks(inputStr: string): string {
-		return inputStr.replace(/(\r\n|\n|\r)/g, ' ');
+	private replaceLinebreaks(inputStr: string): string {
+		let newlineMatches = inputStr.match(/(\r\n|\n|\r)/g);
+		if (newlineMatches && newlineMatches.length > 0) {
+			this.newlinePattern = newlineMatches[0];
+		}
+		return inputStr.replace(/(\r\n|\n|\r)/g, '\u0000');
 	}
 
-	private refreshGrid(): Thenable<void> {
+	/**
+	 * Code that handles the refresh of the grid.
+	 * @param isManual flag used when called by handleResultSet, for required additional processing.
+	 */
+	private refreshGrid(isManual?: boolean): Thenable<void> {
 		return new Promise<void>(async (resolve, reject) => {
 
 			clearTimeout(this.refreshGridTimeoutHandle);
@@ -457,11 +464,18 @@ export class EditDataGridPanel extends GridParentComponent {
 					this.logService.error('data set is empty, refresh cancelled.');
 					reject();
 				}
-
 				if (this.firstRender) {
-					setTimeout(() => this.setActive());
+					this.resetCurrentCell();
+					this.setActive();
 				}
-				resolve();
+				else if (isManual) {
+					this.resetCurrentCell();
+					this.removingNewRow = false;
+					this.newRowVisible = false;
+					this.dirtyCells = [];
+				}
+				//allow for the grid to render fully before returning.
+				setTimeout(() => resolve(), 500);
 			}, this.refreshGridTimeoutInMs);
 		});
 	}
@@ -498,6 +512,14 @@ export class EditDataGridPanel extends GridParentComponent {
 			this.revertCurrentRow().catch(onUnexpectedError);
 			handled = true;
 		}
+		if (e.ctrlKey && e.keyCode === KeyCode.KEY_0) {
+			//Replace contents with NULL in cell contents.
+			document.execCommand('selectAll');
+			document.execCommand('delete');
+			document.execCommand('insertText', false, 'NULL');
+			handled = true;
+		}
+
 		return handled;
 	}
 
@@ -505,7 +527,7 @@ export class EditDataGridPanel extends GridParentComponent {
 	 * Force re-rendering of the results grids. Calling this upon unhide (upon focus) fixes UI
 	 * glitches that occur when a QueryResultsEditor is hidden then unhidden while it is running a query.
 	 */
-	refreshDatasets(): void {
+	override refreshDatasets(): void {
 		let tempRenderedDataSets = this.renderedDataSets;
 		this.renderedDataSets = [];
 		this.handleChanges({
@@ -575,7 +597,7 @@ export class EditDataGridPanel extends GridParentComponent {
 					? self.rowIdMappings[self.currentCell.row]
 					: self.currentCell.row;
 
-				return self.dataService.updateCell(sessionRowId, self.currentCell.column - 1, self.currentEditCellValue);
+				return self.dataService.updateCell(sessionRowId, self.currentCell.column - 1, this.newlinePattern ? self.currentEditCellValue.replace('\u0000', this.newlinePattern) : self.currentEditCellValue);
 			}).then(
 				result => {
 					self.currentEditCellValue = undefined;
@@ -875,13 +897,14 @@ export class EditDataGridPanel extends GridParentComponent {
 			}
 
 			loadValue(item, rowNumber): void {
+				const itemForDisplay = deepClone(item);
 				if (self.overrideCellFn) {
-					let overrideValue = self.overrideCellFn(rowNumber, this._args.column.id, item[this._args.column.id]);
+					let overrideValue = self.overrideCellFn(rowNumber, this._args.column.id, itemForDisplay[this._args.column.id]);
 					if (overrideValue !== undefined) {
-						item[this._args.column.id] = overrideValue;
+						itemForDisplay[this._args.column.id] = overrideValue;
 					}
 				}
-				this._textEditor.loadValue(item);
+				this._textEditor.loadValue(itemForDisplay);
 			}
 
 			serializeValue(): string {
@@ -969,7 +992,7 @@ export class EditDataGridPanel extends GridParentComponent {
 			|| (changes['blurredColumns'] && !equals(changes['blurredColumns'].currentValue, changes['blurredColumns'].previousValue))
 			|| (changes['columnsLoading'] && !equals(changes['columnsLoading'].currentValue, changes['columnsLoading'].previousValue))) {
 			this.setCallbackOnDataRowsChanged();
-			this.table.rerenderGrid(0, this.dataSet.dataRows.getLength());
+			this.table.rerenderGrid();
 			hasGridStructureChanges = true;
 		}
 
@@ -1071,10 +1094,14 @@ export class EditDataGridPanel extends GridParentComponent {
 		let valueToDisplay = '';
 		let cellClasses = 'grid-cell-value-container';
 		/* tslint:disable:no-null-keyword */
-		let valueMissing = value === undefined || value === null || (Services.DBCellValue.isDBCellValue(value) && value.isNull);
+		let valueMissing = value === undefined || value === null || (Services.DBCellValue.isDBCellValue(value) && value.isNull) || value === 'NULL';
+		let isStringNull = (Services.DBCellValue.isDBCellValue(value) && !value.isNull && value.displayValue === 'NULL');
 		if (valueMissing) {
 			valueToDisplay = 'NULL';
 			cellClasses += ' missing-value';
+		}
+		else if (isStringNull) {
+			valueToDisplay = '\'NULL\'';
 		}
 		else if (Services.DBCellValue.isDBCellValue(value)) {
 			valueToDisplay = (value.displayValue + '');

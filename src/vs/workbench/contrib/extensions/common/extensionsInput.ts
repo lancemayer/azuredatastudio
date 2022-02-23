@@ -3,57 +3,57 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { localize } from 'vs/nls';
-import { EditorInput } from 'vs/workbench/common/editor';
-import { IExtension } from 'vs/workbench/contrib/extensions/common/extensions';
+import { Schemas } from 'vs/base/common/network';
 import { URI } from 'vs/base/common/uri';
+import { localize } from 'vs/nls';
+import { EditorInputCapabilities, IEditorInput, IUntypedEditorInput } from 'vs/workbench/common/editor';
+import { EditorInput } from 'vs/workbench/common/editor/editorInput';
+import { IExtension, IExtensionsWorkbenchService } from 'vs/workbench/contrib/extensions/common/extensions';
+import { areSameExtensions } from 'vs/platform/extensionManagement/common/extensionManagementUtil';
+import { join } from 'vs/base/common/path';
 
 export class ExtensionsInput extends EditorInput {
 
 	static readonly ID = 'workbench.extensions.input2';
-	get extension(): IExtension { return this._extension; }
 
-	get resource() {
+	override get typeId(): string {
+		return ExtensionsInput.ID;
+	}
+
+	override get capabilities(): EditorInputCapabilities {
+		return EditorInputCapabilities.Readonly | EditorInputCapabilities.Singleton;
+	}
+
+	override get resource() {
 		return URI.from({
-			scheme: 'extension',
-			path: this.extension.identifier.id
+			scheme: Schemas.extension,
+			path: join(this._extension.identifier.id, 'extension')
 		});
 	}
 
 	constructor(
-		private readonly _extension: IExtension
+		private _extension: IExtension,
+		@IExtensionsWorkbenchService extensionsWorkbenchService: IExtensionsWorkbenchService
 	) {
 		super();
+		this._register(extensionsWorkbenchService.onChange(extension => {
+			if (extension && areSameExtensions(this._extension.identifier, extension.identifier)) {
+				this._extension = extension;
+			}
+		}));
 	}
 
-	getTypeId(): string {
-		return ExtensionsInput.ID;
+	get extension(): IExtension { return this._extension; }
+
+	override getName(): string {
+		return localize('extensionsInputName', "Extension: {0}", this._extension.displayName);
 	}
 
-	getName(): string {
-		return localize('extensionsInputName', "Extension: {0}", this.extension.displayName);
-	}
-
-	matches(other: unknown): boolean {
-		if (super.matches(other) === true) {
+	override matches(other: IEditorInput | IUntypedEditorInput): boolean {
+		if (super.matches(other)) {
 			return true;
 		}
 
-		if (!(other instanceof ExtensionsInput)) {
-			return false;
-		}
-
-		const otherExtensionInput = other as ExtensionsInput;
-
-		// TODO@joao is this correct?
-		return this.extension === otherExtensionInput.extension;
-	}
-
-	resolve(): Promise<any> {
-		return Promise.resolve(null);
-	}
-
-	supportsSplitEditor(): boolean {
-		return false;
+		return other instanceof ExtensionsInput && areSameExtensions(this._extension.identifier, other._extension.identifier);
 	}
 }

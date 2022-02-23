@@ -7,7 +7,9 @@ import { localize } from 'vs/nls';
 import { Action } from 'vs/base/common/actions';
 import { IViewletService } from 'vs/workbench/services/viewlet/browser/viewlet';
 import { IExtensionsWorkbenchService, VIEWLET_ID, IExtensionsViewPaneContainer } from 'vs/workbench/contrib/extensions/common/extensions';
-import { IExtensionRecommendation } from 'vs/workbench/services/extensionManagement/common/extensionManagement';
+import { IExtensionRecommendation } from 'sql/workbench/services/extensionManagement/common/extensionManagement';
+import { IOpenerService } from 'vs/platform/opener/common/opener';
+import { URI } from 'vs/base/common/uri';
 import { CancellationToken } from 'vs/base/common/cancellation';
 import { PagedModel } from 'vs/base/common/paging';
 
@@ -23,7 +25,7 @@ export class ShowRecommendedExtensionsByScenarioAction extends Action {
 		super(getScenarioID(scenarioType), localize('showRecommendations', "Show Recommendations"), undefined, true);
 	}
 
-	run(): Promise<void> {
+	override run(): Promise<void> {
 		return this.viewletService.openViewlet(VIEWLET_ID, true)
 			.then(viewlet => viewlet?.getViewPaneContainer() as IExtensionsViewPaneContainer)
 			.then(viewlet => {
@@ -48,22 +50,38 @@ export class InstallRecommendedExtensionsByScenarioAction extends Action {
 		this.recommendations = recommendations;
 	}
 
-	run(): Promise<any> {
-		if (!this.recommendations.length) { return Promise.resolve(); }
-		return this.viewletService.openViewlet(VIEWLET_ID, true)
-			.then(viewlet => viewlet?.getViewPaneContainer() as IExtensionsViewPaneContainer)
-			.then(viewlet => {
-				viewlet.search('@' + this.scenarioType);
-				viewlet.focus();
-				const names = this.recommendations.map(({ extensionId }) => extensionId);
-				return this.extensionWorkbenchService.queryGallery({ names, source: 'install-' + this.scenarioType }, CancellationToken.None).then(pager => {
-					let installPromises: Promise<any>[] = [];
-					let model = new PagedModel(pager);
-					for (let i = 0; i < pager.total; i++) {
-						installPromises.push(model.resolve(i, CancellationToken.None).then(e => this.extensionWorkbenchService.install(e)));
-					}
-					return Promise.all(installPromises);
-				});
-			});
+	override async run(): Promise<void> {
+		if (!this.recommendations.length) { return; }
+		const viewlet = await this.viewletService.openViewlet(VIEWLET_ID, true);
+		const viewPaneContainer = viewlet?.getViewPaneContainer() as IExtensionsViewPaneContainer;
+		viewPaneContainer.search('@' + this.scenarioType);
+		viewlet.focus();
+		const names = this.recommendations.map(({ extensionId }) => extensionId);
+		const pager = await this.extensionWorkbenchService.queryGallery({ names, source: 'install-' + this.scenarioType }, CancellationToken.None);
+		let installPromises: Promise<any>[] = [];
+		let model = new PagedModel(pager);
+		for (let i = 0; i < pager.total; i++) {
+			installPromises.push(model.resolve(i, CancellationToken.None).then(e => this.extensionWorkbenchService.install(e)));
+		}
+		await Promise.all(installPromises);
+	}
+}
+
+export class OpenExtensionAuthoringDocsAction extends Action {
+
+	static readonly ID = 'workbench.extensions.action.openExtensionAuthoringDocs';
+	static readonly LABEL = localize('openExtensionAuthoringDocs', "Author an Extension...");
+	private static readonly extensionAuthoringDocsURI = 'https://docs.microsoft.com/sql/azure-data-studio/extension-authoring';
+
+	constructor(
+		id: string = OpenExtensionAuthoringDocsAction.ID,
+		label: string = OpenExtensionAuthoringDocsAction.LABEL,
+		@IOpenerService private readonly openerService: IOpenerService,
+	) {
+		super(id, label);
+	}
+
+	override async run(): Promise<void> {
+		await this.openerService.open(URI.parse(OpenExtensionAuthoringDocsAction.extensionAuthoringDocsURI));
 	}
 }

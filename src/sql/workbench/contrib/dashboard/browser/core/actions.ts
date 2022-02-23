@@ -11,7 +11,6 @@ import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
 import { IAngularEventingService, AngularEventType, IAngularEvent } from 'sql/platform/angularEventing/browser/angularEventingService';
 import { INewDashboardTabDialogService } from 'sql/workbench/services/dashboard/browser/newDashboardTabDialog';
 import { IDashboardTab } from 'sql/workbench/services/dashboard/browser/common/interfaces';
-import { find, firstIndex } from 'vs/base/common/arrays';
 import { CellContext } from 'sql/workbench/contrib/notebook/browser/cellViews/codeActions';
 import { ILogService } from 'vs/platform/log/common/log';
 
@@ -31,14 +30,9 @@ export class EditDashboardAction extends Action {
 		super(EditDashboardAction.ID, EditDashboardAction.EDITLABEL, EditDashboardAction.ICON);
 	}
 
-	run(): Promise<boolean> {
-		try {
-			this.editFn.apply(this.context);
-			this.toggleLabel();
-			return Promise.resolve(true);
-		} catch (e) {
-			return Promise.resolve(false);
-		}
+	override async run(): Promise<void> {
+		this.editFn.apply(this.context);
+		this.toggleLabel();
 	}
 
 	private toggleLabel(): void {
@@ -65,13 +59,8 @@ export class RefreshWidgetAction extends Action {
 		super(RefreshWidgetAction.ID, RefreshWidgetAction.LABEL, RefreshWidgetAction.ICON);
 	}
 
-	run(): Promise<boolean> {
-		try {
-			this.refreshFn.apply(this.context);
-			return Promise.resolve(true);
-		} catch (e) {
-			return Promise.resolve(false);
-		}
+	override async run(): Promise<void> {
+		this.refreshFn.apply(this.context);
 	}
 }
 
@@ -87,13 +76,11 @@ export class ToolbarAction extends Action {
 		super(id, label, cssClass);
 	}
 
-	run(): Promise<boolean> {
+	override async run(): Promise<void> {
 		try {
 			this.runFn.apply(this.context, [this.id]);
-			return Promise.resolve(true);
 		} catch (e) {
 			this.logService.error(e);
-			return Promise.resolve(false);
 		}
 	}
 }
@@ -101,7 +88,7 @@ export class ToolbarAction extends Action {
 export class ToggleMoreWidgetAction extends Action {
 
 	private static readonly ID = 'toggleMore';
-	private static readonly LABEL = nls.localize('toggleMore', "Toggle More");
+	private static readonly LABEL = nls.localize('toggleMore', "Show Actions");
 	private static readonly ICON = 'toggle-more';
 
 	constructor(
@@ -112,13 +99,12 @@ export class ToggleMoreWidgetAction extends Action {
 		super(ToggleMoreWidgetAction.ID, ToggleMoreWidgetAction.LABEL, ToggleMoreWidgetAction.ICON);
 	}
 
-	run(context: StandardKeyboardEvent): Promise<boolean> {
+	override async run(context: StandardKeyboardEvent): Promise<void> {
 		this._contextMenuService.showContextMenu({
 			getAnchor: () => context.target,
 			getActions: () => this._actions,
 			getActionsContext: () => this._context
 		});
-		return Promise.resolve(true);
 	}
 }
 
@@ -135,9 +121,8 @@ export class DeleteWidgetAction extends Action {
 		super(DeleteWidgetAction.ID, DeleteWidgetAction.LABEL, DeleteWidgetAction.ICON);
 	}
 
-	run(): Promise<boolean> {
+	override async run(): Promise<void> {
 		this.angularEventService.sendAngularEvent(this._uri, AngularEventType.DELETE_WIDGET, { id: this._widgetId });
-		return Promise.resolve(true);
 	}
 }
 
@@ -168,11 +153,10 @@ export class PinUnpinTabAction extends Action {
 		}
 	}
 
-	public run(): Promise<boolean> {
+	public override async run(): Promise<void> {
 		this._isPinned = !this._isPinned;
 		this.updatePinStatus();
 		this.angularEventService.sendAngularEvent(this._uri, AngularEventType.PINUNPIN_TAB, { tabId: this._tabId, isPinned: this._isPinned });
-		return Promise.resolve(true);
 	}
 }
 
@@ -192,9 +176,8 @@ export class AddFeatureTabAction extends Action {
 		this._register(this._angularEventService.onAngularEvent(this._uri)(event => this.handleDashboardEvent(event)));
 	}
 
-	run(): Promise<boolean> {
+	override async run(): Promise<void> {
 		this._newDashboardTabService.showDialog(this._dashboardTabs, this._openedTabs, this._uri);
-		return Promise.resolve(true);
 	}
 
 	private handleDashboardEvent(event: IAngularEvent): void {
@@ -202,14 +185,14 @@ export class AddFeatureTabAction extends Action {
 			case AngularEventType.NEW_TABS:
 				const openedTabs = <IDashboardTab[]>event.payload.dashboardTabs;
 				openedTabs.forEach(tab => {
-					const existedTab = find(this._openedTabs, i => i === tab);
+					const existedTab = this._openedTabs.find(i => i === tab);
 					if (!existedTab) {
 						this._openedTabs.push(tab);
 					}
 				});
 				break;
 			case AngularEventType.CLOSE_TAB:
-				const index = firstIndex(this._openedTabs, i => i.id === event.payload.id);
+				const index = this._openedTabs.findIndex(i => i.id === event.payload.id);
 				this._openedTabs.splice(index, 1);
 				break;
 		}
@@ -218,8 +201,8 @@ export class AddFeatureTabAction extends Action {
 
 export class CollapseWidgetAction extends Action {
 	private static readonly ID = 'collapseWidget';
-	private static readonly COLLPASE_LABEL = nls.localize('collapseWidget', "Collapse");
-	private static readonly EXPAND_LABEL = nls.localize('expandWidget', "Expand");
+	private static readonly COLLPASE_LABEL = nls.localize('collapseWidget', "Collapse Widget");
+	private static readonly EXPAND_LABEL = nls.localize('expandWidget', "Expand Widget");
 	private static readonly COLLAPSE_ICON = 'codicon-chevron-up';
 	private static readonly EXPAND_ICON = 'codicon-chevron-down';
 
@@ -234,12 +217,12 @@ export class CollapseWidgetAction extends Action {
 			collpasedState ? CollapseWidgetAction.EXPAND_LABEL : CollapseWidgetAction.COLLPASE_LABEL,
 			collpasedState ? CollapseWidgetAction.EXPAND_ICON : CollapseWidgetAction.COLLAPSE_ICON
 		);
+		this.expanded = !this.collpasedState;
 	}
 
-	run(): Promise<boolean> {
+	override async run(): Promise<void> {
 		this._toggleState();
 		this._angularEventService.sendAngularEvent(this._uri, AngularEventType.COLLAPSE_WIDGET, this._widgetUuid);
-		return Promise.resolve(true);
 	}
 
 	private _toggleState(): void {
@@ -251,8 +234,9 @@ export class CollapseWidgetAction extends Action {
 			return;
 		}
 		this.collpasedState = collapsed;
-		this._setClass(this.collpasedState ? CollapseWidgetAction.EXPAND_ICON : CollapseWidgetAction.COLLAPSE_ICON);
+		this.class = this.collpasedState ? CollapseWidgetAction.EXPAND_ICON : CollapseWidgetAction.COLLAPSE_ICON;
 		this.label = this.collpasedState ? CollapseWidgetAction.EXPAND_LABEL : CollapseWidgetAction.COLLPASE_LABEL;
+		this.expanded = !this.collpasedState;
 	}
 
 	public set state(collapsed: boolean) {

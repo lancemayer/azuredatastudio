@@ -9,12 +9,12 @@ import * as loc from '../../../localizedConstants';
 import { IconPathHelper, cssStyles } from '../../../constants';
 import { DashboardPage } from '../../components/dashboardPage';
 import { ControllerModel } from '../../../models/controllerModel';
+import { ResourceType } from 'arc';
 import { PostgresModel } from '../../../models/postgresModel';
-import { ResourceType } from '../../../common/utils';
 
 export class PostgresSupportRequestPage extends DashboardPage {
-	constructor(protected modelView: azdata.ModelView, private _controllerModel: ControllerModel, private _postgresModel: PostgresModel) {
-		super(modelView);
+	constructor(modelView: azdata.ModelView, dashboard: azdata.window.ModelViewDashboard, private _controllerModel: ControllerModel, private _postgresModel: PostgresModel) {
+		super(modelView, dashboard);
 	}
 
 	protected get title(): string {
@@ -34,31 +34,37 @@ export class PostgresSupportRequestPage extends DashboardPage {
 		const content = this.modelView.modelBuilder.divContainer().component();
 		root.addItem(content, { CSSStyles: { 'margin': '20px' } });
 
-		content.addItem(this.modelView.modelBuilder.text().withProperties<azdata.TextComponentProperties>({
+		content.addItem(this.modelView.modelBuilder.text().withProps({
 			value: loc.newSupportRequest,
 			CSSStyles: { ...cssStyles.title, 'margin-bottom': '20px' }
 		}).component());
 
-		content.addItem(this.modelView.modelBuilder.text().withProperties<azdata.TextComponentProperties>({
+		content.addItem(this.modelView.modelBuilder.text().withProps({
 			value: loc.clickTheNewSupportRequestButton,
 			CSSStyles: { ...cssStyles.text, 'margin-bottom': '20px' }
 		}).component());
 
-		const supportRequestButton = this.modelView.modelBuilder.button().withProperties<azdata.ButtonProperties>({
+		content.addItem(this.modelView.modelBuilder.text().withProps({
+			value: loc.supportRequestNote,
+			CSSStyles: { ...cssStyles.text, 'margin-bottom': '20px' }
+		}).component());
+
+		const supportRequestButton = this.modelView.modelBuilder.button().withProps({
 			iconPath: IconPathHelper.support,
 			label: loc.newSupportRequest,
 			width: '205px'
 		}).component();
 
-		supportRequestButton.onDidClick(() => {
-			const r = this._controllerModel.getRegistration(ResourceType.postgresInstances, this._postgresModel.namespace(), this._postgresModel.name());
-			if (!r) {
-				vscode.window.showErrorMessage(loc.couldNotFindAzureResource(this._postgresModel.fullName()));
-			} else {
-				vscode.env.openExternal(vscode.Uri.parse(
-					`https://portal.azure.com/#resource/subscriptions/${r.subscriptionId}/resourceGroups/${r.resourceGroupName}/providers/Microsoft.AzureData/${ResourceType.postgresInstances}/${r.instanceName}/supportrequest`));
-			}
-		});
+		this.disposables.push(
+			supportRequestButton.onDidClick(() => {
+				const azure = this._controllerModel.controllerConfig?.spec.settings.azure;
+				if (azure) {
+					vscode.env.openExternal(vscode.Uri.parse(
+						`https://portal.azure.com/#resource/subscriptions/${azure.subscription}/resourceGroups/${azure.resourceGroup}/providers/Microsoft.AzureArcData/${ResourceType.postgresInstances}/${this._postgresModel.info.name}/supportrequest`));
+				} else {
+					vscode.window.showErrorMessage(loc.couldNotFindControllerRegistration);
+				}
+			}));
 
 		content.addItem(supportRequestButton);
 		return root;

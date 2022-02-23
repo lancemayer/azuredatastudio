@@ -6,7 +6,7 @@
 import * as azdata from 'azdata';
 
 import { IEditorModel } from 'vs/platform/editor/common/editor';
-import { EditorInput, EditorModel, IEditorInput } from 'vs/workbench/common/editor';
+import { IEditorInput } from 'vs/workbench/common/editor';
 import * as DOM from 'vs/base/browser/dom';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 
@@ -15,6 +15,8 @@ import { Emitter, Event } from 'vs/base/common/event';
 import { IWorkbenchLayoutService, Parts } from 'vs/workbench/services/layout/browser/layoutService';
 import { IThemeService } from 'vs/platform/theme/common/themeService';
 import { URI } from 'vs/base/common/uri';
+import { EditorModel } from 'vs/workbench/common/editor/editorModel';
+import { EditorInput } from 'vs/workbench/common/editor/editorInput';
 
 export type ModeViewSaveHandler = (handle: number) => Thenable<boolean>;
 
@@ -77,15 +79,15 @@ export class ModelViewInput extends EditorInput {
 		return this._model.modelViewId;
 	}
 
-	public getTypeId(): string {
+	override get typeId(): string {
 		return 'ModelViewEditorInput';
 	}
 
-	public resolve(refresh?: boolean): Promise<IEditorModel> {
+	public override resolve(refresh?: boolean): Promise<IEditorModel> {
 		return undefined;
 	}
 
-	public getName(): string {
+	public override getName(): string {
 		return this._title;
 	}
 
@@ -132,18 +134,18 @@ export class ModelViewInput extends EditorInput {
 	/**
 	 * An editor that is dirty will be asked to be saved once it closes.
 	 */
-	isDirty(): boolean {
+	override isDirty(): boolean {
 		return this._model.isDirty;
 	}
 
 	/**
 	 * Saves the editor if it is dirty. Subclasses return a promise with a boolean indicating the success of the operation.
 	 */
-	save(): Promise<IEditorInput | undefined> {
+	override save(): Promise<IEditorInput | undefined> {
 		return this._model.save().then(saved => saved ? this : undefined);
 	}
 
-	public dispose(): void {
+	public override dispose(): void {
 		if (this._dialogPane) {
 			this._dialogPane.dispose();
 		}

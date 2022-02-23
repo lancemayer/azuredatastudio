@@ -64,13 +64,6 @@ export function getPythonInstallationLocation(rootFolder: string) {
 	return path.join(rootFolder, 'python');
 }
 
-export function getPythonExePath(rootFolder: string): string {
-	return path.join(
-		getPythonInstallationLocation(rootFolder),
-		constants.pythonBundleVersion,
-		process.platform === constants.winPlatform ? 'python.exe' : 'bin/python3');
-}
-
 export function getPackageFilePath(rootFolder: string, packageName: string): string {
 	return path.join(
 		rootFolder,
@@ -227,7 +220,9 @@ export function getScriptWithDBChange(currentDb: string, databaseName: string, s
 
 /**
  * Returns full name of model registration table
- * @param config config
+ * @param db
+ * @param table
+ * @param schema
  */
 export function getRegisteredModelsThreePartsName(db: string, table: string, schema: string) {
 	const dbName = doubleEscapeSingleBrackets(db);
@@ -238,7 +233,8 @@ export function getRegisteredModelsThreePartsName(db: string, table: string, sch
 
 /**
  * Returns full name of model registration table
- * @param config config object
+ * @param table
+ * @param schema
  */
 export function getRegisteredModelsTwoPartsName(table: string, schema: string) {
 	const schemaName = doubleEscapeSingleBrackets(schema);
@@ -272,7 +268,6 @@ export function getFileName(filePath: string) {
 export function getDefaultPythonLocation(): string {
 
 	return path.join(getUserHome() || '', 'azuredatastudio-python',
-		constants.adsPythonBundleVersion,
 		getPythonExeName());
 }
 
@@ -283,3 +278,34 @@ export function getPythonExeName(): string {
 export function getUserHome(): string | undefined {
 	return process.env.HOME || process.env.USERPROFILE;
 }
+
+export function getKeyValueString(key: string, value: string, separator: string = '='): string {
+	return `${key}${separator}${value}`;
+}
+
+export function getServerPort(connection: azdata.connection.ConnectionProfile): string {
+	if (!connection) {
+		return '';
+	}
+	let index = connection.serverName.indexOf(',');
+	if (index > 0) {
+		return connection.serverName.substring(index + 1);
+	} else {
+		return '1433';
+	}
+}
+
+export function getServerName(connection: azdata.connection.ConnectionProfile): string {
+	if (!connection) {
+		return '';
+	}
+	let index = connection.serverName.indexOf(',');
+	if (index > 0) {
+		return connection.serverName.substring(0, index);
+	} else {
+		return connection.serverName;
+	}
+}
+
+
+

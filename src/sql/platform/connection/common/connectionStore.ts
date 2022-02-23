@@ -11,9 +11,9 @@ import { ConnectionProfile } from 'sql/platform/connection/common/connectionProf
 import { ConnectionProfileGroup, IConnectionProfileGroup } from 'sql/platform/connection/common/connectionProfileGroup';
 import { IConnectionProfile, ProfileMatcher } from 'sql/platform/connection/common/interfaces';
 import { ICredentialsService } from 'sql/platform/credentials/common/credentialsService';
+import { isDisposable } from 'vs/base/common/lifecycle';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
-import { IStorageService, StorageScope } from 'vs/platform/storage/common/storage';
-import { find } from 'vs/base/common/arrays';
+import { IStorageService, StorageScope, StorageTarget } from 'vs/platform/storage/common/storage';
 
 const MAX_CONNECTIONS_DEFAULT = 25;
 
@@ -47,7 +47,8 @@ export class ConnectionStore {
 			this.mru = [];
 		}
 
-		this.storageService.onWillSaveState(() => this.storageService.store(RECENT_CONNECTIONS_STATE_KEY, JSON.stringify(this.mru), StorageScope.GLOBAL));
+		this.storageService.onWillSaveState(() =>
+			this.storageService.store(RECENT_CONNECTIONS_STATE_KEY, JSON.stringify(this.mru), StorageScope.GLOBAL, StorageTarget.MACHINE));
 	}
 
 	/**
@@ -89,6 +90,11 @@ export class ConnectionStore {
 					}
 					return { profile: credentialsItem, savedCred: !!savedCred };
 				});
+		} else if (credentialsItem.authenticationType === 'AzureMFA' || credentialsItem.authenticationType === 'dstsAuth' && credentialsItem.azureAccount) {
+			return Promise.resolve({ profile: credentialsItem, savedCred: true });
+		} else if (credentialsItem.authenticationType === 'None') {
+			// Kusto supports no authentication
+			return Promise.resolve({ profile: credentialsItem, savedCred: true });
 		} else {
 			// No need to look up the password
 			return Promise.resolve({ profile: credentialsItem, savedCred: credentialsItem.savePassword });
@@ -100,13 +106,16 @@ export class ConnectionStore {
 	 * Password values are stored to a separate credential store if the "savePassword" option is true
 	 *
 	 * @param profile the profile to save
-	 * @param whether the plaintext password should be written to the settings file
+	 * @param forceWritePlaintextPassword whether the plaintext password should be written to the settings file
 	 * @returns a Promise that returns the original profile, for help in chaining calls
 	 */
 	public async saveProfile(profile: IConnectionProfile, forceWritePlaintextPassword?: boolean, matcher?: ProfileMatcher): Promise<IConnectionProfile> {
 		// Add the profile to the saved list, taking care to clear out the password field if necessary
 		const savedProfile = forceWritePlaintextPassword ? profile : this.getProfileWithoutPassword(profile);
 		const savedConnectionProfile = await this.saveProfileToConfig(savedProfile, matcher);
+		if (savedProfile && isDisposable(savedProfile)) {
+			savedProfile.dispose();
+		}
 		profile.groupId = savedConnectionProfile.groupId;
 		profile.id = savedConnectionProfile.id;
 		// Only save if we successfully added the profile
@@ -148,7 +157,7 @@ export class ConnectionStore {
 	public getRecentlyUsedConnections(providers?: string[]): ConnectionProfile[] {
 		let mru = this.mru.slice();
 		if (providers && providers.length > 0) {
-			mru = mru.filter(c => find(providers, x => x === c.providerName));
+			mru = mru.filter(c => providers.find(x => x === c.providerName));
 		}
 		return this.convertConfigValuesToConnectionProfiles(mru);
 	}
@@ -172,9 +181,9 @@ export class ConnectionStore {
 
 	public getProfileWithoutPassword(conn: IConnectionProfile): ConnectionProfile {
 		let savedConn = ConnectionProfile.fromIConnectionProfile(this.capabilitiesService, conn);
-		savedConn = savedConn.withoutPassword();
-
-		return savedConn;
+		let newSavedConn = savedConn.withoutPassword();
+		savedConn.dispose();
+		return newSavedConn;
 	}
 
 	/**
@@ -183,7 +192,6 @@ export class ConnectionStore {
 	 * Password values are stored to a separate credential store if the "savePassword" option is true
 	 *
 	 * @param conn the connection to add
-	 * @param addToMru Whether to add this connection to the MRU
 	 * @returns a Promise that returns when the connection was saved
 	 */
 	public addRecentConnection(conn: IConnectionProfile): Promise<void> {
@@ -220,7 +228,9 @@ export class ConnectionStore {
 
 		list.unshift(savedProfile);
 
-		return list.filter(n => n !== undefined).map(c => c.toIConnectionProfile());
+		const profiles = list.filter(n => n !== undefined).map(c => c.toIConnectionProfile());
+		list.forEach(c => c.dispose());
+		return profiles;
 	}
 
 	private removeFromConnectionList(conn: IConnectionProfile, list: ConnectionProfile[]): IConnectionProfile[] {
@@ -275,7 +285,7 @@ export class ConnectionStore {
 		if (!withoutConnections) {
 			profilesInConfiguration = this.connectionConfig.getConnections(true);
 			if (providers && providers.length > 0) {
-				profilesInConfiguration = profilesInConfiguration.filter(x => find(providers, p => p === x.providerName));
+				profilesInConfiguration = profilesInConfiguration.filter(x => providers.find(p => p === x.providerName));
 			}
 		}
 		const groups = this.connectionConfig.getAllGroups();
@@ -289,7 +299,7 @@ export class ConnectionStore {
 		if (children) {
 			children.map(group => {
 				let connectionGroup = new ConnectionProfileGroup(group.name, parent, group.id, group.color, group.description);
-				this.addGroupFullNameToMap(group.id, connectionGroup.fullName);
+				this.addGroupFullNameToMap(group.id!, connectionGroup.fullName);
 				if (connections) {
 					let connectionsForGroup = connections.filter(conn => conn.groupId === connectionGroup.id);
 					let conns: ConnectionProfile[] = [];
@@ -313,7 +323,7 @@ export class ConnectionStore {
 
 	public getGroupFromId(groupId: string): IConnectionProfileGroup | undefined {
 		const groups = this.connectionConfig.getAllGroups();
-		return find(groups, group => group.id === groupId);
+		return groups.find(group => group.id === groupId);
 	}
 
 	private getMaxRecentConnectionsCount(): number {

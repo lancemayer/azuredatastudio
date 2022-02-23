@@ -3,15 +3,12 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import vscode = require('vscode');
+import * as vscode from 'vscode';
 
-export class QuestionTypes {
-	public static get input(): string { return 'input'; }
-	public static get password(): string { return 'password'; }
-	public static get list(): string { return 'list'; }
-	public static get confirm(): string { return 'confirm'; }
-	public static get checkbox(): string { return 'checkbox'; }
-	public static get expand(): string { return 'expand'; }
+export const enum QuestionTypes {
+	input = 'input',
+	password = 'password',
+	confirm = 'confirm'
 }
 
 // Question interface to clarify how to use the prompt feature
@@ -54,15 +51,14 @@ export interface IQuestionHandler {
 }
 
 export interface IPrompter {
-	promptSingle<T>(question: IQuestion, ignoreFocusOut?: boolean): Promise<T>;
+	promptSingle<T>(question: IQuestion): Promise<T>;
 	/**
 	 * Prompts for multiple questions
 	 *
 	 * @returns Map of question IDs to results, or undefined if
 	 * the user canceled the question session
 	 */
-	prompt<T>(questions: IQuestion[], ignoreFocusOut?: boolean): Promise<{ [questionId: string]: any }>;
-	promptCallback(questions: IQuestion[], callback: IPromptCallback): void;
+	prompt<T>(questions: IQuestion[]): Promise<{ [questionId: string]: any }>;
 }
 
 export interface IPromptCallback {

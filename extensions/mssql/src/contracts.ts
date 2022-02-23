@@ -452,6 +452,7 @@ export interface DeployParams {
 	databaseName: string;
 	upgradeExisting: boolean;
 	sqlCommandVariableValues?: Record<string, string>;
+	deploymentOptions?: mssql.DeploymentOptions;
 	ownerUri: string;
 	taskExecutionMode: TaskExecutionMode;
 }
@@ -460,6 +461,7 @@ export interface GenerateDeployScriptParams {
 	packageFilePath: string;
 	databaseName: string;
 	sqlCommandVariableValues?: Record<string, string>;
+	deploymentOptions?: mssql.DeploymentOptions
 	ownerUri: string;
 	taskExecutionMode: TaskExecutionMode;
 }
@@ -469,6 +471,15 @@ export interface GenerateDeployPlanParams {
 	databaseName: string;
 	ownerUri: string;
 	taskExecutionMode: TaskExecutionMode;
+}
+
+export interface GetOptionsFromProfileParams {
+	profilePath: string;
+}
+
+export interface ValidateStreamingJobParams {
+	packageFilePath: string,
+	createStreamingJobTsql: string
 }
 
 export namespace ExportRequest {
@@ -494,7 +505,16 @@ export namespace GenerateDeployScriptRequest {
 export namespace GenerateDeployPlanRequest {
 	export const type = new RequestType<GenerateDeployPlanParams, mssql.GenerateDeployPlanResult, void, void>('dacfx/generateDeployPlan');
 }
-// ------------------------------- < DacFx > ------------------------------------
+
+export namespace GetOptionsFromProfileRequest {
+	export const type = new RequestType<GetOptionsFromProfileParams, mssql.DacFxOptionsResult, void, void>('dacfx/getOptionsFromProfile');
+}
+
+export namespace ValidateStreamingJobRequest {
+	export const type = new RequestType<ValidateStreamingJobParams, mssql.ValidateStreamingJobResult, void, void>('dacfx/validateStreamingJob');
+}
+
+// ------------------------------- </ DacFx > ------------------------------------
 
 // ------------------------------- <CMS> ----------------------------------------
 
@@ -608,10 +628,17 @@ export interface SchemaCompareGenerateScriptParams {
 	taskExecutionMode: TaskExecutionMode;
 }
 
-export interface SchemaComparePublishChangesParams {
+export interface SchemaComparePublishDatabaseChangesParams {
 	operationId: string;
 	targetServerName: string;
 	targetDatabaseName: string;
+	taskExecutionMode: TaskExecutionMode;
+}
+
+export interface SchemaComparePublishProjectChangesParams {
+	operationId: string;
+	targetProjectPath: string;
+	targetFolderStructure: mssql.ExtractTarget;
 	taskExecutionMode: TaskExecutionMode;
 }
 
@@ -653,7 +680,15 @@ export namespace SchemaCompareGenerateScriptRequest {
 }
 
 export namespace SchemaComparePublishChangesRequest {
-	export const type = new RequestType<SchemaComparePublishChangesParams, azdata.ResultStatus, void, void>('schemaCompare/publish');
+	export const type = new RequestType<SchemaComparePublishDatabaseChangesParams, azdata.ResultStatus, void, void>('schemaCompare/publish');
+}
+
+export namespace SchemaComparePublishDatabaseChangesRequest {
+	export const type = new RequestType<SchemaComparePublishDatabaseChangesParams, azdata.ResultStatus, void, void>('schemaCompare/publishDatabase');
+}
+
+export namespace SchemaComparePublishProjectChangesRequest {
+	export const type = new RequestType<SchemaComparePublishProjectChangesParams, mssql.SchemaComparePublishProjectResult, void, void>('schemaCompare/publishProject');
 }
 
 export namespace SchemaCompareGetDefaultOptionsRequest {
@@ -682,7 +717,7 @@ export namespace SchemaCompareCancellationRequest {
 
 export interface SqlAssessmentParams {
 	ownerUri: string;
-	targetType: azdata.sqlAssessment.SqlAssessmentTargetType
+	targetType: azdata.sqlAssessment.SqlAssessmentTargetType;
 }
 
 export interface GenerateSqlAssessmentScriptParams {
@@ -738,3 +773,344 @@ export class CompletionExtensionParams {
 export namespace CompletionExtLoadRequest {
 	export const type = new RequestType<CompletionExtensionParams, boolean, void, void>('completion/extLoad');
 }
+
+// ------------------------------- < Load Completion Extension Request > ------------------------------------
+
+/// ------------------------------- <Convert Notebook> -----------------------------
+
+export interface ConvertNotebookToSqlParams {
+	content: string;
+}
+
+export namespace ConvertNotebookToSqlRequest {
+	export const type = new RequestType<ConvertNotebookToSqlParams, ConvertNotebookToSqlResult, void, void>('notebookconvert/convertnotebooktosql');
+}
+
+export interface ConvertNotebookToSqlResult extends azdata.ResultStatus {
+	content: string;
+}
+
+export interface ConvertSqlToNotebookParams {
+	clientUri: string;
+}
+
+export namespace ConvertSqlToNotebookRequest {
+	export const type = new RequestType<ConvertSqlToNotebookParams, ConvertSqlToNotebookResult, void, void>('notebookconvert/convertsqltonotebook');
+}
+
+export interface ConvertSqlToNotebookResult extends azdata.ResultStatus {
+	content: string;
+}
+
+// ------------------------------- <Convert Notebook> -----------------------------
+
+// ------------------------------- < SQL Profiler > ------------------------------------
+
+/**
+ * Parameters to start a profiler session
+ */
+export interface CreateXEventSessionParams {
+	/**
+	 * Session Owner URI
+	 */
+	ownerUri: string;
+
+	/**
+	 * Session name
+	 */
+	sessionName: string;
+
+	/**
+	 * Profiler Session template
+	 */
+	template: ProfilerSessionTemplate;
+}
+
+export interface CreateXEventSessionResponse { }
+
+/**
+ * Parameters to start a profiler session
+ */
+export interface StartProfilingParams {
+	/**
+	 * Session Owner URI
+	 */
+	ownerUri: string;
+
+	/**
+	 * Session name
+	 */
+	sessionName: string;
+}
+
+export interface StartProfilingResponse { }
+
+/**
+ * Parameters to stop a profiler session
+ */
+export interface StopProfilingParams {
+	/**
+	 * Session Owner URI
+	 */
+	ownerUri: string;
+}
+
+export interface StopProfilingResponse { }
+
+/**
+ * Parameters to pause a profiler session
+ */
+export interface PauseProfilingParams {
+	/**
+	 * Session Owner URI
+	 */
+	ownerUri: string;
+}
+
+export interface PauseProfilingResponse { }
+
+/**
+ * Parameters to get a list of XEvent sessions
+ */
+export interface GetXEventSessionsParams {
+	/**
+	 * Session Owner URI
+	 */
+	ownerUri: string;
+}
+
+export interface GetXEventSessionsResponse {
+	/**
+	 * List of all running XEvent Sessions on target server
+	 */
+	sessions: string[];
+}
+
+export interface DisconnectSessionParams {
+	/**
+	 * Session Owner URI
+	 */
+	ownerUri: string;
+}
+
+export interface DisconnectSessionResponse { }
+
+/**
+ * Profiler Event
+ */
+export interface ProfilerEvent {
+	/**
+	 * Event class name
+	 */
+	name: string;
+
+	/**
+	 * Event timestamp
+	 */
+	timestamp: string;
+
+	/**
+	 * Event values
+	 */
+	values: {};
+}
+
+/**
+ * Profiler Session Template
+ */
+export interface ProfilerSessionTemplate {
+	/**
+	 * Template name
+	 */
+	name: string;
+
+	/**
+	 * Default view for template
+	 */
+	defaultView: string;
+
+	/**
+	 * TSQL for creating a session
+	 */
+	createStatement: string;
+}
+
+/**
+ * Profiler events available notification parameters
+ */
+export interface ProfilerEventsAvailableParams {
+	/**
+	 * Session owner URI
+	 */
+	ownerUri: string;
+
+	/**
+	 * New profiler events available
+	 */
+	events: ProfilerEvent[];
+
+	/**
+	 * If events may have been dropped
+	 */
+	eventsLost: boolean;
+}
+
+/**
+ * Profiler events available notification parameters
+ */
+export interface ProfilerSessionStoppedParams {
+	/**
+	 * Session owner URI
+	 */
+	ownerUri: string;
+
+	/**
+	 * Stopped session Id
+	 */
+	sessionId: number;
+}
+
+/**
+ * Profiler session created notification parameters
+ */
+export interface ProfilerSessionCreatedParams {
+	/**
+	 * Session owner URI
+	 */
+	ownerUri: string;
+
+	/**
+	 * Created session name
+	 */
+	sessionName: string;
+
+	/**
+	 * Template used to create session
+	 */
+	templateName: string;
+}
+
+export namespace CreateXEventSessionRequest {
+	export const type = new RequestType<CreateXEventSessionParams, CreateXEventSessionResponse, void, void>('profiler/createsession');
+}
+
+export namespace StartProfilingRequest {
+	export const type = new RequestType<StartProfilingParams, StartProfilingResponse, void, void>('profiler/start');
+}
+
+export namespace StopProfilingRequest {
+	export const type = new RequestType<StopProfilingParams, StopProfilingResponse, void, void>('profiler/stop');
+}
+
+export namespace PauseProfilingRequest {
+	export const type = new RequestType<PauseProfilingParams, PauseProfilingResponse, void, void>('profiler/pause');
+}
+
+export namespace GetXEventSessionsRequest {
+	export const type = new RequestType<GetXEventSessionsParams, GetXEventSessionsResponse, void, void>('profiler/getsessions');
+}
+
+export namespace DisconnectSessionRequest {
+	export const type = new RequestType<DisconnectSessionParams, DisconnectSessionResponse, void, void>('profiler/disconnect');
+}
+
+export namespace ProfilerEventsAvailableNotification {
+	export const type = new NotificationType<ProfilerEventsAvailableParams, void>('profiler/eventsavailable');
+}
+
+export namespace ProfilerSessionStoppedNotification {
+	export const type = new NotificationType<ProfilerSessionStoppedParams, void>('profiler/sessionstopped');
+}
+
+export namespace ProfilerSessionCreatedNotification {
+	export const type = new NotificationType<ProfilerSessionCreatedParams, void>('profiler/sessioncreated');
+}
+
+// ------------------------------- < SQL Profiler > ------------------------------------
+
+/// ------------------------------- <Sql Migration> -----------------------------
+export interface SqlMigrationAssessmentParams {
+	ownerUri: string;
+	databases: string[];
+}
+
+export namespace GetSqlMigrationAssessmentItemsRequest {
+	export const type = new RequestType<SqlMigrationAssessmentParams, mssql.AssessmentResult, void, void>('migration/getassessments');
+}
+
+export interface SqlMigrationSkuRecommendationsParams {
+	dataFolder: string;
+	perfQueryIntervalInSec: number;
+	targetPlatforms: string[];
+	targetSqlInstance: string;
+	targetPercentile: number;
+	scalingFactor: number;
+	startTime: string;
+	endTime: string;
+	includePreviewSkus: boolean;
+	databaseAllowList: string[];
+}
+
+export namespace GetSqlMigrationSkuRecommendationsRequest {
+	export const type = new RequestType<SqlMigrationSkuRecommendationsParams, mssql.SkuRecommendationResult, void, void>('migration/getskurecommendations');
+}
+
+export interface SqlMigrationStartPerfDataCollectionParams {
+	ownerUri: string,
+	dataFolder: string,
+	perfQueryIntervalInSec: number,
+	staticQueryIntervalInSec: number,
+	numberOfIterations: number
+}
+
+export namespace SqlMigrationStartPerfDataCollectionRequest {
+	export const type = new RequestType<SqlMigrationStartPerfDataCollectionParams, mssql.StartPerfDataCollectionResult, void, void>('migration/startperfdatacollection');
+}
+
+export interface SqlMigrationStopPerfDataCollectionParams {
+}
+
+export namespace SqlMigrationStopPerfDataCollectionRequest {
+	export const type = new RequestType<SqlMigrationStopPerfDataCollectionParams, mssql.StopPerfDataCollectionResult, void, void>('migration/stopperfdatacollection');
+}
+
+export interface SqlMigrationRefreshPerfDataCollectionParams {
+	lastRefreshTime: Date
+}
+
+export namespace SqlMigrationRefreshPerfDataCollectionRequest {
+	export const type = new RequestType<SqlMigrationRefreshPerfDataCollectionParams, mssql.RefreshPerfDataCollectionResult, void, void>('migration/refreshperfdatacollection');
+}
+
+// ------------------------------- <Sql Migration> -----------------------------
+
+// ------------------------------- < Table Designer > ------------------------------------
+
+export interface TableDesignerEditRequestParams {
+	tableInfo: azdata.designers.TableInfo,
+	tableChangeInfo: azdata.designers.DesignerEdit
+}
+
+export namespace InitializeTableDesignerRequest {
+	export const type = new RequestType<azdata.designers.TableInfo, azdata.designers.TableDesignerInfo, void, void>('tabledesigner/initialize');
+}
+
+export namespace ProcessTableDesignerEditRequest {
+	export const type = new RequestType<TableDesignerEditRequestParams, azdata.designers.DesignerEditResult, void, void>('tabledesigner/processedit');
+}
+
+export namespace PublishTableDesignerChangesRequest {
+	export const type = new RequestType<azdata.designers.TableInfo, azdata.designers.PublishChangesResult, void, void>('tabledesigner/publish');
+}
+
+export namespace TableDesignerGenerateScriptRequest {
+	export const type = new RequestType<azdata.designers.TableInfo, string, void, void>('tabledesigner/script');
+}
+
+export namespace TableDesignerGenerateChangePreviewReportRequest {
+	export const type = new RequestType<azdata.designers.TableInfo, string, void, void>('tabledesigner/generatepreviewreport');
+}
+export namespace DisposeTableDesignerRequest {
+	export const type = new RequestType<azdata.designers.TableInfo, void, void, void>('tabledesigner/dispose');
+}
+// ------------------------------- < Table Designer > ------------------------------------

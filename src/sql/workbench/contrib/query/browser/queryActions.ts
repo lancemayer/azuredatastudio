@@ -5,7 +5,7 @@
 
 import 'vs/css!./media/queryActions';
 import * as nls from 'vs/nls';
-import { Action, IActionViewItem, IActionRunner } from 'vs/base/common/actions';
+import { Action, IAction, IActionRunner } from 'vs/base/common/actions';
 import { IDisposable, Disposable } from 'vs/base/common/lifecycle';
 import { IContextViewService } from 'vs/platform/contextview/browser/contextView';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
@@ -26,8 +26,7 @@ import {
 } from 'sql/platform/connection/common/connectionManagement';
 import { QueryEditor } from 'sql/workbench/contrib/query/browser/queryEditor';
 import { IQueryModelService } from 'sql/workbench/services/query/common/queryModel';
-import { SelectBox } from 'sql/base/browser/ui/selectBox/selectBox';
-import { attachEditableDropdownStyler, attachSelectBoxStyler } from 'sql/platform/theme/common/styler';
+import { attachEditableDropdownStyler } from 'sql/platform/theme/common/styler';
 import { Dropdown } from 'sql/base/parts/editableDropdown/browser/dropdown';
 import { Task } from 'sql/workbench/services/tasks/browser/tasksRegistry';
 import { IObjectExplorerService } from 'sql/workbench/services/objectExplorer/browser/objectExplorerService';
@@ -36,7 +35,7 @@ import { IQueryEditorService } from 'sql/workbench/services/queryEditor/common/q
 import { IConnectionProfile } from 'sql/platform/connection/common/interfaces';
 import { getCurrentGlobalConnection } from 'sql/workbench/browser/taskUtilities';
 import { ServicesAccessor, IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
-import { CommandsRegistry } from 'vs/platform/commands/common/commands';
+import { CommandsRegistry, ICommandService } from 'vs/platform/commands/common/commands';
 import { OEAction } from 'sql/workbench/services/objectExplorer/browser/objectExplorerActions';
 import { TreeViewItemHandleArg } from 'sql/workbench/common/views';
 import { ICapabilitiesService } from 'sql/platform/capabilities/common/capabilitiesService';
@@ -44,6 +43,9 @@ import { ConnectionProfile } from 'sql/platform/connection/common/connectionProf
 import { IQueryManagementService } from 'sql/workbench/services/query/common/queryManagement';
 import { ILogService } from 'vs/platform/log/common/log';
 import { IRange } from 'vs/editor/common/core/range';
+import { getErrorMessage, onUnexpectedError } from 'vs/base/common/errors';
+import { IActionViewItem } from 'vs/base/browser/ui/actionbar/actionbar';
+import { gen3Version, sqlDataWarehouse } from 'sql/platform/connection/common/constants';
 
 /**
  * Action class that query-based Actions will extend. This base class automatically handles activating and
@@ -63,11 +65,6 @@ export abstract class QueryTaskbarAction extends Action {
 		this.enabled = true;
 		this._setCssClass(enabledClass);
 	}
-
-	/**
-	 * This method is executed when the button is clicked.
-	 */
-	public abstract run(): Promise<void>;
 
 	protected updateCssClass(enabledClass: string): void {
 		// set the class, useful on change of label or icon
@@ -121,7 +118,7 @@ export function openNewQuery(accessor: ServicesAccessor, profile?: IConnectionPr
 	if (!profile) {
 		profile = getCurrentGlobalConnection(objectExplorerService, connectionManagementService, editorService);
 	}
-	return queryEditorService.newSqlEditor({ initalContent }).then((owner: IConnectableInput) => {
+	return queryEditorService.newSqlEditor({ initalContent }, profile?.providerName).then((owner: IConnectableInput) => {
 		// Connect our editor to the input connection
 		let options: IConnectionCompletionOptions = {
 			params: { connectionType: ConnectionType.editor, runQueryOnCompletion: onConnection, input: owner },
@@ -200,18 +197,17 @@ export class RunQueryAction extends QueryTaskbarAction {
 	constructor(
 		editor: QueryEditor,
 		@IQueryModelService protected readonly queryModelService: IQueryModelService,
-		@IConnectionManagementService connectionManagementService: IConnectionManagementService
+		@IConnectionManagementService connectionManagementService: IConnectionManagementService,
+		@ICommandService private readonly commandService?: ICommandService
 	) {
 		super(connectionManagementService, editor, RunQueryAction.ID, RunQueryAction.EnabledClass);
 		this.label = nls.localize('runQueryLabel', "Run");
 	}
 
-	public async run(): Promise<void> {
+	public override async run(): Promise<void> {
 		if (!this.editor.isSelectionEmpty()) {
-			if (this.isConnected(this.editor)) {
-				// If we are already connected, run the query
-				this.runQuery(this.editor);
-			} else {
+			const runQueryResult = await this.runQuery(this.editor);
+			if (!runQueryResult) {
 				// If we are not already connected, prompt for connection and run the query if the
 				// connection succeeds. "runQueryOnCompletion=true" will cause the query to run after connection
 				this.connectEditor(this.editor, RunQueryOnConnectionMode.executeQuery, this.editor.getSelection());
@@ -222,10 +218,8 @@ export class RunQueryAction extends QueryTaskbarAction {
 
 	public async runCurrent(): Promise<void> {
 		if (!this.editor.isSelectionEmpty()) {
-			if (this.isConnected(this.editor)) {
-				// If we are already connected, run the query
-				this.runQuery(this.editor, true);
-			} else {
+			const runQueryResult = await this.runQuery(this.editor, true);
+			if (!runQueryResult) {
 				// If we are not already connected, prompt for connection and run the query if the
 				// connection succeeds. "runQueryOnCompletion=true" will cause the query to run after connection
 				this.connectEditor(this.editor, RunQueryOnConnectionMode.executeCurrentQuery, this.editor.getSelection(false));
@@ -234,12 +228,14 @@ export class RunQueryAction extends QueryTaskbarAction {
 		return;
 	}
 
-	public runQuery(editor: QueryEditor, runCurrentStatement: boolean = false) {
+	private async runQuery(editor: QueryEditor, runCurrentStatement: boolean = false): Promise<boolean> {
 		if (!editor) {
 			editor = this.editor;
 		}
 
 		if (this.isConnected(editor)) {
+			// Hide IntelliSense suggestions list when running query to match SSMS behavior
+			this.commandService?.executeCommand('hideSuggestWidget');
 			// if the selection isn't empty then execute the selection
 			// otherwise, either run the statement or the script depending on parameter
 			let selection = editor.getSelection(false);
@@ -250,7 +246,9 @@ export class RunQueryAction extends QueryTaskbarAction {
 				selection = editor.getSelection();
 				editor.input.runQuery(selection);
 			}
+			return true;
 		}
+		return false;
 	}
 
 	protected isCursorPosition(selection: IRange) {
@@ -278,7 +276,7 @@ export class CancelQueryAction extends QueryTaskbarAction {
 		this.label = nls.localize('cancelQueryLabel', "Cancel");
 	}
 
-	public async run(): Promise<void> {
+	public override async run(): Promise<void> {
 		if (this.isConnected(this.editor)) {
 			if (!this.editor.input) {
 				this.logService.error('editor input was null');
@@ -305,7 +303,7 @@ export class EstimatedQueryPlanAction extends QueryTaskbarAction {
 		this.label = nls.localize('estimatedQueryPlan', "Explain");
 	}
 
-	public async run(): Promise<void> {
+	public override async run(): Promise<void> {
 		if (!this.editor.isSelectionEmpty()) {
 			if (this.isConnected(this.editor)) {
 				// If we are already connected, run the query
@@ -344,7 +342,7 @@ export class ActualQueryPlanAction extends QueryTaskbarAction {
 		this.label = nls.localize('actualQueryPlan', "Actual");
 	}
 
-	public async run(): Promise<void> {
+	public override async run(): Promise<void> {
 		if (!this.editor.isSelectionEmpty()) {
 			if (this.isConnected(this.editor)) {
 				// If we are already connected, run the query
@@ -391,7 +389,7 @@ export class DisconnectDatabaseAction extends QueryTaskbarAction {
 		this.label = nls.localize('disconnectDatabaseLabel', "Disconnect");
 	}
 
-	public async run(): Promise<void> {
+	public override async run(): Promise<void> {
 		// Call disconnectEditor regardless of the connection state and let the ConnectionManagementService
 		// determine if we need to disconnect, cancel an in-progress conneciton, or do nothing
 		this.connectionManagementService.disconnectEditor(this.editor.input);
@@ -429,7 +427,7 @@ export class ConnectDatabaseAction extends QueryTaskbarAction {
 		this.label = label;
 	}
 
-	public async run(): Promise<void> {
+	public override async run(): Promise<void> {
 		this.connectEditor(this.editor);
 		return;
 	}
@@ -477,7 +475,7 @@ export class ToggleConnectDatabaseAction extends QueryTaskbarAction {
 	}
 
 
-	public async run(): Promise<void> {
+	public override async run(): Promise<void> {
 		if (!this.editor.input.isSharedSession) {
 			if (this.connected) {
 				// Call disconnectEditor regardless of the connection state and let the ConnectionManagementService
@@ -508,7 +506,7 @@ export class ListDatabasesAction extends QueryTaskbarAction {
 		this.class = ListDatabasesAction.EnabledClass;
 	}
 
-	public async run(): Promise<void> {
+	public override async run(): Promise<void> {
 		return;
 	}
 }
@@ -550,7 +548,7 @@ export class ToggleSqlCmdModeAction extends QueryTaskbarAction {
 		this.isSqlCmdMode ? this.updateCssClass(ToggleSqlCmdModeAction.DisableSqlcmdClass) : this.updateCssClass(ToggleSqlCmdModeAction.EnableSqlcmdClass);
 	}
 
-	public async run(): Promise<void> {
+	public override async run(): Promise<void> {
 		const toSqlCmdState = !this.isSqlCmdMode; // input.state change triggers event that changes this.isSqlCmdMode, so store it before using
 		this.editor.input.state.isSqlCmdMode = toSqlCmdState;
 
@@ -580,41 +578,30 @@ export class ListDatabasesActionItem extends Disposable implements IActionViewIt
 	private _isConnected: boolean;
 	private _databaseListDropdown: HTMLElement;
 	private _dropdown: Dropdown;
-	private _databaseSelectBox: SelectBox;
-	private _isInAccessibilityMode: boolean;
 	private readonly _selectDatabaseString: string = nls.localize("selectDatabase", "Select Database");
 
 	// CONSTRUCTOR /////////////////////////////////////////////////////////
 	constructor(
 		private _editor: QueryEditor,
+		public action: IAction,
 		@IContextViewService contextViewProvider: IContextViewService,
 		@IConnectionManagementService private readonly connectionManagementService: IConnectionManagementService,
 		@INotificationService private readonly notificationService: INotificationService,
-		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@ILogService private readonly logService: ILogService
 	) {
 		super();
 		this._databaseListDropdown = $('.databaseListDropdown');
-		this._isInAccessibilityMode = this.configurationService.getValue('editor.accessibilitySupport') === 'on';
+		this._dropdown = new Dropdown(this._databaseListDropdown, contextViewProvider, {
+			strictSelection: true,
+			placeholder: this._selectDatabaseString,
+			ariaLabel: this._selectDatabaseString
+		});
 
-		if (this._isInAccessibilityMode) {
-			this._databaseSelectBox = new SelectBox([this._selectDatabaseString], this._selectDatabaseString, contextViewProvider, undefined, { ariaLabel: this._selectDatabaseString });
-			this._databaseSelectBox.render(this._databaseListDropdown);
-			this._databaseSelectBox.onDidSelect(e => { this.databaseSelected(e.selected); });
-			this._databaseSelectBox.disable();
-
-		} else {
-			this._dropdown = new Dropdown(this._databaseListDropdown, contextViewProvider, {
-				strictSelection: true,
-				placeholder: this._selectDatabaseString,
-				ariaLabel: this._selectDatabaseString,
-				actionLabel: nls.localize('listDatabases.toggleDatabaseNameDropdown', "Select Database Toggle Dropdown")
-			});
-			this._register(this._dropdown.onValueChange(s => this.databaseSelected(s)));
-			this._register(this._dropdown.onFocus(() => this.onDropdownFocus()));
-		}
-
-		// Register event handlers
+		// Allows database selector to commit typed or pasted DB names without the need to click
+		// or press enter to make a selection when focus is moved away from the selector.
+		this._register(this._dropdown.onBlur(() => this.databaseSelected(this._dropdown.value)));
+		this._register(this._dropdown.onValueChange(s => this.databaseSelected(s)));
+		this._register(this._dropdown.onFocus(() => this.onDropdownFocus()));
 		this._register(this.connectionManagementService.onConnectionChanged(params => this.onConnectionChanged(params)));
 	}
 
@@ -624,12 +611,7 @@ export class ListDatabasesActionItem extends Disposable implements IActionViewIt
 	}
 
 	public style(styles) {
-		if (this._isInAccessibilityMode) {
-			this._databaseSelectBox.style(styles);
-		}
-		else {
-			this._dropdown.style(styles);
-		}
+		this._dropdown.style(styles);
 	}
 
 	public setActionContext(context: any): void {
@@ -640,27 +622,15 @@ export class ListDatabasesActionItem extends Disposable implements IActionViewIt
 	}
 
 	public focus(): void {
-		if (this._isInAccessibilityMode) {
-			this._databaseSelectBox.focus();
-		} else {
-			this._dropdown.focus();
-		}
+		this._dropdown.focus();
 	}
 
 	public blur(): void {
-		if (this._isInAccessibilityMode) {
-			this._databaseSelectBox.blur();
-		} else {
-			this._dropdown.blur();
-		}
+		this._dropdown.blur();
 	}
 
 	public attachStyler(themeService: IThemeService): IDisposable {
-		if (this._isInAccessibilityMode) {
-			return attachSelectBoxStyler(this, themeService);
-		} else {
-			return attachEditableDropdownStyler(this, themeService);
-		}
+		return attachEditableDropdownStyler(this, themeService);
 	}
 
 	// EVENT HANDLERS FROM EDITOR //////////////////////////////////////////
@@ -673,17 +643,22 @@ export class ListDatabasesActionItem extends Disposable implements IActionViewIt
 		this._isConnected = false;
 		this._currentDatabaseName = undefined;
 
-		if (this._isInAccessibilityMode) {
-			this._databaseSelectBox.disable();
-			this._databaseSelectBox.setOptions([this._selectDatabaseString]);
-		} else {
-			this._dropdown.enabled = false;
-			this._dropdown.value = '';
-		}
+		this._dropdown.enabled = false;
+		this._dropdown.value = '';
 	}
 
 	// PRIVATE HELPERS /////////////////////////////////////////////////////
 	private databaseSelected(dbName: string): void {
+		// If dbName is blank (this can happen for example when setting the box value to empty when disconnecting)
+		// then just no-op, there's nothing we can do.
+		if (!dbName) {
+			return;
+		}
+
+		if (dbName === this.getCurrentDatabaseName()) {
+			return;
+		}
+
 		if (!this._editor.input) {
 			this.logService.error('editor input was null');
 			return;
@@ -714,9 +689,36 @@ export class ListDatabasesActionItem extends Disposable implements IActionViewIt
 					this.resetDatabaseName();
 					this.notificationService.notify({
 						severity: Severity.Error,
-						message: nls.localize('changeDatabase.failedWithError', "Failed to change database {0}", error)
+						message: nls.localize('changeDatabase.failedWithError', "Failed to change database: {0}", getErrorMessage(error))
 					});
 				});
+	}
+
+	/**
+	 *
+	 * @param id profile id
+	 * @returns boolean saying if the server connection is a Gen 3 DW server
+	 */
+	private isDWGen3Database(id: string): boolean {
+		const serverInfo = this.connectionManagementService.getServerInfo(id);
+		if (serverInfo) {
+			return serverInfo.serverEdition === sqlDataWarehouse &&
+				serverInfo.serverMajorVersion === gen3Version;
+		}
+		return false;
+	}
+
+	/**
+	 *
+	 * @param dbName database name
+	 * @returns updated database name after stripping the pool name, if any
+	 */
+	private removePoolInstanceName(dbName: string): string {
+		if (dbName.includes('@')) {
+			const lastIndex = dbName.lastIndexOf('@');
+			dbName = dbName.slice(0, lastIndex);
+		}
+		return dbName;
 	}
 
 	private getCurrentDatabaseName(): string | undefined {
@@ -729,6 +731,9 @@ export class ListDatabasesActionItem extends Disposable implements IActionViewIt
 		if (uri) {
 			let profile = this.connectionManagementService.getConnectionProfile(uri);
 			if (profile) {
+				if (this.isDWGen3Database(profile.id)) {
+					return this.removePoolInstanceName(profile.databaseName);
+				}
 				return profile.databaseName;
 			}
 		}
@@ -736,11 +741,7 @@ export class ListDatabasesActionItem extends Disposable implements IActionViewIt
 	}
 
 	private resetDatabaseName() {
-		if (this._isInAccessibilityMode) {
-			this._databaseSelectBox.selectWithOptionName(this.getCurrentDatabaseName());
-		} else {
-			this._dropdown.value = this.getCurrentDatabaseName();
-		}
+		this._dropdown.value = this.getCurrentDatabaseName();
 	}
 
 	private onConnectionChanged(connParams: IConnectionParams): void {
@@ -762,49 +763,51 @@ export class ListDatabasesActionItem extends Disposable implements IActionViewIt
 	}
 
 	private onDropdownFocus(): void {
+		this.getDatabaseNames().then(databaseNames => {
+			this._dropdown.values = databaseNames;
+		}).catch(onUnexpectedError);
+	}
+
+	/**
+	 * Fetches the list of database names from the current editor connection
+	 * @returns The list of database names
+	 */
+	private async getDatabaseNames(): Promise<string[]> {
 		if (!this._editor.input) {
 			this.logService.error('editor input was null');
-			return;
+			return [];
 		}
 
 		let uri = this._editor.input.uri;
 		if (!uri) {
-			return;
+			return [];
 		}
-
-		this.connectionManagementService.listDatabases(uri)
-			.then(result => {
-				if (result && result.databaseNames) {
-					this._dropdown.values = result.databaseNames;
-				}
-			});
+		try {
+			const result = await this.connectionManagementService.listDatabases(uri);
+			return result.databaseNames;
+		} catch (err) {
+			this.logService.error(`Error loading database names for query editor `, err);
+		}
+		return [];
 	}
 
-	private updateConnection(databaseName: string) {
+	private updateConnection(databaseName: string): void {
+		// Ignore if the database name is not provided, this happens when the query editor connection is changed to
+		// a provider that does not support database.
+		if (!databaseName) {
+			return;
+		}
 		this._isConnected = true;
 		this._currentDatabaseName = databaseName;
-
-		if (this._isInAccessibilityMode) {
-			this._databaseSelectBox.enable();
-			if (!this._editor.input) {
-				this.logService.error('editor input was null');
-				return;
-			}
-			let uri = this._editor.input.uri;
-			if (!uri) {
-				return;
-			}
-			this.connectionManagementService.listDatabases(uri)
-				.then(result => {
-					if (result && result.databaseNames) {
-						this._databaseSelectBox.setOptions(result.databaseNames);
-					}
-					this._databaseSelectBox.selectWithOptionName(databaseName);
-				});
-		} else {
-			this._dropdown.enabled = true;
-			this._dropdown.value = databaseName;
-		}
+		// Set the value immediately to the initial database so the user can see that, and then
+		// populate the list with just that value to avoid displaying an error while we load
+		// the full list of databases
+		this._dropdown.value = databaseName;
+		this._dropdown.values = [databaseName];
+		this._dropdown.enabled = true;
+		this.getDatabaseNames().then(databaseNames => {
+			this._dropdown.values = databaseNames;
+		}).catch(onUnexpectedError);
 	}
 
 	// TESTING PROPERTIES //////////////////////////////////////////////////
@@ -812,4 +815,28 @@ export class ListDatabasesActionItem extends Disposable implements IActionViewIt
 		return this._currentDatabaseName;
 	}
 
+}
+
+/**
+ * Action class that sends the request to convert the contents of the sql editor
+ * into a Notebook document
+ */
+export class ExportAsNotebookAction extends QueryTaskbarAction {
+
+	public static IconClass = 'export';
+	public static ID = 'exportAsNotebookAction';
+
+	constructor(
+		editor: QueryEditor,
+		@IConnectionManagementService connectionManagementService: IConnectionManagementService,
+		@ICommandService private _commandService: ICommandService
+	) {
+		super(connectionManagementService, editor, ConnectDatabaseAction.ID, ExportAsNotebookAction.IconClass);
+
+		this.label = nls.localize('queryEditor.exportSqlAsNotebook', "Export as Notebook");
+	}
+
+	public override async run(): Promise<void> {
+		this._commandService.executeCommand('mssql.exportSqlAsNotebook', this.editor.input.uri);
+	}
 }

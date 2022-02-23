@@ -14,10 +14,11 @@ export const TargetTitle: string = localize('schemaCompareDialog.TargetTitle', "
 export const FileTextBoxLabel: string = localize('schemaCompareDialog.fileTextBoxLabel', "File");
 export const DacpacRadioButtonLabel: string = localize('schemaCompare.dacpacRadioButtonLabel', "Data-tier Application File (.dacpac)");
 export const DatabaseRadioButtonLabel: string = localize('schemaCompare.databaseButtonLabel', "Database");
+export const ProjectRadioButtonLabel: string = localize('schemaCompare.projectButtonLabel', "Database Project");
 export const RadioButtonsLabel: string = localize('schemaCompare.radioButtonsLabel', "Type");
 export const ServerDropdownLabel: string = localize('schemaCompareDialog.serverDropdownTitle', "Server");
 export const DatabaseDropdownLabel: string = localize('schemaCompareDialog.databaseDropdownTitle', "Database");
-export const NoActiveConnectionsLabel: string = localize('schemaCompare.noActiveConnectionsText', "No active connections");
+export const StructureDropdownLabel: string = localize('schemaCompareDialog.structureDropdownLabel', "Folder Structure");
 export const SchemaCompareLabel: string = localize('schemaCompare.dialogTitle', "Schema Compare");
 export const differentSourceMessage: string = localize('schemaCompareDialog.differentSourceMessage', "A different source schema has been selected. Compare to see the comparison?");
 export const differentTargetMessage: string = localize('schemaCompareDialog.differentTargetMessage', "A different target schema has been selected. Compare to see the comparison?");
@@ -32,6 +33,12 @@ export const sourceServer: string = localize('schemaCompareDialog.sourceServerDr
 export const targetServer: string = localize('schemaCompareDialog.targetServerDropdown', "Target Server");
 export const defaultText: string = localize('schemaCompareDialog.defaultUser', "default");
 export const open: string = localize('schemaCompare.openFile', "Open");
+export const targetStructure = localize('targetStructure', "Target Folder Structure");
+export const file = localize('file', "File");
+export const flat = localize('flat', "Flat");
+export const objectType = localize('objectType', "Object Type");
+export const schema = localize('schema', "Schema");
+export const schemaObjectType = localize('schemaObjectType', "Schema/Object Type");
 export const selectSourceFile: string = localize('schemaCompare.selectSourceFile', "Select source file");
 export const selectTargetFile: string = localize('schemaCompare.selectTargetFile', "Select target file");
 export const ResetButtonText: string = localize('SchemaCompareOptionsDialog.Reset', "Reset");
@@ -62,7 +69,7 @@ export const include: string = localize('schemaCompare.includeColumnName', "Incl
 export const action: string = localize('schemaCompare.actionColumn', "Action");
 export const targetName: string = localize('schemaCompare.targetNameColumn', "Target Name");
 export const generateScriptDisabled: string = localize('schemaCompare.generateScriptButtonDisabledTitle', "Generate script is enabled when the target is a database");
-export const applyDisabled: string = localize('schemaCompare.applyButtonDisabledTitle', "Apply is enabled when the target is a database");
+export const applyDisabled: string = localize('schemaCompare.applyButtonDisabledTitle', "Apply is enabled when the target is a database or database project");
 export function cannotExcludeMessageDependent(diffEntryName: string, firstDependentName: string): string { return localize('schemaCompare.cannotExcludeMessageWithDependent', "Cannot exclude {0}. Included dependents exist, such as {1}", diffEntryName, firstDependentName); }
 export function cannotIncludeMessageDependent(diffEntryName: string, firstDependentName: string): string { return localize('schemaCompare.cannotIncludeMessageWithDependent', "Cannot include {0}. Excluded dependents exist, such as {1}", diffEntryName, firstDependentName); }
 export function cannotExcludeMessage(diffEntryName: string): string { return localize('schemaCompare.cannotExcludeMessage', "Cannot exclude {0}. Included dependents exist", diffEntryName); }
@@ -82,6 +89,7 @@ export const saveScmp: string = localize('schemaCompare.saveScmpButton', "Save .
 export const saveScmpDescription: string = localize('schemaCompare.saveScmpButtonTitle', "Save source and target, options, and excluded elements");
 export const save: string = localize('schemaCompare.saveFile', "Save");
 export function getConnectionString(caller: string): string { return localize('schemaCompare.GetConnectionString', "Do you want to connect to {0}?", caller); }
+export const selectConnection: string = localize('schemaCompare.selectConnection', "Select connection");
 
 // options
 export const IgnoreTableOptions: string = localize('SchemaCompare.IgnoreTableOptions', "Ignore Table Options");
@@ -174,11 +182,13 @@ export const ColumnMasterKeys: string = localize('SchemaCompare.ColumnMasterKeys
 export const Contracts: string = localize('SchemaCompare.Contracts', "Contracts");
 export const DatabaseOptions: string = localize('SchemaCompare.DatabaseOptions', "Database Options");
 export const DatabaseRoles: string = localize('SchemaCompare.DatabaseRoles', "Database Roles");
-export const DatabaseTriggers: string = localize('SchemaCompare.DatabaseTriggers', "DatabaseTriggers");
+export const DatabaseTriggers: string = localize('SchemaCompare.DatabaseTriggers', "Database Triggers");
 export const Defaults: string = localize('SchemaCompare.Defaults', "Defaults");
 export const ExtendedProperties: string = localize('SchemaCompare.ExtendedProperties', "Extended Properties");
 export const ExternalDataSources: string = localize('SchemaCompare.ExternalDataSources', "External Data Sources");
 export const ExternalFileFormats: string = localize('SchemaCompare.ExternalFileFormats', "External File Formats");
+export const ExternalStreams: string = localize('SchemaCompare.ExternalStreams', "External Streams");
+export const ExternalStreamingJobs: string = localize('SchemaCompare.ExternalStreamingJobs', "External Streaming Jobs");
 export const ExternalTables: string = localize('SchemaCompare.ExternalTables', "External Tables");
 export const Filegroups: string = localize('SchemaCompare.Filegroups', "Filegroups");
 export const Files: string = localize('SchemaCompare.Files', "Files");
@@ -199,8 +209,8 @@ export const SecurityPolicies: string = localize('SchemaCompare.SecurityPolicies
 export const Sequences: string = localize('SchemaCompare.Sequences', "Sequences");
 export const Services: string = localize('SchemaCompare.Services', "Services");
 export const Signatures: string = localize('SchemaCompare.Signatures', "Signatures");
-export const StoredProcedures: string = localize('SchemaCompare.StoredProcedures', "StoredProcedures");
-export const SymmetricKeys: string = localize('SchemaCompare.SymmetricKeys', "SymmetricKeys");
+export const StoredProcedures: string = localize('SchemaCompare.StoredProcedures', "Stored Procedures");
+export const SymmetricKeys: string = localize('SchemaCompare.SymmetricKeys', "Symmetric Keys");
 export const Synonyms: string = localize('SchemaCompare.Synonyms', "Synonyms");
 export const Tables: string = localize('SchemaCompare.Tables', "Tables");
 export const TableValuedFunctions: string = localize('SchemaCompare.TableValuedFunctions', "Table Valued Functions");
@@ -316,3 +326,17 @@ export function cancelErrorMessage(errorMessage: string): string { return locali
 export function generateScriptErrorMessage(errorMessage: string): string { return localize('schemaCompare.generateScriptErrorMessage', "Generate script failed: '{0}'", (errorMessage) ? errorMessage : 'Unknown'); }
 export function applyErrorMessage(errorMessage: string): string { return localize('schemaCompare.updateErrorMessage', "Schema Compare Apply failed '{0}'", errorMessage ? errorMessage : 'Unknown'); }
 export function openScmpErrorMessage(errorMessage: string): string { return localize('schemaCompare.openScmpErrorMessage', "Open scmp failed: '{0}'", (errorMessage) ? errorMessage : 'Unknown'); }
+export const applyError: string = localize('schemaCompare.applyError', "There was an error updating the project");
+export const dspErrorSource: string = localize('schemaCompareDialog.dspErrorSource', "The source .sqlproj file does not specify a database schema component");
+export const dspErrorTarget: string = localize('schemaCompareDialog.dspErrorTarget', "The target .sqlproj file does not specify a database schema component");
+export const noProjectExtension: string = localize('schemaCompareDialog.noProjectExtension', "The sql-database-projects extension is required to perform schema comparison with database projects");
+export const noProjectExtensionApply: string = localize('schemaCompareDialog.noProjectExtensionApply', "The sql-database-projects extension is required to apply changes to a project");
+
+// Information messages
+export const applySuccess: string = localize('schemaCompare.applySuccess', "Project was successfully updated");
+
+// Extensions
+export const sqlDatabaseProjectExtensionId: string = 'microsoft.sql-database-projects';
+
+// Commands
+export const sqlDatabaseProjectsPublishChanges: string = 'sqlDatabaseProjects.schemaComparePublishProjectChanges';

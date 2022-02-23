@@ -5,28 +5,27 @@
 
 import * as msRest from '@azure/ms-rest-js';
 
-import { Account, DidChangeAccountsParams } from 'azdata';
-import { Event } from 'vscode';
-
-import { azureResource } from './azure-resource';
-import { AzureAccount, AzureAccountSecurityToken, Tenant } from '../account-provider/interfaces';
-
-export interface IAzureResourceAccountService {
-	getAccounts(): Promise<Account[]>;
-	readonly onDidChangeAccounts: Event<DidChangeAccountsParams>;
-}
+import { azureResource } from 'azureResource';
+import { AzureAccount, Tenant } from 'azurecore';
 
 export interface IAzureResourceSubscriptionService {
-	getSubscriptions(account: Account, credential: msRest.ServiceClientCredentials): Promise<azureResource.AzureResourceSubscription[]>;
+	/**
+	 * Gets subscriptions for the given account. Any errors that occur while fetching the subscriptions for each tenant
+	 * will be displayed to the user, but this function will only throw an error if it's unable to fetch any subscriptions.
+	 * @param account The account to get the subscriptions for
+	 * @param tenantIds The list of tenant IDs to get subscriptions for - if undefined then subscriptions for all tenants will be retrieved
+	 * @returns The list of all subscriptions on this account that were able to be retrieved
+	 */
+	getSubscriptions(account: AzureAccount, tenantIds?: string[] | undefined): Promise<azureResource.AzureResourceSubscription[]>;
 }
 
 export interface IAzureResourceSubscriptionFilterService {
-	getSelectedSubscriptions(account: Account): Promise<azureResource.AzureResourceSubscription[]>;
-	saveSelectedSubscriptions(account: Account, selectedSubscriptions: azureResource.AzureResourceSubscription[]): Promise<void>;
+	getSelectedSubscriptions(account: AzureAccount): Promise<azureResource.AzureResourceSubscription[]>;
+	saveSelectedSubscriptions(account: AzureAccount, selectedSubscriptions: azureResource.AzureResourceSubscription[]): Promise<void>;
 }
 
 export interface IAzureTerminalService {
-	getOrCreateCloudConsole(account: AzureAccount, tenant: Tenant, tokens: { [key: string]: AzureAccountSecurityToken }): Promise<void>;
+	getOrCreateCloudConsole(account: AzureAccount, tenant: Tenant): Promise<void>;
 }
 
 export interface IAzureResourceCacheService {
@@ -34,12 +33,9 @@ export interface IAzureResourceCacheService {
 
 	get<T>(key: string): T | undefined;
 
-	update<T>(key: string, value: T): void;
+	update<T>(key: string, value: T): Promise<void>;
 }
 
-export interface IAzureResourceTenantService {
-	getTenantId(subscription: azureResource.AzureResourceSubscription, account: Account, credential: msRest.ServiceClientCredentials): Promise<string>;
-}
 
 export interface IAzureResourceNodeWithProviderId {
 	resourceProviderId: string;
@@ -47,5 +43,5 @@ export interface IAzureResourceNodeWithProviderId {
 }
 
 export interface IAzureResourceService<T extends azureResource.AzureResource> {
-	getResources(subscription: azureResource.AzureResourceSubscription, credential: msRest.ServiceClientCredentials, account: Account): Promise<T[]>;
+	getResources(subscriptions: azureResource.AzureResourceSubscription[], credential: msRest.ServiceClientCredentials, account: AzureAccount): Promise<T[]>;
 }

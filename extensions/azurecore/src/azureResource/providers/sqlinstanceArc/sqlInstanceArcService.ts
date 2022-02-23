@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { ResourceServiceBase, GraphData } from '../resourceTreeDataProviderBase';
-import { azureResource } from '../../azure-resource';
+import { azureResource } from 'azureResource';
 
 export interface SqlInstanceArcGraphData extends GraphData {
 	properties: {
@@ -13,7 +13,7 @@ export interface SqlInstanceArcGraphData extends GraphData {
 	};
 }
 
-const instanceQuery = 'where type == "microsoft.azuredata/sqlinstances"';
+const instanceQuery = `where type == "${azureResource.AzureResourceType.azureArcSqlManagedInstance}"`;
 export class SqlInstanceArcResourceService extends ResourceServiceBase<SqlInstanceArcGraphData, azureResource.AzureResourceDatabaseServer> {
 
 	protected get query(): string {
@@ -27,7 +27,12 @@ export class SqlInstanceArcResourceService extends ResourceServiceBase<SqlInstan
 			fullName: resource.name,
 			loginName: resource.properties.admin,
 			defaultDatabaseName: 'master',
-			tenant: resource.tenantId
+			subscription: {
+				id: resource.subscriptionId,
+				name: resource.subscriptionName
+			},
+			tenant: resource.tenantId,
+			resourceGroup: resource.resourceGroup
 		};
 	}
 }

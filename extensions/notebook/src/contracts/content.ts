@@ -20,6 +20,7 @@ export interface IKernelInfo {
 	name: string;
 	language?: string;
 	display_name?: string;
+	argv?: string[];
 }
 
 export interface ILanguageInfo {
@@ -64,7 +65,7 @@ export type OutputType =
 	| 'update_display_data';
 
 export interface IJupyterBookToc {
-	sections: IJupyterBookSection[];
+	sections: JupyterBookSection[];
 }
 
 /**
@@ -73,7 +74,7 @@ export interface IJupyterBookToc {
  * This is taken from https://github.com/jupyter/jupyter-book/blob/master/jupyter_book/book_template/_data/toc.yml but is not
  * enforced so invalid JSON may result in expected values being undefined.
  */
-export interface IJupyterBookSection {
+export interface IJupyterBookSectionV1 {
 	/**
 	 * Title of chapter or section
 	 */
@@ -85,11 +86,11 @@ export interface IJupyterBookSection {
 	/**
 	 * Contains a list of more entries that make up the chapter's/section's sub-sections
 	 */
-	sections?: IJupyterBookSection[];
+	sections?: JupyterBookSection[];
 	/**
 	 * If the section shouldn't have a number in the sidebar
 	 */
-	not_numbered?: string;
+	not_numbered?: boolean;
 	/**
 	 * If you'd like the sections of this chapter to always be expanded in the sidebar.
 	 */
@@ -112,5 +113,57 @@ export interface IJupyterBookSection {
 	/**
 	 * Will insert a header with no link in the sidebar
 	 */
-	header?: boolean;
+	header?: string;
 }
+
+/**
+ * A section of a Jupyter book.
+ *
+ * This is taken from https://github.com/jupyter/jupyter-book/blob/master/jupyter_book/book_template/_toc.yml but is not
+ * enforced so invalid JSON may result in expected values being undefined.
+ */
+export interface IJupyterBookSectionV2 {
+	/**
+	 * Title of chapter or section
+	 */
+	title?: string;
+	/**
+	 * Path to notebook relative to root folder.
+	 */
+	file?: string;
+	/**
+	 * Contains a list of more entries that make up the chapter's/section's sub-sections
+	 */
+	sections?: JupyterBookSection[];
+	/**
+	 * If the section shouldn't have a number in the sidebar
+	 */
+	numbered?: boolean;
+	/**
+	 * If you'd like the sections of this chapter to always be expanded in the sidebar.
+	 */
+	expand_sections?: boolean;
+	/**
+	 * External link
+	 */
+	url?: string;
+
+	// Below are some special values that trigger specific behavior:
+
+	/**
+	 * Will insert a header with no link in the sidebar
+	 */
+	header?: string;
+	/**
+	 * If a book is divided into groups then part is the title of the group
+	 */
+	part?: string;
+	/**
+	 * the equivalent of sections in a group.
+	*/
+	chapters?: string[];
+
+}
+
+export interface JupyterBookSection extends IJupyterBookSectionV1, IJupyterBookSectionV2 { }
+

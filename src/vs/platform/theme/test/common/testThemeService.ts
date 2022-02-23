@@ -3,16 +3,20 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Event, Emitter } from 'vs/base/common/event';
-import { IThemeService, IColorTheme, DARK, IFileIconTheme, ITokenStyle } from 'vs/platform/theme/common/themeService';
 import { Color } from 'vs/base/common/color';
+import { Emitter, Event } from 'vs/base/common/event';
+import { ColorScheme } from 'vs/platform/theme/common/theme';
+import { IColorTheme, IFileIconTheme, IThemeService, ITokenStyle } from 'vs/platform/theme/common/themeService';
 
 export class TestColorTheme implements IColorTheme {
 
 	public readonly label = 'test';
 
-	constructor(private colors: { [id: string]: string; } = {}, public type = DARK) {
-	}
+	constructor(
+		private colors: { [id: string]: string; } = {},
+		public type = ColorScheme.DARK,
+		public readonly semanticHighlighting = false
+	) { }
 
 	getColor(color: string, useDefault?: boolean): Color | undefined {
 		let value = this.colors[color];
@@ -30,8 +34,6 @@ export class TestColorTheme implements IColorTheme {
 		return undefined;
 	}
 
-	readonly semanticHighlighting = false;
-
 	get tokenColorMap(): string[] {
 		return [];
 	}
@@ -45,7 +47,7 @@ export class TestFileIconTheme implements IFileIconTheme {
 
 export class TestThemeService implements IThemeService {
 
-	_serviceBrand: undefined;
+	declare readonly _serviceBrand: undefined;
 	_colorTheme: IColorTheme;
 	_fileIconTheme: IFileIconTheme;
 	_onThemeChange = new Emitter<IColorTheme>();

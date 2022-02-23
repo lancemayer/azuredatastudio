@@ -15,7 +15,6 @@ import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
 import { KeyCode } from 'vs/base/common/keyCodes';
 
 import { Button, IButtonStyles } from 'sql/base/browser/ui/button/button';
-import { onUnexpectedError } from 'vs/base/common/errors';
 
 export interface IDropdownStyles {
 	backgroundColor?: Color;
@@ -43,14 +42,14 @@ export class DropdownList extends Dropdown {
 			this.button = new Button(_contentContainer);
 			this.button.label = action.label;
 			this._register(DOM.addDisposableListener(this.button.element, DOM.EventType.CLICK, () => {
-				action.run().catch(e => onUnexpectedError(e));
+				action.run();
 				this.hide();
 			}));
 			this._register(DOM.addDisposableListener(this.button.element, DOM.EventType.KEY_DOWN, (e: KeyboardEvent) => {
 				let event = new StandardKeyboardEvent(e);
 				if (event.equals(KeyCode.Enter)) {
 					e.stopPropagation();
-					action.run().catch(e => onUnexpectedError(e));
+					action.run();
 					this.hide();
 				}
 			}));
@@ -88,7 +87,7 @@ export class DropdownList extends Dropdown {
 	/**
 	 * Render the dropdown contents
 	 */
-	protected renderContents(container: HTMLElement): IDisposable {
+	protected override renderContents(container: HTMLElement): IDisposable {
 		let div = DOM.append(container, this._contentContainer);
 		div.style.width = DOM.getTotalWidth(this.element) + 'px';
 		return { dispose: () => { } };
@@ -103,7 +102,7 @@ export class DropdownList extends Dropdown {
 		}
 	}
 
-	protected onEvent(e: Event, activeElement: HTMLElement): void {
+	protected override onEvent(e: Event, activeElement: HTMLElement): void {
 		// If there is an event outside dropdown label and dropdown list, hide the dropdown list
 		if (!DOM.isAncestor(<HTMLElement>e.target, this.element) && !DOM.isAncestor(<HTMLElement>e.target, this._contentContainer)) {
 			// focus on the dropdown label then hide the dropdown list

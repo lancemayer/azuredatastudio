@@ -10,7 +10,7 @@ import { TokenRouterApi } from './clusterApiGenerated2';
 import * as nls from 'vscode-nls';
 import { ConnectControllerDialog, ConnectControllerModel } from '../dialog/connectControllerDialog';
 import { getIgnoreSslVerificationConfigSetting } from '../utils';
-import { IClusterController, AuthType } from 'bdc';
+import { IClusterController, AuthType, IEndPointsResponse, IHttpResponse } from 'bdc';
 
 const localize = nls.loadMessageBundle();
 
@@ -20,9 +20,7 @@ class SslAuth implements Authentication {
 	constructor() { }
 
 	applyToRequest(requestOptions: request.Options): void {
-		requestOptions['agentOptions'] = {
-			rejectUnauthorized: !getIgnoreSslVerificationConfigSetting()
-		};
+		requestOptions.rejectUnauthorized = !getIgnoreSslVerificationConfigSetting();
 	}
 }
 
@@ -32,7 +30,7 @@ export class KerberosAuth extends SslAuth implements Authentication {
 		super();
 	}
 
-	applyToRequest(requestOptions: request.Options): void {
+	override applyToRequest(requestOptions: request.Options): void {
 		super.applyToRequest(requestOptions);
 		if (requestOptions && requestOptions.headers) {
 			requestOptions.headers['Authorization'] = `Negotiate ${this.kerberosToken}`;
@@ -45,7 +43,7 @@ export class BasicAuth extends SslAuth implements Authentication {
 		super();
 	}
 
-	applyToRequest(requestOptions: request.Options): void {
+	override applyToRequest(requestOptions: request.Options): void {
 		super.applyToRequest(requestOptions);
 		requestOptions.auth = {
 			username: this.username, password: this.password
@@ -56,7 +54,7 @@ export class BasicAuth extends SslAuth implements Authentication {
 export class OAuthWithSsl extends SslAuth implements Authentication {
 	public accessToken: string = '';
 
-	applyToRequest(requestOptions: request.Options): void {
+	override applyToRequest(requestOptions: request.Options): void {
 		super.applyToRequest(requestOptions);
 		if (requestOptions && requestOptions.headers) {
 			requestOptions.headers['Authorization'] = `Bearer ${this.accessToken}`;
@@ -159,39 +157,51 @@ export class ClusterController implements IClusterController {
 		}
 	}
 
+	/**
+	 * Verify that this cluster supports Kerberos authentication. It does this by sending a request to the Token API route
+	 * without any credentials and verifying that it gets a 401 response back with a Negotiate www-authenticate header.
+	 */
 	private async verifyKerberosSupported(): Promise<boolean> {
 		let tokenApi = new TokenRouterApi(this._url);
 		tokenApi.setDefaultAuthentication(new SslAuth());
 		try {
 			await tokenApi.apiV1TokenPost();
-			// If we get to here, the route for endpoints doesn't require auth so state this is false
+			console.warn(`Token API returned success without any auth while verifying Kerberos support for BDC Cluster ${this._url}`);
+			// If we get to here, the route for tokens doesn't require auth which is an unexpected error state
 			return false;
 		}
 		catch (error) {
-			let auths = error && error.response && error.response.statusCode === 401 && error.response.headers['www-authenticate'];
-			return auths && auths.includes('Negotiate');
+			if (!error.response) {
+				console.warn(`No response when verifying Kerberos support for BDC Cluster ${this._url} - ${error}`);
+				return false;
+			}
+
+			if (error.response.statusCode !== 401) {
+				console.warn(`Got unexpected status code ${error.response.statusCode} when verifying Kerberos support for BDC Cluster ${this._url}`);
+				return false;
+			}
+
+			const auths = error.response.headers['www-authenticate'] as string[] ?? [];
+			if (auths.includes('Negotiate')) {
+				return true;
+			}
+			console.warn(`Didn't get expected Negotiate auth type when verifying Kerberos support for BDC Cluster ${this.url}. Supported types : ${auths.join(', ')}`);
+			return false;
 		}
 	}
 
-	public async getKnoxUsername(sqlLogin: string): Promise<string> {
-		try {
-			// This all is necessary because prior to CU5 BDC deployments all had the same default username for
-			// accessing the Knox gateway. But in the allowRunAsRoot setting was added and defaulted to false - so
-			// if that exists and is false then we use the username instead.
-			// Note that the SQL username may not necessarily be correct here either - but currently this is what
-			// we're requiring to run Notebooks in a BDC
-			const config = await this.getClusterConfig();
-			return config.spec?.spec?.security?.allowRunAsRoot === false ? sqlLogin : DEFAULT_KNOX_USERNAME;
-		} catch (err) {
-			console.log(`Unexpected error fetching cluster config for getKnoxUsername ${err}`);
-			// Optimistically fall back to SQL login since root shouldn't be typically used going forward
-			return sqlLogin;
-		}
-
+	public async getKnoxUsername(defaultUsername: string): Promise<string> {
+		// This all is necessary because prior to CU5 BDC deployments all had the same default username for
+		// accessing the Knox gateway. But in the allowRunAsRoot setting was added and defaulted to false - so
+		// if that exists and is false then we use the username instead.
+		// Note that the SQL username may not necessarily be correct here either - but currently this is what
+		// we're requiring to run Notebooks in a BDC
+		const config = await this.getClusterConfig();
+		return config.spec?.spec?.security?.allowRunAsRoot === false ? defaultUsername : DEFAULT_KNOX_USERNAME;
 	}
 
 	public async getClusterConfig(promptConnect: boolean = false): Promise<any> {
-		return await this.withConnectRetry<IEndPointsResponse>(
+		return await this.withConnectRetry<any>(
 			this.getClusterConfigImpl,
 			promptConnect,
 			localize('bdc.error.getClusterConfig', "Error retrieving cluster config from {0}", this._url));
@@ -271,7 +281,7 @@ export class ClusterController implements IClusterController {
 		return await this.withConnectRetry<MountStatusResponse>(
 			this.getMountStatusImpl,
 			promptConnect,
-			localize('bdc.error.mountHdfs', "Error creating mount"),
+			localize('bdc.error.statusHdfs', "Error getting mount status"),
 			mountPath);
 	}
 
@@ -387,11 +397,6 @@ export interface IClusterRequest {
 	method?: string;
 }
 
-export interface IEndPointsResponse {
-	response: IHttpResponse;
-	endPoints: EndpointModel[];
-}
-
 export interface IBdcStatusResponse {
 	response: IHttpResponse;
 	bdcStatus: BdcStatusModel;
@@ -417,13 +422,6 @@ export interface MountResponse {
 export interface MountStatusResponse {
 	response: IHttpResponse;
 	mount: MountInfo[];
-}
-
-export interface IHttpResponse {
-	method?: string;
-	url?: string;
-	statusCode?: number;
-	statusMessage?: string;
 }
 
 export class ControllerError extends Error {

@@ -15,14 +15,15 @@ import { FileBrowserViewModel } from 'sql/workbench/services/fileBrowser/common/
 import { FileNode } from 'sql/workbench/services/fileBrowser/common/fileNode';
 import { FileBrowserTreeView } from 'sql/workbench/services/fileBrowser/browser/fileBrowserTreeView';
 import { IComponent, IComponentDescriptor, IModelStore, ComponentEventType } from 'sql/platform/dashboard/browser/interfaces';
+import { ILogService } from 'vs/platform/log/common/log';
 
 @Component({
 	selector: 'modelview-fileBrowserTree',
 	template: `
-		<div #fileBrowserTree [style.width]="getWidth()" [style.height]="getHeight()"></div>
+		<div #fileBrowserTree [ngStyle]="CSSStyles"></div>
 	`
 })
-export default class FileBrowserTreeComponent extends ComponentBase implements IComponent, OnDestroy, AfterViewInit {
+export default class FileBrowserTreeComponent extends ComponentBase<azdata.FileBrowserTreeProperties> implements IComponent, OnDestroy, AfterViewInit {
 	@Input() descriptor: IComponentDescriptor;
 	@Input() modelStore: IModelStore;
 	private _treeView: FileBrowserTreeView;
@@ -35,18 +36,16 @@ export default class FileBrowserTreeComponent extends ComponentBase implements I
 	constructor(
 		@Inject(forwardRef(() => ChangeDetectorRef)) changeRef: ChangeDetectorRef,
 		@Inject(IInstantiationService) private _instantiationService: IInstantiationService,
-		@Inject(forwardRef(() => ElementRef)) el: ElementRef) {
-		super(changeRef, el);
-	}
-
-	ngOnInit(): void {
-		this.baseInit();
+		@Inject(forwardRef(() => ElementRef)) el: ElementRef,
+		@Inject(ILogService) logService: ILogService) {
+		super(changeRef, el, logService);
 	}
 
 	ngAfterViewInit(): void {
 		this._viewModel = this._instantiationService.createInstance(FileBrowserViewModel);
 		this._viewModel.onAddFileTree(args => this.handleOnAddFileTree(args.rootNode, args.selectedNode, args.expandedNodes));
 		this._viewModel.onPathValidate(args => this.handleOnValidate(args.succeeded, args.message));
+		this.baseInit();
 	}
 
 	public initialize() {
@@ -92,14 +91,7 @@ export default class FileBrowserTreeComponent extends ComponentBase implements I
 		}
 	}
 
-	public validate(): Thenable<boolean> {
-		return super.validate().then(valid => {
-			// TODO: tree validation?
-			return valid;
-		});
-	}
-
-	ngOnDestroy(): void {
+	override ngOnDestroy(): void {
 		this.baseDestroy();
 	}
 
@@ -114,9 +106,8 @@ export default class FileBrowserTreeComponent extends ComponentBase implements I
 		this._treeView.layout(700);
 	}
 
-	public setProperties(properties: { [key: string]: any; }): void {
+	public override setProperties(properties: { [key: string]: any; }): void {
 		super.setProperties(properties);
-		this.validate();
 		if (this.ownerUri) {
 			this.initialize();
 		}
@@ -124,10 +115,17 @@ export default class FileBrowserTreeComponent extends ComponentBase implements I
 
 	// CSS-bound properties
 	public get ownerUri(): string {
-		return this.getPropertyOrDefault<azdata.FileBrowserTreeProperties, string>((props) => props.ownerUri, '');
+		return this.getPropertyOrDefault<string>((props) => props.ownerUri, '');
 	}
 
 	public set ownerUri(newValue: string) {
-		this.setPropertyFromUI<azdata.FileBrowserTreeProperties, string>((props, value) => props.ownerUri = value, newValue);
+		this.setPropertyFromUI<string>((props, value) => props.ownerUri = value, newValue);
+	}
+
+	public override get CSSStyles(): azdata.CssStyles {
+		return this.mergeCss(super.CSSStyles, {
+			'width': this.getWidth(),
+			'height': this.getHeight()
+		});
 	}
 }

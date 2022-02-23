@@ -11,12 +11,6 @@ import { DataTierApplicationWizard } from '../dataTierApplicationWizard';
 import { DacFxConfigPage } from '../api/dacFxConfigPage';
 
 export class ExtractConfigPage extends DacFxConfigPage {
-
-	protected readonly wizardPage: azdata.window.WizardPage;
-	protected readonly instance: DataTierApplicationWizard;
-	protected readonly model: DacFxDataModel;
-	protected readonly view: azdata.ModelView;
-
 	private form: azdata.FormContainer;
 	private versionTextBox: azdata.InputBoxComponent;
 
@@ -52,12 +46,12 @@ export class ExtractConfigPage extends DacFxConfigPage {
 		return r1 && r2;
 	}
 
-	async onPageLeave(): Promise<boolean> {
+	override async onPageLeave(): Promise<boolean> {
 		this.appendFileExtensionIfNeeded();
 		return true;
 	}
 
-	public setupNavigationValidator(): void {
+	public override setupNavigationValidator(): void {
 		this.instance.registerNavigationValidator(() => {
 			if (this.databaseLoader.loading) {
 				return false;
@@ -104,7 +98,7 @@ export class ExtractConfigPage extends DacFxConfigPage {
 	}
 
 	private async createVersionTextBox(): Promise<azdata.FormComponent> {
-		this.versionTextBox = this.view.modelBuilder.inputBox().withProperties({
+		this.versionTextBox = this.view.modelBuilder.inputBox().withProps({
 			required: true,
 			ariaLabel: loc.version
 		}).component();

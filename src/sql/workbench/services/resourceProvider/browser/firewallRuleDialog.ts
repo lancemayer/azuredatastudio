@@ -10,7 +10,7 @@ import { Event, Emitter } from 'vs/base/common/event';
 import { IContextViewService } from 'vs/platform/contextview/browser/contextView';
 import { localize } from 'vs/nls';
 import { buttonBackground } from 'vs/platform/theme/common/colorRegistry';
-import { attachInputBoxStyler } from 'vs/platform/theme/common/styler';
+import { attachButtonStyler, attachInputBoxStyler } from 'vs/platform/theme/common/styler';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import { SIDE_BAR_BACKGROUND } from 'vs/workbench/common/theme';
 import { IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
@@ -22,7 +22,6 @@ import * as azdata from 'azdata';
 import { Button } from 'sql/base/browser/ui/button/button';
 import { Modal } from 'sql/workbench/browser/modal/modal';
 import { FirewallRuleViewModel } from 'sql/platform/accounts/common/firewallRuleViewModel';
-import { attachButtonStyler } from 'sql/platform/theme/common/styler';
 import { InputBox } from 'sql/base/browser/ui/inputBox/inputBox';
 import { IAccountPickerService } from 'sql/workbench/services/accountManagement/browser/accountPicker';
 import * as TelemetryKeys from 'sql/platform/telemetry/common/telemetryKeys';
@@ -44,15 +43,15 @@ const LocalizedStrings = {
 
 export class FirewallRuleDialog extends Modal {
 	public viewModel: FirewallRuleViewModel;
-	private _createButton: Button;
-	private _closeButton: Button;
-	private _fromRangeinputBox: InputBox;
-	private _toRangeinputBox: InputBox;
+	private _createButton?: Button;
+	private _closeButton?: Button;
+	private _fromRangeinputBox?: InputBox;
+	private _toRangeinputBox?: InputBox;
 
-	private _helpLink: HTMLElement;
-	private _IPAddressInput: HTMLElement;
-	private _subnetIPRangeInput: HTMLElement;
-	private _IPAddressElement: HTMLElement;
+	private _helpLink?: HTMLElement;
+	private _IPAddressInput?: HTMLElement;
+	private _subnetIPRangeInput?: HTMLElement;
+	private _IPAddressElement?: HTMLElement;
 
 	// EVENTING ////////////////////////////////////////////////////////////
 	private _onAddAccountErrorEmitter: Emitter<string>;
@@ -79,7 +78,7 @@ export class FirewallRuleDialog extends Modal {
 	) {
 		super(
 			localize('createNewFirewallRule', "Create new firewall rule"),
-			TelemetryKeys.FireWallRule,
+			TelemetryKeys.ModalDialogName.FireWallRule,
 			telemetryService,
 			layoutService,
 			clipboardService,
@@ -88,7 +87,7 @@ export class FirewallRuleDialog extends Modal {
 			textResourcePropertiesService,
 			contextKeyService,
 			{
-				isFlyout: true,
+				dialogStyle: 'flyout',
 				hasBackButton: true,
 				hasSpinner: true
 			}
@@ -102,13 +101,13 @@ export class FirewallRuleDialog extends Modal {
 		this.viewModel = this._instantiationService.createInstance(FirewallRuleViewModel);
 	}
 
-	public render() {
+	public override render() {
 		super.render();
 		attachModalDialogStyler(this, this._themeService);
-		this.backButton.onDidClick(() => this.cancel());
-		this._register(attachButtonStyler(this.backButton, this._themeService, { buttonBackground: SIDE_BAR_BACKGROUND, buttonHoverBackground: SIDE_BAR_BACKGROUND }));
+		this.backButton!.onDidClick(() => this.cancel());
+		this._register(attachButtonStyler(this.backButton!, this._themeService, { buttonBackground: SIDE_BAR_BACKGROUND, buttonHoverBackground: SIDE_BAR_BACKGROUND }));
 		this._createButton = this.addFooterButton(localize('firewall.ok', "OK"), () => this.createFirewallRule());
-		this._closeButton = this.addFooterButton(localize('firewall.cancel', "Cancel"), () => this.cancel());
+		this._closeButton = this.addFooterButton(localize('firewall.cancel', "Cancel"), () => this.cancel(), 'right', true);
 		this.registerListeners();
 	}
 
@@ -138,11 +137,10 @@ export class FirewallRuleDialog extends Modal {
 		});
 		this._accountPickerService.addAccountStartEvent(() => this.spinner = true);
 		this._accountPickerService.onAccountSelectionChangeEvent((account) => this.onAccountSelectionChange(account));
+		this._accountPickerService.onTenantSelectionChangeEvent((tenantId) => !!tenantId && this.onTenantSelectionChange(tenantId));
 
 		const azureAccountSection = DOM.append(body, DOM.$('.azure-account-section.new-section'));
-		const azureAccountLabel = localize('azureAccount', "Azure account");
-		this.createLabelElement(azureAccountSection, azureAccountLabel, true);
-		this._accountPickerService.renderAccountPicker(DOM.append(azureAccountSection, DOM.$('.dialog-input')));
+		this._accountPickerService.renderAccountPicker(azureAccountSection);
 
 		const firewallRuleSection = DOM.append(body, DOM.$('.firewall-rule-section.new-section'));
 		const firewallRuleLabel = localize('filewallRule', "Firewall rule");
@@ -215,13 +213,15 @@ export class FirewallRuleDialog extends Modal {
 		if (isHeader) {
 			className += ' header';
 		}
-		DOM.append(container, DOM.$(`.${className}`)).innerText = content;
+		const element = DOM.append(container, DOM.$(`.${className}`));
+		element.innerText = content;
+		return element;
 	}
 
 	// Update theming that is specific to firewall rule flyout body
 	private updateTheme(theme: IColorTheme): void {
 		const linkColor = theme.getColor(buttonBackground);
-		const link = linkColor ? linkColor.toString() : null;
+		const link = linkColor ? linkColor.toString() : '';
 		if (this._helpLink) {
 			this._helpLink.style.color = link;
 		}
@@ -229,18 +229,18 @@ export class FirewallRuleDialog extends Modal {
 
 	private registerListeners(): void {
 		// Theme styler
-		this._register(attachButtonStyler(this._createButton, this._themeService));
-		this._register(attachButtonStyler(this._closeButton, this._themeService));
-		this._register(attachInputBoxStyler(this._fromRangeinputBox, this._themeService));
-		this._register(attachInputBoxStyler(this._toRangeinputBox, this._themeService));
+		this._register(attachButtonStyler(this._createButton!, this._themeService));
+		this._register(attachButtonStyler(this._closeButton!, this._themeService));
+		this._register(attachInputBoxStyler(this._fromRangeinputBox!, this._themeService));
+		this._register(attachInputBoxStyler(this._toRangeinputBox!, this._themeService));
 
 		// handler for from subnet ip range change events
-		this._register(this._fromRangeinputBox.onDidChange(IPAddress => {
+		this._register(this._fromRangeinputBox!.onDidChange(IPAddress => {
 			this.fromRangeInputChanged(IPAddress);
 		}));
 
 		// handler for to subnet ip range change events
-		this._register(this._toRangeinputBox.onDidChange(IPAddress => {
+		this._register(this._toRangeinputBox!.onDidChange(IPAddress => {
 			this.toRangeInputChanged(IPAddress);
 		}));
 	}
@@ -253,28 +253,28 @@ export class FirewallRuleDialog extends Modal {
 		this.viewModel.toSubnetIPRange = IPAddress;
 	}
 
-	/* Overwrite esapce key behavior */
-	protected onClose() {
+	/* Overwrite escape key behavior */
+	protected override onClose() {
 		this.cancel();
 	}
 
 	/* Overwrite enter key behavior */
-	protected onAccept() {
+	protected override onAccept() {
 		this.createFirewallRule();
 	}
 
 	public cancel() {
 		this._onCancel.fire();
-		this.close();
+		this.hide('cancel');
 	}
 
 	public close() {
-		this.hide();
+		this.hide('close');
 	}
 
 	public createFirewallRule() {
-		if (this._createButton.enabled) {
-			this._createButton.enabled = false;
+		if (this._createButton!.enabled) {
+			this._createButton!.enabled = false;
 			this.spinner = true;
 			this._onCreateFirewallRule.fire();
 		}
@@ -283,23 +283,27 @@ export class FirewallRuleDialog extends Modal {
 	public onAccountSelectionChange(account: azdata.Account | undefined): void {
 		this.viewModel.selectedAccount = account;
 		if (account && !account.isStale) {
-			this._createButton.enabled = true;
+			this._createButton!.enabled = true;
 		} else {
-			this._createButton.enabled = false;
+			this._createButton!.enabled = false;
 		}
 	}
 
+	public onTenantSelectionChange(tenantId: string): void {
+		this.viewModel.selectedTenantId = tenantId;
+	}
+
 	public onServiceComplete() {
-		this._createButton.enabled = true;
+		this._createButton!.enabled = true;
 		this.spinner = false;
 	}
 
 	public open() {
-		this._IPAddressInput.click();
+		this._IPAddressInput!.click();
 		this.onAccountSelectionChange(this._accountPickerService.selectedAccount);
-		this._fromRangeinputBox.setPlaceHolder(this.viewModel.defaultFromSubnetIPRange);
-		this._toRangeinputBox.setPlaceHolder(this.viewModel.defaultToSubnetIPRange);
-		this._IPAddressElement.innerText = '(' + this.viewModel.defaultIPAddress + ')';
+		this._fromRangeinputBox!.setPlaceHolder(this.viewModel!.defaultFromSubnetIPRange ?? '');
+		this._toRangeinputBox!.setPlaceHolder(this.viewModel!.defaultToSubnetIPRange ?? '');
+		this._IPAddressElement!.innerText = `(${this.viewModel.defaultIPAddress ?? ''})`;
 
 		this.show();
 	}

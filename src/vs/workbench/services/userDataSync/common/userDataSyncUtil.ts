@@ -14,7 +14,7 @@ import { ITextResourcePropertiesService, ITextResourceConfigurationService } fro
 
 class UserDataSyncUtilService implements IUserDataSyncUtilService {
 
-	_serviceBrand: undefined;
+	declare readonly _serviceBrand: undefined;
 
 	constructor(
 		@IKeybindingService private readonly keybindingsService: IKeybindingService,
@@ -46,7 +46,7 @@ class UserDataSyncUtilService implements IUserDataSyncUtilService {
 		}
 		return {
 			eol: this.textResourcePropertiesService.getEOL(resource),
-			insertSpaces: this.textResourceConfigurationService.getValue<boolean>(resource, 'editor.insertSpaces'),
+			insertSpaces: !!this.textResourceConfigurationService.getValue(resource, 'editor.insertSpaces'),
 			tabSize: this.textResourceConfigurationService.getValue(resource, 'editor.tabSize')
 		};
 	}

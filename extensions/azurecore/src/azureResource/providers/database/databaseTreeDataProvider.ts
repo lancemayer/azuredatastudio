@@ -3,17 +3,17 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { TreeItem, ExtensionNodeType, Account } from 'azdata';
-import { TreeItemCollapsibleState, ExtensionContext } from 'vscode';
+import { TreeItem, ExtensionNodeType } from 'azdata';
+import * as vscode from 'vscode';
 import * as nls from 'vscode-nls';
 const localize = nls.loadMessageBundle();
 
-import { azureResource } from '../../azure-resource';
+import { azureResource } from 'azureResource';
 import { AzureResourceItemType } from '../../../azureResource/constants';
-import { ApiWrapper } from '../../../apiWrapper';
 import { generateGuid } from '../../utils';
 import { IAzureResourceService } from '../../interfaces';
 import { ResourceTreeDataProviderBase } from '../resourceTreeDataProviderBase';
+import { AzureAccount } from 'azurecore';
 
 export class AzureResourceDatabaseTreeDataProvider extends ResourceTreeDataProviderBase<azureResource.AzureResourceDatabase> {
 
@@ -22,20 +22,19 @@ export class AzureResourceDatabaseTreeDataProvider extends ResourceTreeDataProvi
 
 	public constructor(
 		databaseService: IAzureResourceService<azureResource.AzureResourceDatabase>,
-		apiWrapper: ApiWrapper,
-		private _extensionContext: ExtensionContext
+		private _extensionContext: vscode.ExtensionContext
 	) {
-		super(databaseService, apiWrapper);
+		super(databaseService);
 	}
-	protected getTreeItemForResource(database: azureResource.AzureResourceDatabase, account: Account): TreeItem {
+	protected getTreeItemForResource(database: azureResource.AzureResourceDatabase, account: AzureAccount): TreeItem {
 		return {
 			id: `databaseServer_${database.serverFullName}.database_${database.name}`,
-			label: `${database.name} (${database.serverName})`,
+			label: this.browseConnectionMode ? `${database.serverName}/${database.name} (${AzureResourceDatabaseTreeDataProvider.containerLabel}, ${database.subscription.name})` : `${database.name} (${database.serverName})`,
 			iconPath: {
 				dark: this._extensionContext.asAbsolutePath('resources/dark/sql_database_inverse.svg'),
 				light: this._extensionContext.asAbsolutePath('resources/light/sql_database.svg')
 			},
-			collapsibleState: TreeItemCollapsibleState.Collapsed,
+			collapsibleState: this.browseConnectionMode ? vscode.TreeItemCollapsibleState.None : vscode.TreeItemCollapsibleState.Collapsed,
 			contextValue: AzureResourceItemType.database,
 			payload: {
 				id: generateGuid(),
@@ -44,7 +43,7 @@ export class AzureResourceDatabaseTreeDataProvider extends ResourceTreeDataProvi
 				databaseName: database.name,
 				userName: database.loginName,
 				password: '',
-				authenticationType: 'SqlLogin',
+				authenticationType: '',
 				savePassword: true,
 				groupFullName: '',
 				groupId: '',
@@ -73,7 +72,7 @@ export class AzureResourceDatabaseTreeDataProvider extends ResourceTreeDataProvi
 					dark: this._extensionContext.asAbsolutePath('resources/dark/folder_inverse.svg'),
 					light: this._extensionContext.asAbsolutePath('resources/light/folder.svg')
 				},
-				collapsibleState: TreeItemCollapsibleState.Collapsed,
+				collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
 				contextValue: AzureResourceItemType.databaseContainer
 			}
 		};

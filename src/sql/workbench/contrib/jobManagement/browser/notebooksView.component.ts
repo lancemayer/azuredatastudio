@@ -21,7 +21,7 @@ import { IJobManagementService } from 'sql/workbench/services/jobManagement/comm
 import { JobManagementView, JobActionContext } from 'sql/workbench/contrib/jobManagement/browser/jobManagementView';
 import { CommonServiceInterface } from 'sql/workbench/services/bootstrap/browser/commonServiceInterface.service';
 import { ICommandService } from 'vs/platform/commands/common/commands';
-import { IContextMenuService } from 'vs/platform/contextview/browser/contextView';
+import { IContextMenuService, IContextViewService } from 'vs/platform/contextview/browser/contextView';
 import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
 import { IAction } from 'vs/base/common/actions';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
@@ -29,13 +29,12 @@ import { IDashboardService } from 'sql/platform/dashboard/browser/dashboardServi
 import { escape } from 'sql/base/common/strings';
 import { IWorkbenchThemeService } from 'vs/workbench/services/themes/common/workbenchThemeService';
 import { tableBackground, cellBackground, cellBorderColor } from 'sql/platform/theme/common/colors';
-import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
-import * as TelemetryKeys from 'sql/platform/telemetry/common/telemetryKeys';
-import { attachButtonStyler } from 'sql/platform/theme/common/styler';
+import { TelemetryView } from 'sql/platform/telemetry/common/telemetryKeys';
 import { Taskbar } from 'sql/base/browser/ui/taskbar/taskbar';
-import { find } from 'vs/base/common/arrays';
 import { onUnexpectedError } from 'vs/base/common/errors';
 import { IColorTheme } from 'vs/platform/theme/common/themeService';
+import { IAdsTelemetryService } from 'sql/platform/telemetry/common/telemetry';
+import { attachTableFilterStyler } from 'sql/platform/theme/common/styler';
 
 
 export const NOTEBOOKSVIEW_SELECTOR: string = 'notebooksview-component';
@@ -79,12 +78,12 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 
 	private _notebookCacheObject: NotebookCacheObject;
 	private rowDetail: RowDetailView<IItem>;
-	private filterPlugin: any;
-	private dataView: any;
+	private filterPlugin: HeaderFilter<IItem>;
+	private dataView: Slick.Data.DataView<IItem>;
 	public _isCloud: boolean;
-	private filterStylingMap: { [columnName: string]: [any]; } = {};
+	private filterStylingMap: { [columnName: string]: IItem[]; } = {};
 	private filterStack = ['start'];
-	private filterValueMap: { [columnName: string]: string[]; } = {};
+	private filterValueMap: { [columnName: string]: { filterValues: string[], filteredItems: IItem[] } } = {};
 	private sortingStylingMap: { [columnName: string]: any; } = {};
 
 	public notebooks: azdata.AgentNotebookInfo[];
@@ -92,7 +91,7 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 	private jobSteps: { [jobId: string]: azdata.AgentJobStepInfo[]; } = Object.create(null);
 	private jobAlerts: { [jobId: string]: azdata.AgentAlertInfo[]; } = Object.create(null);
 	private jobSchedules: { [jobId: string]: azdata.AgentJobScheduleInfo[]; } = Object.create(null);
-	public contextAction = NewNotebookJobAction;
+	public override contextAction = NewNotebookJobAction;
 
 	@ViewChild('notebooksgrid') _gridEl: ElementRef;
 
@@ -107,7 +106,9 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 		@Inject(IContextMenuService) contextMenuService: IContextMenuService,
 		@Inject(IKeybindingService) keybindingService: IKeybindingService,
 		@Inject(IDashboardService) _dashboardService: IDashboardService,
-		@Inject(ITelemetryService) private _telemetryService: ITelemetryService
+		@Inject(IAdsTelemetryService) private _telemetryService: IAdsTelemetryService,
+		@Inject(IContextViewService) private _contextViewService: IContextViewService,
+
 	) {
 		super(commonService, _dashboardService, contextMenuService, keybindingService, instantiationService, _agentViewComponent);
 		let notebookCacheObjectMap = this._jobManagementService.notebookCacheObjectMap;
@@ -127,10 +128,10 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 		this._visibilityElement = this._gridEl;
 		this._parentComponent = this._agentViewComponent;
 		this._register(this._themeService.onDidColorThemeChange(e => this.updateTheme(e)));
-		this._telemetryService.publicLog(TelemetryKeys.JobsView);
+		this._telemetryService.sendViewEvent(TelemetryView.AgentNotebooks);
 	}
 
-	ngOnDestroy() {
+	override ngOnDestroy() {
 	}
 
 	public layout() {
@@ -157,7 +158,7 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 			column.rerenderOnResize = true;
 			return column;
 		});
-		let options = <Slick.GridOptions<any>>{
+		let options = <Slick.GridOptions<IItem>>{
 			syncColumnCellResize: true,
 			enableColumnReorder: false,
 			rowHeight: ROW_HEIGHT,
@@ -181,8 +182,8 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 		});
 		this.rowDetail = rowDetail;
 		columns.unshift(this.rowDetail.getColumnDefinition());
-		let filterPlugin = new HeaderFilter<{ inlineFilters: false }>();
-		this._register(attachButtonStyler(filterPlugin, this._themeService));
+		let filterPlugin = new HeaderFilter<IItem>(this._contextViewService);
+		this._register(attachTableFilterStyler(filterPlugin, this._themeService));
 		this.filterPlugin = filterPlugin;
 		jQuery(this._gridEl.nativeElement).empty();
 		jQuery(this.actionBarContainer.nativeElement).empty();
@@ -221,7 +222,7 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 		}
 	}
 
-	protected initActionBar() {
+	protected override initActionBar() {
 		let refreshAction = this._instantiationService.createInstance(JobsRefreshAction);
 		let newAction = this._instantiationService.createInstance(NewNotebookJobAction);
 		let taskbar = <HTMLElement>this.actionBarContainer.nativeElement;
@@ -261,6 +262,7 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 			this._table.grid.resetActiveCell();
 			let filterValues = args.column.filterValues;
 			if (filterValues) {
+				let currentFilteredItems = this.dataView.getFilteredItems();
 				if (filterValues.length === 0) {
 					// if an associated styling exists with the current filters
 					if (this.filterStylingMap[args.column.name]) {
@@ -277,9 +279,8 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 							delete this.filterValueMap[args.column.name];
 						}
 						// apply the previous filter styling
-						let currentItems = this.dataView.getFilteredItems();
-						let styledItems = this.filterValueMap[this.filterStack[this.filterStack.length - 1]][1];
-						if (styledItems === currentItems) {
+						let previousFilteredItems = this.filterValueMap[this.filterStack[this.filterStack.length - 1]].filteredItems;
+						if (previousFilteredItems === currentFilteredItems) {
 							let lastColStyle = this.filterStylingMap[this.filterStack[this.filterStack.length - 1]];
 							for (let i = 0; i < lastColStyle.length; i++) {
 								this._table.grid.setCellCssStyles(lastColStyle[i][0], lastColStyle[i][1]);
@@ -287,7 +288,7 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 						} else {
 							// style it all over again
 							let seenJobs = 0;
-							for (let i = 0; i < currentItems.length; i++) {
+							for (let i = 0; i < currentFilteredItems.length; i++) {
 								this._table.grid.removeCellCssStyles('error-row' + i.toString());
 								this._table.grid.removeCellCssStyles('notebook-error-row' + i.toString());
 								let item = this.dataView.getFilteredItems()[i];
@@ -295,7 +296,6 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 									this.addToStyleHash(seenJobs, false, this.filterStylingMap, args.column.name);
 									if (this.filterStack.indexOf(args.column.name) < 0) {
 										this.filterStack.push(args.column.name);
-										this.filterValueMap[args.column.name] = [filterValues];
 									}
 									// one expansion for the row and one for
 									// the error detail
@@ -305,7 +305,6 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 								seenJobs++;
 							}
 							this.dataView.refresh();
-							this.filterValueMap[args.column.name].push(this.dataView.getFilteredItems());
 							this._table.grid.resetActiveCell();
 						}
 						if (this.filterStack.length === 0) {
@@ -319,14 +318,13 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 						this._table.grid.removeCellCssStyles('notebook-error-row' + i.toString());
 						let item = this.dataView.getItemByIdx(i);
 						// current filter
-						if (!!find(filterValues, x => x === item[args.column.field])) {
+						if (!!filterValues.find(x => x === item[args.column.field])) {
 							// check all previous filters
-							if (this.checkPreviousFilters(item)) {
+							if (this.isItemFiltered(item)) {
 								if (item.lastRunOutcome === 'Failed') {
 									this.addToStyleHash(seenNotebooks, false, this.filterStylingMap, args.column.name);
 									if (this.filterStack.indexOf(args.column.name) < 0) {
 										this.filterStack.push(args.column.name);
-										this.filterValueMap[args.column.name] = [filterValues];
 									}
 									// one expansion for the row and one for
 									// the error detail
@@ -338,11 +336,7 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 						}
 					}
 					this.dataView.refresh();
-					if (this.filterValueMap[args.column.name]) {
-						this.filterValueMap[args.column.name].push(this.dataView.getFilteredItems());
-					} else {
-						this.filterValueMap[args.column.name] = this.dataView.getFilteredItems();
-					}
+					this.filterValueMap[args.column.name] = { filterValues: filterValues, filteredItems: this.dataView.getFilteredItems() };
 
 					this._table.grid.resetActiveCell();
 				}
@@ -415,7 +409,7 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 
 		// cache the dataview for future use
 		this._notebookCacheObject.dataView = this.dataView;
-		this.filterValueMap['start'] = [[], this.dataView.getItems()];
+		this.filterValueMap['start'] = { filterValues: [], filteredItems: this.dataView.getItems() };
 		this.loadJobHistories().catch(onUnexpectedError);
 	}
 
@@ -609,10 +603,13 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 		return [failing, nonFailing];
 	}
 
-	private checkPreviousFilters(item): boolean {
+	/**
+	 * Returns true if the item matches all filters currently applied
+	 */
+	private isItemFiltered(item: IItem): boolean {
 		for (let column in this.filterValueMap) {
-			if (column !== 'start' && this.filterValueMap[column][0].length > 0) {
-				if (!find(this.filterValueMap[column][0], x => x === item[JobManagementUtilities.convertColNameToField(column)])) {
+			if (column !== 'start' && this.filterValueMap[column]) {
+				if (!this.filterValueMap[column].filterValues.includes(item[JobManagementUtilities.convertColNameToField(column)])) {
 					return false;
 				}
 			}
@@ -771,9 +768,9 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 			let filterValues = col.filterValues;
 			if (filterValues && filterValues.length > 0) {
 				if (item._parent) {
-					value = value && find(filterValues, x => x === item._parent[col.field]);
+					value = value && filterValues.find(x => x === item._parent[col.field]);
 				} else {
-					value = value && find(filterValues, x => x === item[col.field]);
+					value = value && filterValues.find(x => x === item[col.field]);
 				}
 			}
 		}
@@ -898,7 +895,7 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 		});
 	}
 
-	protected getTableActions(targetObject: JobActionContext): IAction[] {
+	protected override getTableActions(targetObject: JobActionContext): IAction[] {
 		const editNotebookAction = this._instantiationService.createInstance(EditNotebookJobAction);
 		const runJobAction = this._instantiationService.createInstance(RunJobAction);
 		const openLatestRunAction = this._instantiationService.createInstance(OpenLatestRunMaterializedNotebook);
@@ -944,7 +941,7 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 		return result;
 	}
 
-	protected getCurrentTableObject(rowIndex: number): JobActionContext {
+	protected override getCurrentTableObject(rowIndex: number): JobActionContext {
 		let data = this._table.grid.getData() as Slick.DataProvider<IItem>;
 		if (!data || rowIndex >= data.getLength()) {
 			return undefined;
@@ -1000,7 +997,7 @@ export class NotebooksViewComponent extends JobManagementView implements OnInit,
 		await this._commandService.executeCommand('agent.openNotebookDialog', ownerUri);
 	}
 
-	public async openLastNRun(notebook: azdata.AgentNotebookInfo, n: number, maxVisibleElements: number) {
+	public override async openLastNRun(notebook: azdata.AgentNotebookInfo, n: number, maxVisibleElements: number) {
 		let notebookHistories = this._notebookCacheObject.getNotebookHistory(notebook.jobId);
 		if (notebookHistories && n < notebookHistories.length) {
 			notebookHistories = notebookHistories.sort((h1, h2) => {

@@ -9,7 +9,6 @@ import * as Lifecycle from 'vs/base/common/lifecycle';
 import * as DOM from 'vs/base/browser/dom';
 import * as Diff from 'vs/base/common/diff/diff';
 import * as Touch from 'vs/base/browser/touch';
-import * as strings from 'vs/base/common/strings';
 import * as Mouse from 'vs/base/browser/mouseEvent';
 import * as Keyboard from 'vs/base/browser/keyboardEvent';
 import * as Model from 'vs/base/parts/tree/browser/treeModel';
@@ -218,7 +217,7 @@ export class ViewItem implements IViewItem {
 			this.element.setAttribute('aria-posinset', accessibility.getPosInSet(this.context.tree, this.model.getElement()));
 		}
 		if (this.model.hasTrait('focused')) {
-			const base64Id = strings.safeBtoa(this.model.id);
+			const base64Id = btoa(encodeURIComponent(this.model.id));
 			this.element.setAttribute('id', base64Id);
 			this.element.setAttribute('aria-selected', 'true');
 		} else {
@@ -351,7 +350,7 @@ class RootViewItem extends ViewItem {
 		};
 	}
 
-	public render(): void {
+	public override render(): void {
 		if (!this.model || !this.element) {
 			return;
 		}
@@ -366,11 +365,11 @@ class RootViewItem extends ViewItem {
 		this.element.className = classes.join(' ');
 	}
 
-	public insertInDOM(container: HTMLElement, afterElement: HTMLElement): void {
+	public override insertInDOM(container: HTMLElement, afterElement: HTMLElement): void {
 		// noop
 	}
 
-	public removeFromDOM(): void {
+	public override removeFromDOM(): void {
 		// noop
 	}
 }
@@ -410,6 +409,7 @@ export class TreeView extends HeightMap {
 	private treeStyler: _.ITreeStyler;
 	private rowsContainer: HTMLElement;
 	private scrollableElement: ScrollableElement;
+	// @ts-expect-error {{SQL CARBON EDIT}} This always errored - ignoring for now unless we find it impacting something
 	private msGesture: MSGesture | undefined;
 	private lastPointerType: string = '';
 
@@ -494,11 +494,11 @@ export class TreeView extends HeightMap {
 		}
 
 		if (this.context.options.alwaysFocused) {
-			DOM.addClass(this.domNode, 'focused');
+			this.domNode.classList.add('focused');
 		}
 
 		if (!this.context.options.paddingOnRow) {
-			DOM.addClass(this.domNode, 'no-row-padding');
+			this.domNode.classList.add('no-row-padding');
 		}
 
 		this.wrapper = document.createElement('div');
@@ -574,7 +574,7 @@ export class TreeView extends HeightMap {
 		this.treeStyler.style(styles);
 	}
 
-	protected createViewItem(item: Model.Item): IViewItem {
+	protected override createViewItem(item: Model.Item): IViewItem {
 		return new ViewItem(this.context, item);
 	}
 
@@ -602,6 +602,7 @@ export class TreeView extends HeightMap {
 
 	private setupMSGesture(): void {
 		if ((<any>window).MSGesture) {
+			// @ts-expect-error {{SQL CARBON EDIT}} This always errored - ignoring for now unless we find it impacting something
 			this.msGesture = new MSGesture();
 			setTimeout(() => this.msGesture!.target = this.wrapper, 100); // TODO@joh, TODO@IETeam
 		}
@@ -1024,7 +1025,7 @@ export class TreeView extends HeightMap {
 			viewItem.addClass(trait);
 		}
 		if (trait === 'highlighted') {
-			DOM.addClass(this.domNode, trait);
+			this.domNode.classList.add(trait);
 
 			// Ugly Firefox fix: input fields can't be selected if parent nodes are draggable
 			if (viewItem) {
@@ -1044,7 +1045,7 @@ export class TreeView extends HeightMap {
 			viewItem.removeClass(trait);
 		}
 		if (trait === 'highlighted') {
-			DOM.removeClass(this.domNode, trait);
+			this.domNode.classList.remove(trait);
 
 			// Ugly Firefox fix: input fields can't be selected if parent nodes are draggable
 			if (this.highlightedItemWasDraggable) {
@@ -1057,11 +1058,11 @@ export class TreeView extends HeightMap {
 	private onModelFocusChange(): void {
 		const focus = this.model && this.model.getFocus();
 
-		DOM.toggleClass(this.domNode, 'no-focused-item', !focus);
+		this.domNode.classList.toggle('no-focused-item', !focus);
 
 		// ARIA
 		if (focus) {
-			this.domNode.setAttribute('aria-activedescendant', strings.safeBtoa(this.context.dataSource.getId(this.context.tree, focus)));
+			this.domNode.setAttribute('aria-activedescendant', btoa(encodeURIComponent(this.context.dataSource.getId(this.context.tree, focus))));
 		} else {
 			this.domNode.removeAttribute('aria-activedescendant');
 		}
@@ -1069,19 +1070,19 @@ export class TreeView extends HeightMap {
 
 	// HeightMap "events"
 
-	public onInsertItem(item: ViewItem): void {
+	public override onInsertItem(item: ViewItem): void {
 		item.onDragStart = (e) => { this.onDragStart(item, e); };
 		item.needsRender = true;
 		this.refreshViewItem(item);
 		this.items[item.id] = item;
 	}
 
-	public onRefreshItem(item: ViewItem, needsRender = false): void {
+	public override onRefreshItem(item: ViewItem, needsRender = false): void {
 		item.needsRender = item.needsRender || needsRender;
 		this.refreshViewItem(item);
 	}
 
-	public onRemoveItem(item: ViewItem): void {
+	public override onRemoveItem(item: ViewItem): void {
 		this.removeItemFromDOM(item);
 		item.dispose();
 		delete this.items[item.id];
@@ -1513,7 +1514,7 @@ export class TreeView extends HeightMap {
 
 	private onFocus(): void {
 		if (!this.context.options.alwaysFocused) {
-			DOM.addClass(this.domNode, 'focused');
+			this.domNode.classList.add('focused');
 		}
 
 		this._onDOMFocus.fire();
@@ -1521,7 +1522,7 @@ export class TreeView extends HeightMap {
 
 	private onBlur(): void {
 		if (!this.context.options.alwaysFocused) {
-			DOM.removeClass(this.domNode, 'focused');
+			this.domNode.classList.remove('focused');
 		}
 
 		this.domNode.removeAttribute('aria-activedescendant'); // ARIA
@@ -1586,7 +1587,7 @@ export class TreeView extends HeightMap {
 		}
 	}
 
-	public dispose(): void {
+	public override dispose(): void {
 		// TODO@joao: improve
 		this.scrollableElement.dispose();
 

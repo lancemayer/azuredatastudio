@@ -9,7 +9,6 @@ import { BrowserClipboardService } from 'sql/platform/clipboard/browser/clipboar
 import { clipboard, nativeImage } from 'electron';
 
 export class ClipboardService extends BrowserClipboardService {
-	_serviceBrand: undefined;
 
 	constructor(
 		@vsIClipboardService _vsClipboardService: vsIClipboardService,
@@ -19,9 +18,9 @@ export class ClipboardService extends BrowserClipboardService {
 	}
 
 	/**
-	 * Writes the input image as a dataurl to the clipbaord
+	 * Writes the input image as a dataurl to the clipboard
 	 */
-	async writeImageDataUrl(data: string): Promise<void> {
+	override async writeImageDataUrl(data: string): Promise<void> {
 		let image = nativeImage.createFromDataURL(data);
 		return clipboard.writeImage(image);
 	}

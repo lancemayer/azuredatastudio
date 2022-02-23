@@ -7,7 +7,7 @@ import 'vs/css!./code';
 import { OnInit, Component, Input, Inject, ElementRef, ViewChild, Output, EventEmitter, OnChanges, SimpleChange, forwardRef, ChangeDetectorRef } from '@angular/core';
 
 import { QueryTextEditor } from 'sql/workbench/browser/modelComponents/queryTextEditor';
-import { ICellModel, CellExecutionState } from 'sql/workbench/services/notebook/browser/models/modelInterfaces';
+import { ICellModel, CellExecutionState, CellEditModes } from 'sql/workbench/services/notebook/browser/models/modelInterfaces';
 import { Taskbar } from 'sql/base/browser/ui/taskbar/taskbar';
 import { RunCellAction, CellContext } from 'sql/workbench/contrib/notebook/browser/cellViews/codeActions';
 import { NotebookModel } from 'sql/workbench/services/notebook/browser/models/notebookModel';
@@ -35,6 +35,7 @@ import { SimpleProgressIndicator } from 'sql/workbench/services/progress/browser
 import { notebookConstants } from 'sql/workbench/services/notebook/browser/interfaces';
 import { tryMatchCellMagic } from 'sql/workbench/services/notebook/browser/utils';
 import { IColorTheme } from 'vs/platform/theme/common/themeService';
+import { localize } from 'vs/nls';
 
 export const CODE_SELECTOR: string = 'code-component';
 const MARKDOWN_CLASS = 'markdown';
@@ -56,7 +57,7 @@ export class CodeComponent extends CellView implements OnInit, OnChanges {
 		this._cellModel = value;
 		if (this.toolbarElement && value && value.cellType === CellTypes.Markdown) {
 			let nativeToolbar = <HTMLElement>this.toolbarElement.nativeElement;
-			DOM.addClass(nativeToolbar, MARKDOWN_CLASS);
+			nativeToolbar.classList.add(MARKDOWN_CLASS);
 		}
 	}
 
@@ -90,7 +91,6 @@ export class CodeComponent extends CellView implements OnInit, OnChanges {
 	private _editor: QueryTextEditor;
 	private _editorInput: UntitledTextEditorInput;
 	private _editorModel: ITextModel;
-	private _model: NotebookModel;
 	private _activeCellId: string;
 	private _layoutEmitter = new Emitter<void>();
 
@@ -132,16 +132,20 @@ export class CodeComponent extends CellView implements OnInit, OnChanges {
 		}
 	}
 
-	public getEditor(): QueryTextEditor {
+	public override getEditor(): QueryTextEditor {
 		return this._editor;
 	}
 
-	public hasEditor(): boolean {
+	public override hasEditor(): boolean {
 		return true;
 	}
 
 	public cellGuid(): string {
 		return this.cellModel.cellGuid;
+	}
+
+	get parametersText(): string {
+		return localize('parametersText', "Parameters");
 	}
 
 	private updateConnectionState(shouldConnect: boolean) {
@@ -151,7 +155,15 @@ export class CodeComponent extends CellView implements OnInit, OnChanges {
 			if (!shouldConnect && connectionService && connectionService.isConnected(cellUri)) {
 				connectionService.disconnect(cellUri).catch(e => this.logService.error(e));
 			} else if (shouldConnect && this._model.context && this._model.context.id !== DEFAULT_OR_LOCAL_CONTEXT_ID) {
-				connectionService.connect(this._model.context, cellUri).catch(e => this.logService.error(e));
+				// Don't connect immediately in case the user is switching cells quickly (such as holding down the arrow key to navigate through cells)
+				// Instead wait a small bit and then check if the cell is still active, and if it is at that point then connect so we aren't thrashing
+				// connections
+				setTimeout(() => {
+					if (this.isActive()) {
+						connectionService.connect(this._model.context, cellUri).catch(e => this.logService.error(e));
+					}
+				}, 250);
+
 			}
 		}
 	}
@@ -203,12 +215,12 @@ export class CodeComponent extends CellView implements OnInit, OnChanges {
 		cellModelSource = Array.isArray(this.cellModel.source) ? this.cellModel.source.join('') : this.cellModel.source;
 		const model = this._instantiationService.createInstance(UntitledTextEditorModel, uri, false, cellModelSource, this.cellModel.language, undefined);
 		this._editorInput = this._instantiationService.createInstance(UntitledTextEditorInput, model);
-		await this._editor.setInput(this._editorInput, undefined);
+		await this._editor.setInput(this._editorInput, undefined, undefined);
 		this.setFocusAndScroll();
 
 		let untitledEditorModel = await this._editorInput.resolve() as UntitledTextEditorModel;
 		this._editorModel = untitledEditorModel.textEditorModel;
-
+		this.updateModel();
 		let isActive = this.cellModel.id === this._activeCellId;
 		this._editor.toggleEditorSelected(isActive);
 
@@ -227,7 +239,6 @@ export class CodeComponent extends CellView implements OnInit, OnChanges {
 		this._register(this._editorInput);
 		this._register(this._editorModel.onDidChangeContent(e => {
 			this.cellModel.modelContentChangedEvent = e;
-
 			let originalSourceLength = this.cellModel.source.length;
 			this.cellModel.source = this._editorModel.getValue();
 			if (this._cellModel.isCollapsed && originalSourceLength !== this.cellModel.source.length) {
@@ -237,6 +248,8 @@ export class CodeComponent extends CellView implements OnInit, OnChanges {
 
 			this.onContentChanged.emit();
 			this.checkForLanguageMagics();
+			// When content is updated we have to also update the horizontal scrollbar
+			this.horizontalScrollbar();
 		}));
 		this._register(this._configurationService.onDidChangeConfiguration(e => {
 			if (e.affectsConfiguration('editor.wordWrap') || e.affectsConfiguration('editor.fontSize')) {
@@ -244,6 +257,9 @@ export class CodeComponent extends CellView implements OnInit, OnChanges {
 			}
 		}));
 		this._register(this.model.layoutChanged(() => this._layoutEmitter.fire(), this));
+		// Handles mouse wheel and scrollbar events
+		this._register(Event.debounce(this.model.onScroll.event, (l, e) => e, 250, /*leading=*/false)
+			(() => this.horizontalScrollbar()));
 		this._register(this.cellModel.onExecutionStateChange(event => {
 			if (event === CellExecutionState.Running && !this.cellModel.stdInVisible) {
 				this.setFocusAndScroll();
@@ -251,6 +267,17 @@ export class CodeComponent extends CellView implements OnInit, OnChanges {
 		}));
 		this._register(this.cellModel.onCollapseStateChanged(isCollapsed => {
 			this.onCellCollapse(isCollapsed);
+		}));
+		this._register(this.cellModel.onCurrentEditModeChanged((e) => {
+			let preview = e !== CellEditModes.MARKDOWN;
+			if (!preview && this._cellModel.cellSourceChanged) {
+				this.updateModel();
+				this._cellModel.cellSourceChanged = false;
+			}
+			this._layoutEmitter.fire();
+		}));
+		this._register(this.cellModel.onCellModeChanged((isEditMode) => {
+			this.onCellModeChanged(isEditMode);
 		}));
 
 		this.layout();
@@ -265,6 +292,55 @@ export class CodeComponent extends CellView implements OnInit, OnChanges {
 			DOM.getContentWidth(this.codeElement.nativeElement),
 			DOM.getContentHeight(this.codeElement.nativeElement)));
 		this._editor.setHeightToScrollHeight(false, this._cellModel.isCollapsed);
+		this.horizontalScrollbar();
+		// Move cursor to the last known location
+		if (this.cellModel.markdownCursorPosition) {
+			this._editor.getControl().setPosition(this.cellModel.markdownCursorPosition);
+		}
+	}
+
+	/**
+	 * Horizontal Scrollbar function will ensure we only calculate and trigger this if word wrap is off and it is a markdown cell
+	 * This will adjust the horizontal scrollbar to either a fixed position at the bottom of the viewport (visible area)
+	 * or it will set it to the bottom of the markdown editor if it is in the viewport (visible area)
+	 */
+	public horizontalScrollbar(): void {
+		let showScrollbar: boolean = this._editor.shouldAddHorizontalScrollbar;
+		let horizontalScrollbar: HTMLElement = this.codeElement.nativeElement.querySelector('div.scrollbar.horizontal');
+		if (this._configurationService.getValue('editor.wordWrap') === 'off' && this.cellModel.cellType !== CellTypes.Code && this.cellModel.source.length > 0 && showScrollbar) {
+			// Get markdown split view horizontal scrollbar
+			let viewport: HTMLElement = document.querySelector('.scrollable');
+			let markdownEditor: HTMLElement = this.codeElement.nativeElement.closest('.show-markdown .editor');
+
+			//Get values based on current context of the editor and ADS window
+			let markdownEditorBottom = Math.floor(markdownEditor.getBoundingClientRect().bottom);
+			let viewportBottom = Math.floor(viewport.getBoundingClientRect().bottom);
+			let viewportHeight = DOM.getTotalHeight(viewport);
+			let viewportTop = Math.floor(document.querySelector('.scrollable').getBoundingClientRect().top);
+
+			// Have to offset the height based on the contents viewport and the additional scrollbars that are present in markdown editor and notebook
+			let horizontalTop = Math.floor(Math.abs(viewportTop + viewportHeight) - Math.abs(2 * horizontalScrollbar.scrollHeight));
+
+			// Set opacity for both fixed and absolute
+			horizontalScrollbar.style.opacity = '1';
+
+			// If the bottom of the editor is in the viewport, then set the horizontal scrollbar to the bottom of the editor space
+			if (markdownEditorBottom < viewportBottom) {
+				horizontalScrollbar.style.position = 'absolute';
+				horizontalScrollbar.style.left = '0px';
+				horizontalScrollbar.style.top = '';
+				horizontalScrollbar.style.bottom = '0px';
+				// If the bottom of the editor is not in the viewport, then set the horizontal scrollbar to the bottom of the viewport
+			} else {
+				horizontalScrollbar.style.position = 'fixed';
+				horizontalScrollbar.style.left = '';
+				horizontalScrollbar.style.top = horizontalTop + 'px';
+				horizontalScrollbar.style.bottom = '';
+			}
+		} else {
+			// If horizontal scrollbar is not needed then set do not show it
+			horizontalScrollbar.style.opacity = '0';
+		}
 	}
 
 	protected initActionBar() {
@@ -355,5 +431,14 @@ export class CodeComponent extends CellView implements OnInit, OnChanges {
 			editorWidget.setHiddenAreas([]);
 		}
 		this._editor.setHeightToScrollHeight(false, isCollapsed);
+	}
+
+	private onCellModeChanged(isEditMode: boolean): void {
+		if (this.cellModel.id === this._activeCellId || this._activeCellId === '') {
+			this._editor.getControl().focus();
+			if (!isEditMode) {
+				(document.activeElement as HTMLElement).blur();
+			}
+		}
 	}
 }

@@ -26,10 +26,13 @@ export interface ActiveDirectorySettings {
 	domainControllerFQDNs: string;
 	dnsIPAddresses: string;
 	domainDNSName: string;
+	realm?: string;
 	clusterUsers: string;
 	clusterAdmins: string;
 	appReaders?: string;
 	appOwners?: string;
+	subdomain?: string;
+	accountPrefix?: string;
 }
 
 export class BigDataClusterDeploymentProfile {
@@ -183,7 +186,7 @@ export class BigDataClusterDeploymentProfile {
 	}
 
 	public setResourceStorage(resourceName: 'data-0' | 'master' | 'storage-0', dataStorageClass: string, dataStorageSize: number, logsStorageClass: string, logsStorageSize: number) {
-		this.bdcConfig.spec.resources[resourceName]['storage'] = {
+		this.bdcConfig.spec.resources[resourceName].spec.storage = {
 			data: {
 				size: `${dataStorageSize}Gi`,
 				className: dataStorageClass,
@@ -267,10 +270,10 @@ export class BigDataClusterDeploymentProfile {
 	}
 
 	public setAuthenticationMode(mode: string): void {
-		// If basic authentication is picked, the security section must be removed
+		// If basic authentication is picked, the activeDirectory security section must be removed
 		// otherwise azdata will throw validation error
-		if (mode === AuthenticationMode.Basic && 'security' in this._controlConfig) {
-			delete this._controlConfig.security;
+		if (mode === AuthenticationMode.Basic && 'security' in this._controlConfig && 'activeDirectory' in this._controlConfig.security) {
+			delete this._controlConfig.security.activeDirectory;
 		}
 	}
 
@@ -280,7 +283,9 @@ export class BigDataClusterDeploymentProfile {
 		activeDirectoryObject.dnsIpAddresses = this.splitByComma(adSettings.dnsIPAddresses);
 		activeDirectoryObject.domainControllerFullyQualifiedDns = this.splitByComma(adSettings.domainControllerFQDNs.toLowerCase());
 		activeDirectoryObject.domainDnsName = adSettings.domainDNSName;
-		activeDirectoryObject.realm = adSettings.domainDNSName.toUpperCase();
+		activeDirectoryObject.subdomain = adSettings.subdomain;
+		activeDirectoryObject.accountPrefix = adSettings.accountPrefix;
+		activeDirectoryObject.realm = adSettings.realm ?? adSettings.domainDNSName.toUpperCase();
 		activeDirectoryObject.clusterAdmins = this.splitByComma(adSettings.clusterAdmins);
 		activeDirectoryObject.clusterUsers = this.splitByComma(adSettings.clusterUsers);
 		if (adSettings.appReaders) {

@@ -6,7 +6,7 @@
 import 'vs/css!./media/autoOAuthDialog';
 
 import { IThemeService } from 'vs/platform/theme/common/themeService';
-import { attachInputBoxStyler } from 'vs/platform/theme/common/styler';
+import { attachButtonStyler, attachInputBoxStyler } from 'vs/platform/theme/common/styler';
 import { Event, Emitter } from 'vs/base/common/event';
 import { IContextViewService } from 'vs/platform/contextview/browser/contextView';
 import { localize } from 'vs/nls';
@@ -17,7 +17,6 @@ import { $, append } from 'vs/base/browser/dom';
 import { Button } from 'sql/base/browser/ui/button/button';
 import { Modal } from 'sql/workbench/browser/modal/modal';
 import { InputBox } from 'sql/base/browser/ui/inputBox/inputBox';
-import { attachButtonStyler } from 'sql/platform/theme/common/styler';
 import * as TelemetryKeys from 'sql/platform/telemetry/common/telemetryKeys';
 import { IClipboardService } from 'vs/platform/clipboard/common/clipboardService';
 import { ILogService } from 'vs/platform/log/common/log';
@@ -27,11 +26,11 @@ import { attachModalDialogStyler } from 'sql/workbench/common/styler';
 import { ILayoutService } from 'vs/platform/layout/browser/layoutService';
 
 export class AutoOAuthDialog extends Modal {
-	private _copyAndOpenButton: Button;
-	private _closeButton: Button;
-	private _userCodeInputBox: InputBox;
-	private _websiteInputBox: InputBox;
-	private _descriptionElement: HTMLElement;
+	private _copyAndOpenButton?: Button;
+	private _closeButton?: Button;
+	private _userCodeInputBox?: InputBox;
+	private _websiteInputBox?: InputBox;
+	private _descriptionElement?: HTMLElement;
 
 	// EVENTING ////////////////////////////////////////////////////////////
 	private _onHandleAddAccount = new Emitter<void>();
@@ -56,7 +55,7 @@ export class AutoOAuthDialog extends Modal {
 	) {
 		super(
 			'',
-			TelemetryKeys.AutoOAuth,
+			TelemetryKeys.ModalDialogName.AutoOAuth,
 			telemetryService,
 			layoutService,
 			clipboardService,
@@ -65,24 +64,24 @@ export class AutoOAuthDialog extends Modal {
 			textResourcePropertiesService,
 			contextKeyService,
 			{
-				isFlyout: true,
+				dialogStyle: 'flyout',
 				hasBackButton: true,
 				hasSpinner: true
 			}
 		);
 	}
 
-	public render() {
+	public override render() {
 		super.render();
 		attachModalDialogStyler(this, this._themeService);
-		this.backButton.onDidClick(() => this.cancel());
-		this._register(attachButtonStyler(this.backButton, this._themeService, { buttonBackground: SIDE_BAR_BACKGROUND, buttonHoverBackground: SIDE_BAR_BACKGROUND }));
+		this.backButton!.onDidClick(() => this.cancel());
+		this._register(attachButtonStyler(this.backButton!, this._themeService, { buttonBackground: SIDE_BAR_BACKGROUND, buttonHoverBackground: SIDE_BAR_BACKGROUND }));
 
 		this._copyAndOpenButton = this.addFooterButton(localize('copyAndOpen', "Copy & Open"), () => this.addAccount());
-		this._closeButton = this.addFooterButton(localize('oauthDialog.cancel', "Cancel"), () => this.cancel());
+		this._closeButton = this.addFooterButton(localize('oauthDialog.cancel', "Cancel"), () => this.cancel(), 'right', true);
 		this.registerListeners();
-		this._userCodeInputBox.disable();
-		this._websiteInputBox.disable();
+		this._userCodeInputBox!.disable();
+		this._websiteInputBox!.disable();
 	}
 
 	protected layout(height?: number): void {
@@ -110,26 +109,26 @@ export class AutoOAuthDialog extends Modal {
 
 	private registerListeners(): void {
 		// Theme styler
-		this._register(attachButtonStyler(this._copyAndOpenButton, this._themeService));
-		this._register(attachButtonStyler(this._closeButton, this._themeService));
-		this._register(attachInputBoxStyler(this._userCodeInputBox, this._themeService));
-		this._register(attachInputBoxStyler(this._websiteInputBox, this._themeService));
+		this._register(attachButtonStyler(this._copyAndOpenButton!, this._themeService));
+		this._register(attachButtonStyler(this._closeButton!, this._themeService));
+		this._register(attachInputBoxStyler(this._userCodeInputBox!, this._themeService));
+		this._register(attachInputBoxStyler(this._websiteInputBox!, this._themeService));
 
 	}
 
 	/* Overwrite escape key behavior */
-	protected onClose() {
+	protected override onClose() {
 		this.cancel();
 	}
 
 	/* Overwrite enter key behavior */
-	protected onAccept() {
+	protected override onAccept() {
 		this.addAccount();
 	}
 
 	private addAccount() {
-		if (this._copyAndOpenButton.enabled) {
-			this._copyAndOpenButton.enabled = false;
+		if (this._copyAndOpenButton!.enabled) {
+			this._copyAndOpenButton!.enabled = false;
 			this.spinner = true;
 			this._onHandleAddAccount.fire();
 		}
@@ -140,19 +139,19 @@ export class AutoOAuthDialog extends Modal {
 	}
 
 	public close() {
-		this._copyAndOpenButton.enabled = true;
+		this._copyAndOpenButton!.enabled = true;
 		this._onCloseEvent.fire();
 		this.spinner = false;
-		this.hide();
+		this.hide('close');
 	}
 
 	public open(title: string, message: string, userCode: string, uri: string) {
 		// Update dialog
 		this.title = title;
-		this._descriptionElement.innerText = message;
-		this._userCodeInputBox.value = userCode;
-		this._websiteInputBox.value = uri;
+		this._descriptionElement!.innerText = message;
+		this._userCodeInputBox!.value = userCode;
+		this._websiteInputBox!.value = uri;
 		this.show();
-		this._copyAndOpenButton.focus();
+		this._copyAndOpenButton!.focus();
 	}
 }

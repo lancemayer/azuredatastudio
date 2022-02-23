@@ -21,9 +21,9 @@ enum ContextKeys {
 }
 
 const isCloudEditions = [
-	5,
-	6,
-	11
+	azdata.DatabaseEngineEdition.SqlDatabase,
+	azdata.DatabaseEngineEdition.SqlDataWarehouse,
+	azdata.DatabaseEngineEdition.SqlOnDemand
 ];
 
 function setCommandContext(key: ContextKeys | string, value: any) {
@@ -62,19 +62,19 @@ export default class ContextProvider {
 		}
 
 		if (iscloud === true || iscloud === false) {
-			setCommandContext(ContextKeys.ISCLOUD, iscloud);
+			void setCommandContext(ContextKeys.ISCLOUD, iscloud);
 		}
 
 		if (!types.isUndefinedOrNull(edition)) {
-			setCommandContext(ContextKeys.EDITIONID, edition);
+			void setCommandContext(ContextKeys.EDITIONID, edition);
 		}
 
 		if (!types.isUndefinedOrNull(isCluster)) {
-			setCommandContext(ContextKeys.ISCLUSTER, isCluster);
+			void setCommandContext(ContextKeys.ISCLUSTER, isCluster);
 		}
 
 		if (!types.isUndefinedOrNull(serverMajorVersion)) {
-			setCommandContext(ContextKeys.SERVERMAJORVERSION, serverMajorVersion);
+			void setCommandContext(ContextKeys.SERVERMAJORVERSION, serverMajorVersion);
 		}
 	}
 

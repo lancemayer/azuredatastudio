@@ -10,7 +10,6 @@ import { ConnectionProfileGroup } from 'sql/platform/connection/common/connectio
 import { equalsIgnoreCase } from 'vs/base/common/strings';
 import { IConnectionManagementService, IConnectionCompletionOptions, ConnectionType, RunQueryOnConnectionMode } from 'sql/platform/connection/common/connectionManagement';
 import { ICapabilitiesService } from 'sql/platform/capabilities/common/capabilitiesService';
-import { ParsedArgs } from 'vs/platform/environment/node/argv';
 import * as Constants from 'sql/platform/connection/common/constants';
 import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
 import { ICommandService } from 'vs/platform/commands/common/commands';
@@ -28,9 +27,8 @@ import { openNewQuery } from 'sql/workbench/contrib/query/browser/queryActions';
 import { IURLService, IURLHandler } from 'vs/platform/url/common/url';
 import { getErrorMessage } from 'vs/base/common/errors';
 import { IDialogService } from 'vs/platform/dialogs/common/dialogs';
-import { find } from 'vs/base/common/arrays';
-import { INativeEnvironmentService } from 'vs/platform/environment/node/environmentService';
-import { IEnvironmentService } from 'vs/platform/environment/common/environment';
+import { IEnvironmentService, INativeEnvironmentService } from 'vs/platform/environment/common/environment';
+import { NativeParsedArgs } from 'vs/platform/environment/common/argv';
 
 export interface SqlArgs {
 	_?: string[];
@@ -40,6 +38,9 @@ export interface SqlArgs {
 	user?: string;
 	command?: string;
 	provider?: string;
+	aad?: boolean; // deprecated - used by SSMS - authenticationType should be used instead
+	integrated?: boolean; // deprecated - used by SSMS - authenticationType should be used instead.
+	showDashboard?: boolean;
 }
 
 //#region decorators
@@ -77,7 +78,7 @@ export class CommandLineWorkbenchContribution implements IWorkbenchContribution,
 		@IDialogService private readonly dialogService: IDialogService
 	) {
 		if (ipc) {
-			ipc.on('ads:processCommandLine', (event: any, args: ParsedArgs) => this.onLaunched(args));
+			ipc.on('ads:processCommandLine', (event: any, args: NativeParsedArgs) => this.onLaunched(args));
 		}
 		// we only get the ipc from main during window reuse
 		if (environmentService) {
@@ -88,7 +89,7 @@ export class CommandLineWorkbenchContribution implements IWorkbenchContribution,
 		}
 	}
 
-	private onLaunched(args: ParsedArgs) {
+	private onLaunched(args: NativeParsedArgs) {
 		let sqlProvider = this._capabilitiesService.getCapabilities(Constants.mssqlProviderName);
 		// We can't connect to object explorer until the MSSQL connection provider is registered
 		if (sqlProvider) {
@@ -131,7 +132,7 @@ export class CommandLineWorkbenchContribution implements IWorkbenchContribution,
 				this._notificationService.status(localize('connectingLabel', "Connecting: {0}", profile.serverName), { hideAfter: 2500 });
 			}
 			try {
-				await this._connectionManagementService.connectIfNotConnected(profile, 'connection', true);
+				await this._connectionManagementService.connectIfNotConnected(profile, args.showDashboard ? 'dashboard' : 'connection', true);
 				// Before sending to extensions, we should a) serialize to IConnectionProfile or things will fail,
 				// and b) use the latest version of the profile from the service so most fields are filled in.
 				let updatedProfile = this._connectionManagementService.getConnectionProfileById(profile.id);
@@ -145,14 +146,14 @@ export class CommandLineWorkbenchContribution implements IWorkbenchContribution,
 				this._notificationService.status(localize('runningCommandLabel', "Running command: {0}", commandName), { hideAfter: 2500 });
 			}
 			await this._commandService.executeCommand(commandName, connectedContext);
-		} else if (profile) {
+		} else if (connectedContext) {
 			// If we were given a file and it was opened with the sql editor,
 			// we want to connect the given profile to to it.
 			// If more than one file was passed, only show the connection dialog error on one of them.
 			if (args._ && args._.length > 0) {
 				await Promise.all(args._.map((f, i) => this.processFile(URI.file(f).toString(), profile, i === 0)));
 			}
-			else {
+			else if (this._capabilitiesService.getCapabilities(profile.providerName)?.connection?.isQueryProvider) {
 				// Default to showing new query
 				if (this._notificationService) {
 					this._notificationService.status(localize('openingNewQueryLabel', "Opening new query: {0}", profile.serverName), { hideAfter: 2500 });
@@ -278,7 +279,23 @@ export class CommandLineWorkbenchContribution implements IWorkbenchContribution,
 		profile.serverName = args.server;
 		profile.databaseName = args.database ?? '';
 		profile.userName = args.user ?? '';
-		profile.authenticationType = args.authenticationType ?? Constants.integrated;
+
+		/*
+			Authentication Type:
+			1. Take --authenticationType, if not
+			2. Take --integrated, if not
+			3. take --aad, if not
+			4. If user exists, and user has @, then it's azureMFA
+			5. If user exists but doesn't have @, then its SqlLogin
+			6. If user doesn't exist, then integrated
+		*/
+		profile.authenticationType =
+			args.authenticationType ? args.authenticationType :
+				args.integrated ? Constants.integrated :
+					args.aad ? Constants.azureMFA :
+						(args.user && args.user.length > 0) ? args.user.includes('@') ? Constants.azureMFA : Constants.sqlLogin :
+							Constants.integrated;
+
 		profile.connectionName = '';
 		profile.setOptionValue('applicationName', Constants.applicationName);
 		profile.setOptionValue('databaseDisplayName', profile.databaseName);
@@ -293,7 +310,7 @@ export class CommandLineWorkbenchContribution implements IWorkbenchContribution,
 		if (groups && groups.length > 0) {
 			let rootGroup = groups[0];
 			let connections = ConnectionProfileGroup.getConnectionsInGroup(rootGroup);
-			match = find(connections, (c) => this.matchProfile(profile, c));
+			match = connections.find((c) => this.matchProfile(profile, c));
 		}
 		return match ? match : profile;
 	}

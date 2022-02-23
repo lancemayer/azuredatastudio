@@ -16,6 +16,8 @@ import { InstantiationService } from 'vs/platform/instantiation/common/instantia
 import { TestStorageService } from 'vs/workbench/test/common/workbenchTestServices';
 import { EventVerifierSingle } from 'sql/base/test/common/event';
 import { TestNotificationService } from 'vs/platform/notification/test/common/testNotificationService';
+import { AccountDialog } from 'sql/workbench/services/accountManagement/browser/accountDialog';
+import { Emitter } from 'vs/base/common/event';
 
 // SUITE CONSTANTS /////////////////////////////////////////////////////////
 const hasAccountProvider: azdata.AccountProviderMetadata = {
@@ -116,10 +118,11 @@ suite('Account Management Service Tests:', () => {
 				state.mockAccountStore.verify(x => x.addOrUpdate(TypeMoq.It.isAny()), TypeMoq.Times.once());
 
 				// ... The account list was updated
-				state.eventVerifierUpdate.assertFiredWithVerify((params: UpdateAccountListEventParams) => {
-					assert.equal(params.providerId, hasAccountProvider.id);
-					assert.ok(Array.isArray(params.accountList));
-					assert.equal(params.accountList.length, 1);
+				state.eventVerifierUpdate.assertFiredWithVerify((params: UpdateAccountListEventParams | undefined) => {
+					assert.ok(params);
+					assert.strictEqual(params!.providerId, hasAccountProvider.id);
+					assert.ok(Array.isArray(params!.accountList));
+					assert.strictEqual(params!.accountList.length, 1);
 				});
 			});
 	});
@@ -155,10 +158,11 @@ suite('Account Management Service Tests:', () => {
 
 				// ... The account list change should have been fired
 				state.eventVerifierUpdate.assertFiredWithVerify(param => {
-					assert.equal(param.providerId, hasAccountProvider.id);
-					assert.ok(Array.isArray(param.accountList));
-					assert.equal(param.accountList.length, 1);
-					assert.equal(param.accountList[0], account);
+					assert.ok(param);
+					assert.strictEqual(param!.providerId, hasAccountProvider.id);
+					assert.ok(Array.isArray(param!.accountList));
+					assert.strictEqual(param!.accountList.length, 1);
+					assert.strictEqual(param!.accountList[0], account);
 				});
 			});
 	});
@@ -194,10 +198,11 @@ suite('Account Management Service Tests:', () => {
 
 				// ... The account list change should have been fired
 				state.eventVerifierUpdate.assertFiredWithVerify(param => {
-					assert.equal(param.providerId, hasAccountProvider.id);
-					assert.ok(Array.isArray(param.accountList));
-					assert.equal(param.accountList.length, 1);
-					assert.equal(param.accountList[0], account);
+					assert.ok(param);
+					assert.strictEqual(param!.providerId, hasAccountProvider.id);
+					assert.ok(Array.isArray(param!.accountList));
+					assert.strictEqual(param!.accountList.length, 1);
+					assert.strictEqual(param!.accountList[0], account);
 				});
 			});
 	});
@@ -209,7 +214,7 @@ suite('Account Management Service Tests:', () => {
 		// If: I add an account when the provider doesn't exist
 		// Then: It should not resolve
 		return Promise.race([
-			new Promise((resolve, reject) => setTimeout(() => resolve(), 100)),
+			new Promise<void>((resolve, reject) => setTimeout(() => resolve(), 100)),
 			ams.addAccount('doesNotExist').then(() => { throw new Error('Promise resolved when the provider did not exist'); })
 		]);
 	});
@@ -244,7 +249,7 @@ suite('Account Management Service Tests:', () => {
 		let state = getTestState();
 		state.accountManagementService._providers[noAccountProvider.id] = {
 			accounts: [],
-			provider: null,					// Doesn't matter
+			provider: undefined!,					// Doesn't matter
 			metadata: noAccountProvider
 		};
 
@@ -253,8 +258,8 @@ suite('Account Management Service Tests:', () => {
 			.then(result => {
 				// Then: The list should have the one account provider in it
 				assert.ok(Array.isArray(result));
-				assert.equal(result.length, 1);
-				assert.equal(result[0], noAccountProvider);
+				assert.strictEqual(result.length, 1);
+				assert.strictEqual(result[0], noAccountProvider);
 			});
 	});
 
@@ -267,7 +272,7 @@ suite('Account Management Service Tests:', () => {
 			.then(result => {
 				// Then: The results should be an empty array
 				assert.ok(Array.isArray(result));
-				assert.equal(result.length, 0);
+				assert.strictEqual(result.length, 0);
 			});
 	});
 
@@ -278,7 +283,7 @@ suite('Account Management Service Tests:', () => {
 		// If: I get accounts when the provider doesn't exist
 		// Then: It should not resolve
 		return Promise.race([
-			new Promise((resolve, reject) => setTimeout(() => resolve(), 100)),
+			new Promise<void>((resolve, reject) => setTimeout(() => resolve(), 100)),
 			ams.getAccountsForProvider('doesNotExist').then(() => { throw new Error('Promise resolved when the provider did not exist'); })
 		]);
 	});
@@ -288,7 +293,7 @@ suite('Account Management Service Tests:', () => {
 		let ams = getTestState().accountManagementService;
 		ams._providers[noAccountProvider.id] = {
 			accounts: [],
-			provider: null,				// Doesn't matter
+			provider: undefined!,				// Doesn't matter
 			metadata: noAccountProvider
 		};
 
@@ -297,7 +302,7 @@ suite('Account Management Service Tests:', () => {
 			.then(result => {
 				// Then: I should get back an empty array
 				assert.ok(Array.isArray(result));
-				assert.equal(result.length, 0);
+				assert.strictEqual(result.length, 0);
 			});
 	});
 
@@ -306,7 +311,7 @@ suite('Account Management Service Tests:', () => {
 		let ams = getTestState().accountManagementService;
 		ams._providers[hasAccountProvider.id] = {
 			accounts: [account],
-			provider: null,				// Doesn't matter
+			provider: undefined!,				// Doesn't matter
 			metadata: hasAccountProvider
 		};
 
@@ -314,7 +319,7 @@ suite('Account Management Service Tests:', () => {
 		return ams.getAccountsForProvider(hasAccountProvider.id)
 			.then(result => {
 				// Then: I should get back the list of accounts
-				assert.equal(result, accountList);
+				assert.strictEqual(result, accountList);
 			});
 	});
 
@@ -348,10 +353,11 @@ suite('Account Management Service Tests:', () => {
 				mockProvider.verify(x => x.clear(TypeMoq.It.isValue(account.key)), TypeMoq.Times.once());
 
 				// ... The updated account list event should have fired
-				state.eventVerifierUpdate.assertFiredWithVerify((params: UpdateAccountListEventParams) => {
-					assert.equal(params.providerId, hasAccountProvider.id);
-					assert.ok(Array.isArray(params.accountList));
-					assert.equal(params.accountList.length, 0);
+				state.eventVerifierUpdate.assertFiredWithVerify((params: UpdateAccountListEventParams | undefined) => {
+					assert.ok(params);
+					assert.strictEqual(params!.providerId, hasAccountProvider.id);
+					assert.ok(Array.isArray(params!.accountList));
+					assert.strictEqual(params!.accountList.length, 0);
 				});
 			});
 	});
@@ -398,7 +404,14 @@ suite('Account Management Service Tests:', () => {
 
 		// ... Add mocking for instantiating an account dialog controller
 		let mockDialogController = TypeMoq.Mock.ofType(AccountDialogController);
+		let mockAccountDialog = {};
 		mockDialogController.setup(x => x.openAccountDialog());
+		mockDialogController.setup(x => x.accountDialog).returns(() => <AccountDialog>mockAccountDialog);
+		let mockAccountDialogCloseEvent = new Emitter<void>();
+		(mockAccountDialog as any).onCloseEvent = mockAccountDialogCloseEvent.event;
+		setTimeout(() => {
+			mockAccountDialogCloseEvent.fire();
+		}, 1000);
 		state.instantiationService.setup(x => x.createInstance(TypeMoq.It.isValue(AccountDialogController)))
 			.returns(() => mockDialogController.object);
 
@@ -421,13 +434,25 @@ suite('Account Management Service Tests:', () => {
 
 		// ... Add mocking for instantiating an account dialog controller
 		let mockDialogController = TypeMoq.Mock.ofType(AccountDialogController);
+		let mockAccountDialog = {};
 		mockDialogController.setup(x => x.openAccountDialog());
+		mockDialogController.setup(x => x.accountDialog).returns(() => <AccountDialog>mockAccountDialog);
+		let mockAccountDialogCloseEvent = new Emitter<void>();
+		(mockAccountDialog as any).onCloseEvent = mockAccountDialogCloseEvent.event;
+		setTimeout(() => {
+			mockAccountDialogCloseEvent.fire();
+		}, 1000);
 		state.instantiationService.setup(x => x.createInstance(TypeMoq.It.isValue(AccountDialogController)))
 			.returns(() => mockDialogController.object);
 
 		// If: I open the account dialog for a second time
 		return state.accountManagementService.openAccountListDialog()
-			.then(() => state.accountManagementService.openAccountListDialog())
+			.then(() => {
+				setTimeout(() => {
+					mockAccountDialogCloseEvent.fire();
+				}, 1000);
+				state.accountManagementService.openAccountListDialog();
+			})
 			.then(() => {
 				// Then:
 				// ... The instantiation service should have only been called once
@@ -447,7 +472,7 @@ suite('Account Management Service Tests:', () => {
 		// ... Create ams, account store that will accept account add/update
 		let mocks = getTestState();
 		mocks.mockAccountStore.setup(x => x.addOrUpdate(TypeMoq.It.isAny()))
-			.returns(() => Promise.resolve(undefined));
+			.returns(() => Promise.resolve(undefined!));
 
 		// ... Create mock account provider
 		let mockProvider = getMockAccountProvider();
@@ -463,10 +488,11 @@ suite('Account Management Service Tests:', () => {
 				mockProvider.verify(x => x.initialize(TypeMoq.It.isAny()), TypeMoq.Times.once());
 
 				// ... The provider added event should have fired
-				mocks.eventVerifierProviderAdded.assertFiredWithVerify((param: AccountProviderAddedEventParams) => {
-					assert.equal(param.addedProvider, noAccountProvider);
-					assert.ok(Array.isArray(param.initialAccounts));
-					assert.equal(param.initialAccounts.length, 0);
+				mocks.eventVerifierProviderAdded.assertFiredWithVerify((param: AccountProviderAddedEventParams | undefined) => {
+					assert.ok(param);
+					assert.strictEqual(param!.addedProvider, noAccountProvider);
+					assert.ok(Array.isArray(param!.initialAccounts));
+					assert.strictEqual(param!.initialAccounts.length, 0);
 				});
 			});
 	});
@@ -503,13 +529,10 @@ function getTestState(): AccountManagementState {
 	mockInstantiationService.setup(x => x.createInstance(TypeMoq.It.isValue(AccountStore), TypeMoq.It.isAny()))
 		.returns(() => mockAccountStore.object);
 
-	// Create mock memento
-	let mockMemento = {};
-
 	const testNotificationService = new TestNotificationService();
 
 	// Create the account management service
-	let ams = new AccountManagementService(mockMemento, mockInstantiationService.object, new TestStorageService(), null, null, undefined, testNotificationService);
+	let ams = new AccountManagementService(mockInstantiationService.object, new TestStorageService(), undefined!, undefined!, undefined!, testNotificationService);
 
 	// Wire up event handlers
 	let evUpdate = new EventVerifierSingle<UpdateAccountListEventParams>();

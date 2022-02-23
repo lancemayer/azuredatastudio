@@ -7,7 +7,6 @@ import * as azdata from 'azdata';
 import { AccountAdditionResult } from 'sql/platform/accounts/common/eventTypes';
 import { IAccountStore } from 'sql/platform/accounts/common/interfaces';
 import { deepClone } from 'vs/base/common/objects';
-import { firstIndex } from 'vs/base/common/arrays';
 import { ILogService } from 'vs/platform/log/common/log';
 
 export default class AccountStore implements IAccountStore {
@@ -16,7 +15,7 @@ export default class AccountStore implements IAccountStore {
 	public static MEMENTO_KEY: string = 'Microsoft.SqlTools.Accounts';
 
 	// MEMBER VARIABLES ////////////////////////////////////////////////////
-	private _activeOperation?: Thenable<any>;
+	private _activeOperation?: Promise<any>;
 
 	constructor(
 		private _memento: { [key: string]: any },
@@ -24,37 +23,39 @@ export default class AccountStore implements IAccountStore {
 	) { }
 
 	// PUBLIC METHODS //////////////////////////////////////////////////////
-	public addOrUpdate(newAccount: azdata.Account): Thenable<AccountAdditionResult> {
+	public addOrUpdate(newAccount: azdata.Account): Promise<AccountAdditionResult> {
 		return this.doOperation(() => {
 			return this.readFromMemento()
 				.then(accounts => {
 					// Determine if account exists and proceed accordingly
-					const match = firstIndex(accounts, account => AccountStore.findAccountByKey(account.key, newAccount.key));
+					const match = accounts.findIndex(account => AccountStore.findAccountByKey(account.key, newAccount.key));
 					return match < 0
 						? this.addToAccountList(accounts, newAccount)
 						: this.updateAccountList(accounts, newAccount.key, matchAccount => AccountStore.mergeAccounts(newAccount, matchAccount));
 				})
 				.then(result => this.writeToMemento(result.updatedAccounts).then(() => result))
-				.then(result => <AccountAdditionResult>result);
+				.then(result => ({ accountAdded: result.accountAdded, accountModified: result.accountModified, changedAccount: result.changedAccount! }));
 		});
 	}
 
-	public getAccountsByProvider(providerId: string): Thenable<azdata.Account[]> {
-		return this.doOperation(() => {
-			return this.readFromMemento()
-				.then(accounts => accounts.filter(account => account.key.providerId === providerId));
+	public async getAccountsByProvider(providerId: string): Promise<azdata.Account[]> {
+		const accounts = await this.doOperation(async () => {
+			await this.cleanupDeprecatedAccounts();
+			const accounts = await this.readFromMemento();
+			return accounts.filter(account => account.key.providerId === providerId);
 		});
+		return accounts ?? [];
 	}
 
-	public getAllAccounts(): Thenable<azdata.Account[]> {
-		return this.doOperation(() => {
-			return this.cleanupDeprecatedAccounts().then(() => {
-				return this.readFromMemento();
-			});
+	public async getAllAccounts(): Promise<azdata.Account[]> {
+		const accounts = await this.doOperation(async () => {
+			await this.cleanupDeprecatedAccounts();
+			return this.readFromMemento();
 		});
+		return accounts ?? [];
 	}
 
-	public cleanupDeprecatedAccounts(): Thenable<void> {
+	public cleanupDeprecatedAccounts(): Promise<void> {
 		return this.readFromMemento()
 			.then(accounts => {
 				// No need to waste cycles
@@ -80,7 +81,7 @@ export default class AccountStore implements IAccountStore {
 			});
 	}
 
-	public remove(key: azdata.AccountKey): Thenable<boolean> {
+	public remove(key: azdata.AccountKey): Promise<boolean> {
 		return this.doOperation(() => {
 			return this.readFromMemento()
 				.then(accounts => this.removeFromAccountList(accounts, key))
@@ -89,7 +90,7 @@ export default class AccountStore implements IAccountStore {
 		});
 	}
 
-	public update(key: azdata.AccountKey, updateOperation: (account: azdata.Account) => void): Thenable<boolean> {
+	public update(key: azdata.AccountKey, updateOperation: (account: azdata.Account) => void): Promise<boolean> {
 		return this.doOperation(() => {
 			return this.readFromMemento()
 				.then(accounts => this.updateAccountList(accounts, key, updateOperation))
@@ -115,16 +116,16 @@ export default class AccountStore implements IAccountStore {
 		target.isStale = source.isStale;
 	}
 
-	private doOperation<T>(op: () => Thenable<T>) {
+	private doOperation<T>(op: () => Promise<T>): Promise<T | undefined> {
 		// Initialize the active operation to an empty promise if necessary
-		let activeOperation = this._activeOperation || Promise.resolve<any>(null);
+		let activeOperation = this._activeOperation || Promise.resolve();
 
 		// Chain the operation to perform to the end of the existing promise
 		activeOperation = activeOperation.then(op);
 
 		// Add a catch at the end to make sure we can continue after any errors
-		activeOperation = activeOperation.then(undefined, (err) => {
-			// TODO: Log the error
+		activeOperation = activeOperation.then(undefined, err => {
+			this.logService.error(err);
 		});
 
 		// Point the current active operation to this one
@@ -134,7 +135,7 @@ export default class AccountStore implements IAccountStore {
 
 	private addToAccountList(accounts: azdata.Account[], accountToAdd: azdata.Account): AccountListOperationResult {
 		// Check if the entry already exists
-		const match = firstIndex(accounts, account => AccountStore.findAccountByKey(account.key, accountToAdd.key));
+		const match = accounts.findIndex(account => AccountStore.findAccountByKey(account.key, accountToAdd.key));
 		if (match >= 0) {
 			// Account already exists, we won't do anything
 			return {
@@ -159,7 +160,7 @@ export default class AccountStore implements IAccountStore {
 
 	private removeFromAccountList(accounts: azdata.Account[], accountToRemove: azdata.AccountKey): AccountListOperationResult {
 		// Check if the entry exists
-		const match = firstIndex(accounts, account => AccountStore.findAccountByKey(account.key, accountToRemove));
+		const match = accounts.findIndex(account => AccountStore.findAccountByKey(account.key, accountToRemove));
 		if (match >= 0) {
 			// Account exists, remove it from the account list
 			accounts.splice(match, 1);
@@ -176,7 +177,7 @@ export default class AccountStore implements IAccountStore {
 
 	private updateAccountList(accounts: azdata.Account[], accountToUpdate: azdata.AccountKey, updateOperation: (account: azdata.Account) => void): AccountListOperationResult {
 		// Check if the entry exists
-		const match = firstIndex(accounts, account => AccountStore.findAccountByKey(account.key, accountToUpdate));
+		const match = accounts.findIndex(account => AccountStore.findAccountByKey(account.key, accountToUpdate));
 		if (match < 0) {
 			// Account doesn't exist, we won't do anything
 			return {
@@ -201,27 +202,30 @@ export default class AccountStore implements IAccountStore {
 	}
 
 	// MEMENTO IO METHODS //////////////////////////////////////////////////
-	private readFromMemento(): Thenable<azdata.Account[]> {
+	private readFromMemento(): Promise<azdata.Account[]> {
 		// Initialize the account list if it isn't already
 		let accounts = this._memento[AccountStore.MEMENTO_KEY];
 		if (!accounts) {
 			accounts = [];
 		}
-
+		this.logService.debug(`Read accounts from memento ${JSON.stringify(accounts)}`);
 		// Make a deep copy of the account list to ensure that the memento list isn't obliterated
 		accounts = deepClone(accounts);
 
 		return Promise.resolve(accounts);
 	}
 
-	private writeToMemento(accounts: azdata.Account[]): Thenable<void> {
+	private writeToMemento(accounts: azdata.Account[]): Promise<void> {
 		// Store a shallow copy of the account list to disconnect the memento list from the active list
 		this._memento[AccountStore.MEMENTO_KEY] = deepClone(accounts);
 		return Promise.resolve();
 	}
 }
 
-interface AccountListOperationResult extends AccountAdditionResult {
+interface AccountListOperationResult {
 	accountRemoved: boolean;
 	updatedAccounts: azdata.Account[];
+	changedAccount: azdata.Account | undefined;
+	accountAdded: boolean;
+	accountModified: boolean;
 }

@@ -4,18 +4,20 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as vscode from 'vscode';
+import { getAzdataApi } from './common/utils';
 import MainController from './controllers/mainController';
-import { ApiWrapper } from './common/apiWrapper';
+import { SqlDatabaseProjectProvider } from './projectProvider/projectProvider';
 
 let controllers: MainController[] = [];
 
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+export function activate(context: vscode.ExtensionContext): Promise<SqlDatabaseProjectProvider> {
+	void vscode.commands.executeCommand('setContext', 'azdataAvailable', !!getAzdataApi());
 	// Start the main controller
-	const mainController = new MainController(context, new ApiWrapper());
+	const mainController = new MainController(context);
 	controllers.push(mainController);
 	context.subscriptions.push(mainController);
 
-	await mainController.activate();
+	return mainController.activate();
 }
 
 export function deactivate(): void {

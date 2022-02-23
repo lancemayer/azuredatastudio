@@ -17,14 +17,16 @@ import { IWorkbenchThemeService } from 'vs/workbench/services/themes/common/work
 import { IComponent, IComponentDescriptor, IModelStore, ComponentEventType } from 'sql/platform/dashboard/browser/interfaces';
 import { isNumber } from 'vs/base/common/types';
 import { convertSize } from 'sql/base/browser/dom';
+import { onUnexpectedError } from 'vs/base/common/errors';
+import { ILogService } from 'vs/platform/log/common/log';
 
 @Component({
 	selector: 'modelview-checkbox',
 	template: `
-		<div #input width="100%" [style.display]="display"></div>
+		<div #input width="100%" [ngStyle]="CSSStyles"></div>
 	`
 })
-export default class CheckBoxComponent extends ComponentBase implements IComponent, OnDestroy, AfterViewInit {
+export default class CheckBoxComponent extends ComponentBase<azdata.CheckBoxProperties> implements IComponent, OnDestroy, AfterViewInit {
 	@Input() descriptor: IComponentDescriptor;
 	@Input() modelStore: IModelStore;
 	private _input: Checkbox;
@@ -33,13 +35,9 @@ export default class CheckBoxComponent extends ComponentBase implements ICompone
 	constructor(
 		@Inject(forwardRef(() => ChangeDetectorRef)) changeRef: ChangeDetectorRef,
 		@Inject(IWorkbenchThemeService) private themeService: IWorkbenchThemeService,
+		@Inject(ILogService) logService: ILogService,
 		@Inject(forwardRef(() => ElementRef)) el: ElementRef) {
-		super(changeRef, el);
-	}
-
-	ngOnInit(): void {
-		this.baseInit();
-
+		super(changeRef, el, logService);
 	}
 
 	ngAfterViewInit(): void {
@@ -62,9 +60,10 @@ export default class CheckBoxComponent extends ComponentBase implements ICompone
 			this._register(attachCheckboxStyler(this._input, this.themeService));
 			this._validations.push(() => !this.required || this.checked);
 		}
+		this.baseInit();
 	}
 
-	ngOnDestroy(): void {
+	override ngOnDestroy(): void {
 		this.baseDestroy();
 	}
 
@@ -75,7 +74,7 @@ export default class CheckBoxComponent extends ComponentBase implements ICompone
 		this.layout();
 	}
 
-	public setProperties(properties: { [key: string]: any; }): void {
+	public override setProperties(properties: { [key: string]: any; }): void {
 		super.setProperties(properties);
 		this._input.checked = this.checked;
 		this._input.label = this.label;
@@ -96,36 +95,42 @@ export default class CheckBoxComponent extends ComponentBase implements ICompone
 		if (this.required) {
 			this._input.required = this.required;
 		}
-		this.validate();
+		this.validate().catch(onUnexpectedError);
 	}
 
 	// CSS-bound properties
 
 	public get checked(): boolean {
-		return this.getPropertyOrDefault<azdata.CheckBoxProperties, boolean>((props) => props.checked, false);
+		return this.getPropertyOrDefault<boolean>((props) => props.checked, false);
 	}
 
 	public set checked(newValue: boolean) {
-		this.setPropertyFromUI<azdata.CheckBoxProperties, boolean>((properties, value) => { properties.checked = value; }, newValue);
+		this.setPropertyFromUI<boolean>((properties, value) => { properties.checked = value; }, newValue);
 	}
 
 	private get label(): string {
-		return this.getPropertyOrDefault<azdata.CheckBoxProperties, string>((props) => props.label, '');
+		return this.getPropertyOrDefault<string>((props) => props.label, '');
 	}
 
 	private set label(newValue: string) {
-		this.setPropertyFromUI<azdata.CheckBoxProperties, string>((properties, label) => { properties.label = label; }, newValue);
+		this.setPropertyFromUI<string>((properties, label) => { properties.label = label; }, newValue);
 	}
 
 	public get required(): boolean {
-		return this.getPropertyOrDefault<azdata.CheckBoxProperties, boolean>((props) => props.required, false);
+		return this.getPropertyOrDefault<boolean>((props) => props.required, false);
 	}
 
 	public set required(newValue: boolean) {
-		this.setPropertyFromUI<azdata.CheckBoxProperties, boolean>((props, value) => props.required = value, newValue);
+		this.setPropertyFromUI<boolean>((props, value) => props.required = value, newValue);
 	}
 
-	public focus(): void {
+	public override focus(): void {
 		this._input.focus();
+	}
+
+	public override get CSSStyles(): azdata.CssStyles {
+		return this.mergeCss(super.CSSStyles, {
+			'display': this.display
+		});
 	}
 }

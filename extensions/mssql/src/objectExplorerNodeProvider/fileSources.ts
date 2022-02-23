@@ -18,7 +18,6 @@ import { WebHDFS, HdfsError } from '../hdfs/webhdfs';
 import { PermissionStatus } from '../hdfs/aclEntry';
 import { Mount, MountStatus } from '../hdfs/mount';
 import { FileStatus, hdfsFileTypeToFileType } from '../hdfs/fileStatus';
-import { getIgnoreSslVerificationConfigSetting } from '../util/auth';
 
 const localize = nls.loadMessageBundle();
 
@@ -129,6 +128,7 @@ export interface IRequestParams {
 	timeout?: number;
 	agent?: https.Agent;
 	headers?: {};
+	rejectUnauthorized?: boolean;
 }
 
 export class FileSourceFactory {
@@ -143,19 +143,7 @@ export class FileSourceFactory {
 
 	public async createHdfsFileSource(options: IHdfsOptions): Promise<IFileSource> {
 		options = options && options.host ? FileSourceFactory.removePortFromHost(options) : options;
-		let requestParams: IRequestParams = options.requestParams ? options.requestParams : {};
-		if (requestParams.auth || requestParams.isKerberos) {
-			let agentOptions = {
-				host: options.host,
-				port: options.port,
-				path: constants.hdfsRootPath,
-				rejectUnauthorized: !getIgnoreSslVerificationConfigSetting()
-			};
-			let agent = new https.Agent(agentOptions);
-			requestParams['agent'] = agent;
-
-		}
-		return new HdfsFileSource(WebHDFS.createClient(options, requestParams));
+		return new HdfsFileSource(WebHDFS.createClient(options));
 	}
 
 	// remove port from host when port is specified after a comma or colon
@@ -258,7 +246,7 @@ class HdfsFileSource implements IFileSource {
 							'########################### ' + localize('maxSizeNotice', "NOTICE: This file has been truncated at {0} for preview. ", bytes(maxBytes)) + '############################### \r\n' +
 							'#################################################################################################################### \r\n';
 						data.splice(0, 0, Buffer.from(previewNote, 'utf-8'));
-						vscode.window.showWarningMessage(localize('maxSizeReached', "The file has been truncated at {0} for preview.", bytes(maxBytes)));
+						void vscode.window.showWarningMessage(localize('maxSizeReached', "The file has been truncated at {0} for preview.", bytes(maxBytes)));
 						resolve(Buffer.concat(data));
 					} else {
 						reject(error);
@@ -391,8 +379,7 @@ class HdfsFileSource implements IFileSource {
 	 * Sets the ACL status for given path
 	 * @param path The path to the file/folder to set the ACL on
 	 * @param fileType The type of file we're setting to determine if defaults should be applied. Use undefined if type is unknown
-	 * @param ownerEntry The status containing the permissions to set
-	 * @param aclEntries The ACL entries to set
+	 * @param permissionStatus The permissions to set
 	 */
 	public setAcl(path: string, fileType: FileType | undefined, permissionStatus: PermissionStatus): Promise<void> {
 		return new Promise((resolve, reject) => {

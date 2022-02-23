@@ -18,32 +18,37 @@ export class CustomDialogService {
 
 	constructor(@IInstantiationService private _instantiationService: IInstantiationService) { }
 
-	public showDialog(dialog: Dialog, dialogName?: string, options?: IModalOptions): void {
+	public showDialog(dialog: Dialog, dialogName?: string, options?: IModalOptions): DialogModal {
 		let name = dialogName ? dialogName : 'CustomDialog';
+
+		if (options && (options.dialogStyle === 'callout')) {
+			options.dialogProperties.xPos = document.activeElement.getBoundingClientRect().left;
+			options.dialogProperties.yPos = document.activeElement.getBoundingClientRect().top;
+			options.renderFooter = false;
+		}
 		let dialogModal = this._instantiationService.createInstance(DialogModal, dialog, name, options || DefaultDialogOptions);
 		this._dialogModals.set(dialog, dialogModal);
 		dialogModal.render();
 		dialogModal.open();
+		return dialogModal;
 	}
 
-	public showWizard(wizard: Wizard, options?: IModalOptions): void {
-		let wizardModal = this._instantiationService.createInstance(WizardModal, wizard, 'WizardPage', options || DefaultWizardOptions);
+	public showWizard(wizard: Wizard, options?: IModalOptions, source?: string): void {
+		let wizardModal = this._instantiationService.createInstance(WizardModal, wizard, options || DefaultWizardOptions);
 		this._wizardModals.set(wizard, wizardModal);
 		wizardModal.render();
-		wizardModal.open();
+		wizardModal.open(source);
 	}
 
 	public closeDialog(dialog: Dialog): void {
-		let dialogModal = this._dialogModals.get(dialog);
-		if (dialogModal) {
-			dialogModal.cancel();
-		}
+		this._dialogModals.get(dialog)?.cancel();
 	}
 
 	public closeWizard(wizard: Wizard): void {
-		let wizardModal = this._wizardModals.get(wizard);
-		if (wizardModal) {
-			wizardModal.cancel();
-		}
+		this._wizardModals.get(wizard)?.close();
+	}
+
+	public getWizardModal(wizard: Wizard): WizardModal | undefined {
+		return this._wizardModals.get(wizard);
 	}
 }

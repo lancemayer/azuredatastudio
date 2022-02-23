@@ -3,58 +3,87 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { tmpdir } from 'os';
+import { Promises } from 'vs/base/common/async';
+import { getErrorMessage } from 'vs/base/common/errors';
 import { Disposable } from 'vs/base/common/lifecycle';
-import { IFileService, IFileStatWithMetadata } from 'vs/platform/files/common/files';
-import { IExtensionGalleryService, IGalleryExtension, InstallOperation } from 'vs/platform/extensionManagement/common/extensionManagement';
-import { IEnvironmentService } from 'vs/platform/environment/common/environment';
-import { URI } from 'vs/base/common/uri';
-import { INativeEnvironmentService } from 'vs/platform/environment/node/environmentService';
+import { isWindows } from 'vs/base/common/platform';
 import { joinPath } from 'vs/base/common/resources';
-import { ExtensionIdentifierWithVersion, groupByExtension } from 'vs/platform/extensionManagement/common/extensionManagementUtil';
-import { ILogService } from 'vs/platform/log/common/log';
+import * as semver from 'vs/base/common/semver/semver';
+import { URI } from 'vs/base/common/uri';
 import { generateUuid } from 'vs/base/common/uuid';
-import * as semver from 'semver-umd';
+import { Promises as FSPromises } from 'vs/base/node/pfs';
+import { INativeEnvironmentService } from 'vs/platform/environment/common/environment';
+import { IExtensionGalleryService, IGalleryExtension, InstallOperation } from 'vs/platform/extensionManagement/common/extensionManagement';
+import { ExtensionIdentifierWithVersion, groupByExtension } from 'vs/platform/extensionManagement/common/extensionManagementUtil';
+import { IFileService, IFileStatWithMetadata } from 'vs/platform/files/common/files';
+import { ILogService } from 'vs/platform/log/common/log';
 
 const ExtensionIdVersionRegex = /^([^.]+\..+)-(\d+\.\d+\.\d+)$/;
 
 export class ExtensionsDownloader extends Disposable {
 
-	private readonly extensionsDownloadDir: URI = URI.file(tmpdir());
-	private readonly cache: number = 0;
-	private readonly cleanUpPromise: Promise<void> = Promise.resolve();
+	private readonly extensionsDownloadDir: URI;
+	private readonly cache: number;
+	private readonly cleanUpPromise: Promise<void>;
 
 	constructor(
-		@IEnvironmentService environmentService: INativeEnvironmentService,
+		@INativeEnvironmentService environmentService: INativeEnvironmentService,
 		@IFileService private readonly fileService: IFileService,
 		@IExtensionGalleryService private readonly extensionGalleryService: IExtensionGalleryService,
 		@ILogService private readonly logService: ILogService,
 	) {
 		super();
-		if (environmentService.extensionsDownloadPath) {
-			this.extensionsDownloadDir = URI.file(environmentService.extensionsDownloadPath);
-			this.cache = 20; // Cache 20 downloads
-			this.cleanUpPromise = this.cleanUp();
-		}
+		this.extensionsDownloadDir = URI.file(environmentService.extensionsDownloadPath);
+		this.cache = 20; // Cache 20 downloads
+		this.cleanUpPromise = this.cleanUp();
 	}
 
 	async downloadExtension(extension: IGalleryExtension, operation: InstallOperation): Promise<URI> {
 		await this.cleanUpPromise;
-		const location = joinPath(this.extensionsDownloadDir, this.getName(extension));
-		await this.download(extension, location, operation);
+		const vsixName = this.getName(extension);
+		const location = joinPath(this.extensionsDownloadDir, vsixName);
+
+		// Download only if vsix does not exist
+		if (!await this.fileService.exists(location)) {
+			// Download to temporary location first only if vsix does not exist
+			const tempLocation = joinPath(this.extensionsDownloadDir, `.${generateUuid()}`);
+			if (!await this.fileService.exists(tempLocation)) {
+				await this.extensionGalleryService.download(extension, tempLocation, operation);
+			}
+
+			try {
+				// Rename temp location to original
+				await this.rename(tempLocation, location, Date.now() + (2 * 60 * 1000) /* Retry for 2 minutes */);
+			} catch (error) {
+				try {
+					await this.fileService.del(tempLocation);
+				} catch (e) { /* ignore */ }
+				if (error.code === 'ENOTEMPTY') {
+					this.logService.info(`Rename failed because vsix was downloaded by another source. So ignoring renaming.`, extension.identifier.id);
+				} else {
+					this.logService.info(`Rename failed because of ${getErrorMessage(error)}. Deleted the vsix from downloaded location`, tempLocation.path);
+					throw error;
+				}
+			}
+
+		}
+
 		return location;
 	}
 
 	async delete(location: URI): Promise<void> {
-		// Delete immediately if caching is disabled
-		if (!this.cache) {
-			await this.fileService.del(location);
-		}
+		// noop as caching is enabled always
 	}
 
-	private async download(extension: IGalleryExtension, location: URI, operation: InstallOperation): Promise<void> {
-		if (!await this.fileService.exists(location)) {
-			await this.extensionGalleryService.download(extension, location, operation);
+	private async rename(from: URI, to: URI, retryUntil: number): Promise<void> {
+		try {
+			await FSPromises.rename(from.fsPath, to.fsPath);
+		} catch (error) {
+			if (isWindows && error && error.code === 'EPERM' && Date.now() < retryUntil) {
+				this.logService.info(`Failed renaming ${from} to ${to} with 'EPERM' error. Trying again...`);
+				return this.rename(from, to, retryUntil);
+			}
+			throw error;
 		}
 	}
 
@@ -74,7 +103,7 @@ export class ExtensionsDownloader extends Disposable {
 						all.push([extension, stat]);
 					}
 				}
-				const byExtension = groupByExtension(all, ([extension]) => extension.identifier);
+				const byExtension = groupByExtension(all, ([extension]) => extension);
 				const distinct: IFileStatWithMetadata[] = [];
 				for (const p of byExtension) {
 					p.sort((a, b) => semver.rcompare(a[0].version, b[0].version));
@@ -83,7 +112,7 @@ export class ExtensionsDownloader extends Disposable {
 				}
 				distinct.sort((a, b) => a.mtime - b.mtime); // sort by modified time
 				toDelete.push(...distinct.slice(0, Math.max(0, distinct.length - this.cache)).map(s => s.resource)); // Retain minimum cacheSize and delete the rest
-				await Promise.all(toDelete.map(resource => {
+				await Promises.settled(toDelete.map(resource => {
 					this.logService.trace('Deleting vsix from cache', resource.path);
 					return this.fileService.del(resource);
 				}));

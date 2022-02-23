@@ -6,11 +6,11 @@
 import { IAdsTelemetryService } from 'sql/platform/telemetry/common/telemetry';
 import { Registry } from 'vs/platform/registry/common/platform';
 import { Extensions as WorkbenchExtensions, IWorkbenchContributionsRegistry, IWorkbenchContribution } from 'vs/workbench/common/contributions';
-import { LifecyclePhase } from 'vs/platform/lifecycle/common/lifecycle';
+import { LifecyclePhase } from 'vs/workbench/services/lifecycle/common/lifecycle';
 import { Disposable } from 'vs/base/common/lifecycle';
 import { IStorageService } from 'vs/platform/storage/common/storage';
 import { ICommandService, ICommandEvent } from 'vs/platform/commands/common/commands';
-import { TelemetryView } from 'sql/platform/telemetry/common/telemetryKeys';
+import { TelemetryAction, TelemetryView } from 'sql/platform/telemetry/common/telemetryKeys';
 
 export class SqlTelemetryContribution extends Disposable implements IWorkbenchContribution {
 
@@ -33,8 +33,10 @@ export class SqlTelemetryContribution extends Disposable implements IWorkbenchCo
 						'tab',
 						'selectNextSuggestion'].some(id => id === e.commandId) &&
 						// Events from src\vs\editor\contrib\wordOperations\wordOperations.ts
-						!e.commandId.startsWith('cursor')) {
-						telemetryService.sendActionEvent(TelemetryView.Shell, 'adsCommandExecuted', e.commandId);
+						!e.commandId.startsWith('cursor') &&
+						!e.commandId.startsWith('_')) { // Commands starting with _ are internal commands which generally aren't useful to us currently
+						// Note - this event is duplicated in extHostCommands to also ensure logging of all commands contributed by extensions
+						telemetryService.sendActionEvent(TelemetryView.Shell, TelemetryAction.adsCommandExecuted, e.commandId);
 					}
 				}));
 	}

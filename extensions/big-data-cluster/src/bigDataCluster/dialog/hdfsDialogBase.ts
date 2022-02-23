@@ -4,10 +4,10 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as azdata from 'azdata';
-import { ClusterController, ControllerError, IEndPointsResponse } from '../controller/clusterControllerApi';
+import { ClusterController, ControllerError } from '../controller/clusterControllerApi';
 import { Deferred } from '../../common/promise';
 import * as loc from '../localizedConstants';
-import { AuthType } from 'bdc';
+import { AuthType, IEndPointsResponse } from 'bdc';
 
 function getAuthCategory(name: AuthType): azdata.CategoryValue {
 	if (name === 'basic') {
@@ -133,25 +133,25 @@ export abstract class HdfsDialogBase<T extends HdfsDialogProperties, R> {
 			this.uiModelBuilder = view.modelBuilder;
 
 			this.urlInputBox = this.uiModelBuilder.inputBox()
-				.withProperties<azdata.InputBoxProperties>({
+				.withProps({
 					placeHolder: loc.url.toLocaleLowerCase(),
 					value: this.model.props.url,
 					enabled: false
 				}).component();
 
-			this.authDropdown = this.uiModelBuilder.dropDown().withProperties({
+			this.authDropdown = this.uiModelBuilder.dropDown().withProps({
 				values: this.model.authCategories,
 				value: this.model.authCategory,
 				editable: false,
 			}).component();
 			this.authDropdown.onValueChanged(e => this.onAuthChanged());
 			this.usernameInputBox = this.uiModelBuilder.inputBox()
-				.withProperties<azdata.InputBoxProperties>({
+				.withProps({
 					placeHolder: loc.username.toLocaleLowerCase(),
 					value: this.model.props.username
 				}).component();
 			this.passwordInputBox = this.uiModelBuilder.inputBox()
-				.withProperties<azdata.InputBoxProperties>({
+				.withProps({
 					placeHolder: loc.password.toLocaleLowerCase(),
 					inputType: 'password',
 					value: this.model.props.password

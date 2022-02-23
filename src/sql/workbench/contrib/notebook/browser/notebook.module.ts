@@ -28,12 +28,19 @@ import { IMimeComponentRegistry, Extensions } from 'sql/workbench/contrib/notebo
 import { Registry } from 'vs/platform/registry/common/platform';
 import { LinkHandlerDirective } from 'sql/workbench/contrib/notebook/browser/cellViews/linkHandler.directive';
 import { IBootstrapParams, ISelector } from 'sql/workbench/services/bootstrap/common/bootstrapParams';
-import { ICellComponenetRegistry, Extensions as OutputComponentExtensions } from 'sql/platform/notebooks/common/outputRegistry';
+import { ICellComponentRegistry, Extensions as OutputComponentExtensions } from 'sql/platform/notebooks/common/outputRegistry';
 import { CollapseComponent } from 'sql/workbench/contrib/notebook/browser/cellViews/collapse.component';
 import { MarkdownToolbarComponent } from 'sql/workbench/contrib/notebook/browser/cellViews/markdownToolbar.component';
 import { CellToolbarComponent } from 'sql/workbench/contrib/notebook/browser/cellViews/cellToolbar.component';
+import { NotebookEditorComponent } from 'sql/workbench/contrib/notebook/browser/notebookEditor.component';
+import { NotebookViewComponent } from 'sql/workbench/contrib/notebook/browser/notebookViews/notebookViews.component';
+import { NotebookViewsCodeCellComponent } from 'sql/workbench/contrib/notebook/browser/notebookViews/notebookViewsCodeCell.component';
+import { NotebookViewsCardComponent } from 'sql/workbench/contrib/notebook/browser/notebookViews/notebookViewsCard.component';
+import { NotebookViewsGridComponent } from 'sql/workbench/contrib/notebook/browser/notebookViews/notebookViewsGrid.component';
+import { TextCellComponent } from 'sql/workbench/contrib/notebook/browser/cellViews/textCell.component';
+import { NotebookViewsModalComponent } from 'sql/workbench/contrib/notebook/browser/notebookViews/notebookViewsModal.component';
 
-const outputComponentRegistry = Registry.as<ICellComponenetRegistry>(OutputComponentExtensions.CellComponentContributions);
+const outputComponentRegistry = Registry.as<ICellComponentRegistry>(OutputComponentExtensions.CellComponentContributions);
 
 export const NotebookModule = (params, selector: string, instantiationService: IInstantiationService): any => {
 	let outputComponents = Registry.as<IMimeComponentRegistry>(Extensions.MimeComponentContribution).getAllCtors();
@@ -48,10 +55,17 @@ export const NotebookModule = (params, selector: string, instantiationService: I
 			LoadingSpinner,
 			CodeComponent,
 			CodeCellComponent,
+			TextCellComponent,
 			CellToolbarComponent,
 			MarkdownToolbarComponent,
 			PlaceholderCellComponent,
 			NotebookComponent,
+			NotebookEditorComponent,
+			NotebookViewComponent,
+			NotebookViewsCardComponent,
+			NotebookViewsGridComponent,
+			NotebookViewsCodeCellComponent,
+			NotebookViewsModalComponent,
 			ComponentHostDirective,
 			OutputAreaComponent,
 			OutputComponent,
@@ -61,7 +75,9 @@ export const NotebookModule = (params, selector: string, instantiationService: I
 			...outputComponents
 		],
 		entryComponents: [
-			NotebookComponent,
+			NotebookEditorComponent,
+			TextCellComponent,
+			NotebookViewsCardComponent,
 			...outputComponents
 		],
 		imports: [
@@ -86,7 +102,7 @@ export const NotebookModule = (params, selector: string, instantiationService: I
 		}
 
 		ngDoBootstrap(appRef: ApplicationRef) {
-			const factoryWrapper: any = this._resolver.resolveComponentFactory(NotebookComponent);
+			const factoryWrapper: any = this._resolver.resolveComponentFactory(NotebookEditorComponent);
 			factoryWrapper.factory.selector = this.selector;
 			appRef.bootstrap(factoryWrapper);
 		}

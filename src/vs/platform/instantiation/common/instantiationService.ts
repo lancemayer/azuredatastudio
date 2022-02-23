@@ -3,12 +3,12 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { illegalState } from 'vs/base/common/errors';
-import { Graph } from 'vs/platform/instantiation/common/graph';
-import { SyncDescriptor } from 'vs/platform/instantiation/common/descriptors';
-import { ServiceIdentifier, IInstantiationService, ServicesAccessor, _util, optional } from 'vs/platform/instantiation/common/instantiation';
-import { ServiceCollection } from 'vs/platform/instantiation/common/serviceCollection';
 import { IdleValue } from 'vs/base/common/async';
+import { illegalState } from 'vs/base/common/errors';
+import { SyncDescriptor } from 'vs/platform/instantiation/common/descriptors';
+import { Graph } from 'vs/platform/instantiation/common/graph';
+import { IInstantiationService, optional, ServiceIdentifier, ServicesAccessor, _util } from 'vs/platform/instantiation/common/instantiation';
+import { ServiceCollection } from 'vs/platform/instantiation/common/serviceCollection';
 
 // TRACING
 const _enableTracing = false;
@@ -16,13 +16,13 @@ const _enableTracing = false;
 class CyclicDependencyError extends Error {
 	constructor(graph: Graph<any>) {
 		super('cyclic dependency between services');
-		this.message = graph.toString();
+		this.message = graph.findCycleSlow() ?? `UNABLE to detect cycle, dumping graph: \n${graph.toString()}`;
 	}
 }
 
 export class InstantiationService implements IInstantiationService {
 
-	_serviceBrand: undefined;
+	declare readonly _serviceBrand: undefined;
 
 	private readonly _services: ServiceCollection;
 	private readonly _strict: boolean;
@@ -96,8 +96,7 @@ export class InstantiationService implements IInstantiationService {
 
 		// check for argument mismatches, adjust static args if needed
 		if (args.length !== firstServiceArgPos) {
-			console.warn(`[createInstance] First service dependency of ${ctor.name} at position ${
-				firstServiceArgPos + 1} conflicts with ${args.length} static arguments`);
+			console.warn(`[createInstance] First service dependency of ${ctor.name} at position ${firstServiceArgPos + 1} conflicts with ${args.length} static arguments`);
 
 			let delta = firstServiceArgPos - args.length;
 			if (delta > 0) {
@@ -133,15 +132,31 @@ export class InstantiationService implements IInstantiationService {
 	private _getOrCreateServiceInstance<T>(id: ServiceIdentifier<T>, _trace: Trace): T {
 		let thing = this._getServiceInstanceOrDescriptor(id);
 		if (thing instanceof SyncDescriptor) {
-			return this._createAndCacheServiceInstance(id, thing, _trace.branch(id, true));
+			return this._safeCreateAndCacheServiceInstance(id, thing, _trace.branch(id, true));
 		} else {
 			_trace.branch(id, false);
 			return thing;
 		}
 	}
 
+	private readonly _activeInstantiations = new Set<ServiceIdentifier<any>>();
+
+
+	private _safeCreateAndCacheServiceInstance<T>(id: ServiceIdentifier<T>, desc: SyncDescriptor<T>, _trace: Trace): T {
+		if (this._activeInstantiations.has(id)) {
+			throw new Error(`illegal state - RECURSIVELY instantiating service '${id}'`);
+		}
+		this._activeInstantiations.add(id);
+		try {
+			return this._createAndCacheServiceInstance(id, desc, _trace);
+		} finally {
+			this._activeInstantiations.delete(id);
+		}
+	}
+
 	private _createAndCacheServiceInstance<T>(id: ServiceIdentifier<T>, desc: SyncDescriptor<T>, _trace: Trace): T {
-		type Triple = { id: ServiceIdentifier<any>, desc: SyncDescriptor<any>, _trace: Trace };
+
+		type Triple = { id: ServiceIdentifier<any>, desc: SyncDescriptor<any>, _trace: Trace; };
 		const graph = new Graph<Triple>(data => data.id.toString());
 
 		let cycleCount = 0;
@@ -184,13 +199,18 @@ export class InstantiationService implements IInstantiationService {
 			}
 
 			for (const { data } of roots) {
-				// create instance and overwrite the service collections
-				const instance = this._createServiceInstanceWithOwner(data.id, data.desc.ctor, data.desc.staticArguments, data.desc.supportsDelayedInstantiation, data._trace);
-				this._setServiceInstance(data.id, instance);
+				// Repeat the check for this still being a service sync descriptor. That's because
+				// instantiating a dependency might have side-effect and recursively trigger instantiation
+				// so that some dependencies are now fullfilled already.
+				const instanceOrDesc = this._getServiceInstanceOrDescriptor(data.id);
+				if (instanceOrDesc instanceof SyncDescriptor) {
+					// create instance and overwrite the service collections
+					const instance = this._createServiceInstanceWithOwner(data.id, data.desc.ctor, data.desc.staticArguments, data.desc.supportsDelayedInstantiation, data._trace);
+					this._setServiceInstance(data.id, instance);
+				}
 				graph.removeNode(data);
 			}
 		}
-
 		return <T>this._getServiceInstanceOrDescriptor(id);
 	}
 
@@ -248,8 +268,8 @@ export class Trace {
 
 	private static readonly _None = new class extends Trace {
 		constructor() { super(-1, null); }
-		stop() { }
-		branch() { return this; }
+		override stop() { }
+		override branch() { return this; }
 	};
 
 	static traceInvocation(ctor: any): Trace {

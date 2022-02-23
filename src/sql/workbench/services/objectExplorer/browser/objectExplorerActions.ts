@@ -17,21 +17,20 @@ import { ICapabilitiesService } from 'sql/platform/capabilities/common/capabilit
 import { ConnectionProfile } from 'sql/platform/connection/common/connectionProfile';
 
 export class ObjectExplorerActionsContext implements azdata.ObjectExplorerContext {
-	public connectionProfile: azdata.IConnectionProfile;
-	public nodeInfo: azdata.NodeInfo;
+	public connectionProfile?: azdata.IConnectionProfile;
+	public nodeInfo?: azdata.NodeInfo;
 	public isConnectionNode: boolean = false;
 }
 
-export async function getTreeNode(context: ObjectExplorerActionsContext, objectExplorerService: IObjectExplorerService): Promise<TreeNode> {
+export async function getTreeNode(context: ObjectExplorerActionsContext, objectExplorerService: IObjectExplorerService): Promise<TreeNode | undefined> {
 	if (context.isConnectionNode) {
 		return Promise.resolve(undefined);
 	}
-	return await objectExplorerService.getTreeNode(context.connectionProfile.id, context.nodeInfo.nodePath);
+	return await objectExplorerService.getTreeNode(context?.connectionProfile?.id, context?.nodeInfo?.nodePath);
 }
 
 
 export class OEAction extends ExecuteCommandAction {
-	private _treeSelectionHandler: TreeSelectionHandler;
 
 	constructor(
 		id: string, label: string,
@@ -43,24 +42,26 @@ export class OEAction extends ExecuteCommandAction {
 		super(id, label, commandService);
 	}
 
-	public async run(actionContext: any): Promise<boolean> {
-		this._treeSelectionHandler = this._instantiationService.createInstance(TreeSelectionHandler);
+	public override async run(actionContext: any): Promise<void> {
+		const treeSelectionHandler = this._instantiationService.createInstance(TreeSelectionHandler);
 
-		let profile: IConnectionProfile;
+		let profile: IConnectionProfile | undefined = undefined;
 		if (actionContext instanceof ObjectExplorerActionsContext) {
 			if (actionContext.isConnectionNode) {
 				profile = new ConnectionProfile(this._capabilitiesService, actionContext.connectionProfile);
 			} else {
 				// Get the "correct" version from the tree
 				let treeNode = await getTreeNode(actionContext, this._objectExplorerService);
-				profile = TreeUpdateUtils.getConnectionProfile(treeNode);
+				if (treeNode) {
+					profile = TreeUpdateUtils.getConnectionProfile(treeNode);
+				}
 			}
 		}
-		this._treeSelectionHandler.onTreeActionStateChange(true);
-
-		return super.run(profile).then(() => {
-			this._treeSelectionHandler.onTreeActionStateChange(false);
-			return true;
-		});
+		treeSelectionHandler.onTreeActionStateChange(true);
+		if (profile) {
+			return super.run(profile).then(() => {
+				treeSelectionHandler.onTreeActionStateChange(false);
+			});
+		}
 	}
 }

@@ -5,7 +5,7 @@
 
 import { Disposable } from 'vs/base/common/lifecycle';
 import { ExtHostContext, MainThreadTreeViewsShape, ExtHostTreeViewsShape, MainContext, IExtHostContext } from 'vs/workbench/api/common/extHost.protocol';
-import { ITreeViewDataProvider, ITreeItem, IViewsService, ITreeView, IViewsRegistry, ITreeViewDescriptor, IRevealOptions, Extensions } from 'vs/workbench/common/views';
+import { ITreeViewDataProvider, ITreeItem, IViewsService, ITreeView, IViewsRegistry, ITreeViewDescriptor, IRevealOptions, Extensions, ResolvableTreeItem, ITreeViewDragAndDropController, ITreeDataTransfer } from 'vs/workbench/common/views';
 import { extHostNamedCustomer } from 'vs/workbench/api/common/extHostCustomers';
 import { distinct } from 'vs/base/common/arrays';
 import { INotificationService } from 'vs/platform/notification/common/notification';
@@ -13,6 +13,8 @@ import { isUndefinedOrNull, isNumber } from 'vs/base/common/types';
 import { Registry } from 'vs/platform/registry/common/platform';
 import { IExtensionService } from 'vs/workbench/services/extensions/common/extensions';
 import { ILogService } from 'vs/platform/log/common/log';
+import { IConnectionTreeService } from 'sql/workbench/services/connection/common/connectionTreeService'; // {{SQL CARBON EDIT}} Add our tree service
+import { TreeDataTransferConverter } from 'vs/workbench/api/common/shared/treeDataTransfer';
 
 @extHostNamedCustomer(MainContext.MainThreadTreeViews)
 export class MainThreadTreeViews extends Disposable implements MainThreadTreeViewsShape {
@@ -25,41 +27,47 @@ export class MainThreadTreeViews extends Disposable implements MainThreadTreeVie
 		@IViewsService private readonly viewsService: IViewsService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@IExtensionService private readonly extensionService: IExtensionService,
-		@ILogService private readonly logService: ILogService
+		@ILogService private readonly logService: ILogService,
+		@IConnectionTreeService private readonly connectionTreeService: IConnectionTreeService
 	) {
 		super();
 		this._proxy = extHostContext.getProxy(ExtHostContext.ExtHostTreeViews);
 	}
 
-	$registerTreeViewDataProvider(treeViewId: string, options: { showCollapseAll: boolean, canSelectMany: boolean }): void {
+	async $registerTreeViewDataProvider(treeViewId: string, options: { showCollapseAll: boolean, canSelectMany: boolean, canDragAndDrop: boolean }): Promise<void> {
 		this.logService.trace('MainThreadTreeViews#$registerTreeViewDataProvider', treeViewId, options);
 
 		this.extensionService.whenInstalledExtensionsRegistered().then(() => {
 			const dataProvider = new TreeViewDataProvider(treeViewId, this._proxy, this.notificationService);
 			this._dataProviders.set(treeViewId, dataProvider);
+			const dndController = options.canDragAndDrop ? new TreeViewDragAndDropController(treeViewId, this._proxy) : undefined;
 			const viewer = this.getTreeView(treeViewId);
 			if (viewer) {
 				// Order is important here. The internal tree isn't created until the dataProvider is set.
 				// Set all other properties first!
 				viewer.showCollapseAllAction = !!options.showCollapseAll;
 				viewer.canSelectMany = !!options.canSelectMany;
+				viewer.dragAndDropController = dndController;
 				viewer.dataProvider = dataProvider;
 				this.registerListeners(treeViewId, viewer);
 				this._proxy.$setVisible(treeViewId, viewer.visible);
+				// {{SQL CARBON EDIT}}
+			} else if (treeViewId.includes('connectionDialog')) {
+				this.connectionTreeService.registerTreeProvider(treeViewId, dataProvider);
 			} else {
 				this.notificationService.error('No view is registered with id: ' + treeViewId);
 			}
 		});
 	}
 
-	$reveal(treeViewId: string, item: ITreeItem, parentChain: ITreeItem[], options: IRevealOptions): Promise<void> {
-		this.logService.trace('MainThreadTreeViews#$reveal', treeViewId, item, parentChain, options);
+	$reveal(treeViewId: string, itemInfo: { item: ITreeItem, parentChain: ITreeItem[] } | undefined, options: IRevealOptions): Promise<void> {
+		this.logService.trace('MainThreadTreeViews#$reveal', treeViewId, itemInfo?.item, itemInfo?.parentChain, options);
 
 		return this.viewsService.openView(treeViewId, options.focus)
 			.then(() => {
 				const viewer = this.getTreeView(treeViewId);
-				if (viewer) {
-					return this.reveal(viewer, this._dataProviders.get(treeViewId)!, item, parentChain, options);
+				if (viewer && itemInfo) {
+					return this.reveal(viewer, this._dataProviders.get(treeViewId)!, itemInfo.item, itemInfo.parentChain, options);
 				}
 				return undefined;
 			});
@@ -73,6 +81,10 @@ export class MainThreadTreeViews extends Disposable implements MainThreadTreeVie
 		if (viewer && dataProvider) {
 			const itemsToRefresh = dataProvider.getItemsToRefresh(itemsToRefreshByHandle);
 			return viewer.refresh(itemsToRefresh.length ? itemsToRefresh : undefined);
+			// {{SQL CARBON EDIT}}
+		} else if (treeViewId.includes('connectionDialog')) {
+			const itemsToRefresh = dataProvider.getItemsToRefresh(itemsToRefreshByHandle);
+			return this.connectionTreeService.view?.refresh(itemsToRefresh.length ? itemsToRefresh : undefined);
 		}
 		return Promise.resolve();
 	}
@@ -86,12 +98,13 @@ export class MainThreadTreeViews extends Disposable implements MainThreadTreeVie
 		}
 	}
 
-	$setTitle(treeViewId: string, title: string): void {
-		this.logService.trace('MainThreadTreeViews#$setTitle', treeViewId, title);
+	$setTitle(treeViewId: string, title: string, description: string | undefined): void {
+		this.logService.trace('MainThreadTreeViews#$setTitle', treeViewId, title, description);
 
 		const viewer = this.getTreeView(treeViewId);
 		if (viewer) {
 			viewer.title = title;
+			viewer.description = description;
 		}
 	}
 
@@ -146,7 +159,7 @@ export class MainThreadTreeViews extends Disposable implements MainThreadTreeVie
 		return viewDescriptor ? viewDescriptor.treeView : null;
 	}
 
-	dispose(): void {
+	override dispose(): void {
 		this._dataProviders.forEach((dataProvider, treeViewId) => {
 			const treeView = this.getTreeView(treeViewId);
 			if (treeView) {
@@ -161,26 +174,38 @@ export class MainThreadTreeViews extends Disposable implements MainThreadTreeVie
 // {{SQL CARBON EDIT}}
 export type TreeItemHandle = string;
 
+class TreeViewDragAndDropController implements ITreeViewDragAndDropController {
+
+	constructor(private readonly treeViewId: string,
+		private readonly _proxy: ExtHostTreeViewsShape) { }
+
+	async onDrop(dataTransfer: ITreeDataTransfer, targetTreeItem: ITreeItem): Promise<void> {
+		return this._proxy.$onDrop(this.treeViewId, await TreeDataTransferConverter.toTreeDataTransferDTO(dataTransfer), targetTreeItem.handle);
+	}
+}
+
 // {{SQL CARBON EDIT}}
 export class TreeViewDataProvider implements ITreeViewDataProvider {
 
-	private readonly itemsMap: Map<TreeItemHandle, ITreeItem> = new Map<TreeItemHandle, ITreeItem>();
+	protected readonly itemsMap: Map<TreeItemHandle, ITreeItem> = new Map<TreeItemHandle, ITreeItem>(); // {{SQL CARBON EDIT}} For use by Component Tree View
+	protected hasResolve: Promise<boolean>; // {{SQL CARBON EDIT}} For use by Component Tree View
 
 	// {{SQL CARBON EDIT}}
 	constructor(protected readonly treeViewId: string,
 		protected readonly _proxy: ExtHostTreeViewsShape,
 		private readonly notificationService: INotificationService
 	) {
+		this.hasResolve = this._proxy.$hasResolve(this.treeViewId);
 	}
 
-	getChildren(treeItem?: ITreeItem): Promise<ITreeItem[]> {
-		return Promise.resolve(this._proxy.$getChildren(this.treeViewId, treeItem ? treeItem.handle : undefined)
+	getChildren(treeItem?: ITreeItem): Promise<ITreeItem[] | undefined> {
+		return this._proxy.$getChildren(this.treeViewId, treeItem ? treeItem.handle : undefined)
 			.then(
 				children => this.postGetChildren(children),
 				err => {
 					this.notificationService.error(err);
 					return [];
-				}));
+				});
 	}
 
 	getItemsToRefresh(itemsToRefreshByHandle: { [treeItemHandle: string]: ITreeItem }): ITreeItem[] {
@@ -217,12 +242,26 @@ export class TreeViewDataProvider implements ITreeViewDataProvider {
 		return this.itemsMap.size === 0;
 	}
 
-	private postGetChildren(elements: ITreeItem[]): ITreeItem[] {
-		const result: ITreeItem[] = [];
+	protected async postGetChildren(elements: ITreeItem[] | undefined): Promise<ITreeItem[] | undefined> { // {{SQL CARBON EDIT}} For use by Component Tree View
+		if (elements === undefined) {
+			return undefined;
+		}
+		const result: ITreeItem[] = []; // {{SQL CARBON EDIT}} We don't always return ResolvableTreeItems
+		const hasResolve = await this.hasResolve;
 		if (elements) {
 			for (const element of elements) {
-				this.itemsMap.set(element.handle, element);
-				result.push(element);
+				// {{SQL CARBON EDIT}} We rely on custom properties on the tree items in a number of places so creating a new item here was
+				// {{SQL CARBON EDIT}} clearing those. Revert to old behavior if the provider doesn't support a resolve (our normal case)
+				if (hasResolve) {
+					const resolvable = new ResolvableTreeItem(element, hasResolve ? (token) => {
+						return this._proxy.$resolve(this.treeViewId, element.handle, token);
+					} : undefined);
+					this.itemsMap.set(element.handle, resolvable);
+					result.push(resolvable);
+				} else {
+					this.itemsMap.set(element.handle, element);
+					result.push(element);
+				}
 			}
 		}
 		return result;
@@ -231,9 +270,13 @@ export class TreeViewDataProvider implements ITreeViewDataProvider {
 	private updateTreeItem(current: ITreeItem, treeItem: ITreeItem): void {
 		treeItem.children = treeItem.children ? treeItem.children : undefined;
 		if (current) {
-			const properties = distinct([...Object.keys(current), ...Object.keys(treeItem)]);
+			const properties = distinct([...Object.keys(current instanceof ResolvableTreeItem ? current.asTreeItem() : current),
+			...Object.keys(treeItem)]);
 			for (const property of properties) {
 				(<any>current)[property] = (<any>treeItem)[property];
+			}
+			if (current instanceof ResolvableTreeItem) {
+				current.resetResolve();
 			}
 		}
 	}

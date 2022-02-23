@@ -119,30 +119,30 @@ export class AddControllerDialog {
 			this.uiModelBuilder = view.modelBuilder;
 
 			this.urlInputBox = this.uiModelBuilder.inputBox()
-				.withProperties<azdata.InputBoxProperties>({
+				.withProps({
 					placeHolder: loc.url.toLocaleLowerCase(),
 					value: this.model.prefilledUrl
 				}).component();
-			this.authDropdown = this.uiModelBuilder.dropDown().withProperties({
+			this.authDropdown = this.uiModelBuilder.dropDown().withProps({
 				values: this.model.authCategories,
 				value: this.model.prefilledAuth,
 				editable: false,
 			}).component();
 			this.authDropdown.onValueChanged(e => this.onAuthChanged());
 			this.usernameInputBox = this.uiModelBuilder.inputBox()
-				.withProperties<azdata.InputBoxProperties>({
+				.withProps({
 					placeHolder: loc.usernameRequired.toLocaleLowerCase(),
 					value: this.model.prefilledUsername
 				}).component();
 			this.passwordInputBox = this.uiModelBuilder.inputBox()
-				.withProperties<azdata.InputBoxProperties>({
+				.withProps({
 					placeHolder: loc.password,
 					inputType: 'password',
 					value: this.model.prefilledPassword
 				})
 				.component();
 			this.rememberPwCheckBox = this.uiModelBuilder.checkBox()
-				.withProperties<azdata.CheckBoxProperties>({
+				.withProps({
 					label: loc.rememberPassword,
 					checked: this.model.prefilledRememberPassword
 				}).component();

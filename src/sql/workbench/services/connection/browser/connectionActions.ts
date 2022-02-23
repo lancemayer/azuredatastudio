@@ -17,7 +17,6 @@ import { EditDataInput } from 'sql/workbench/browser/editData/editDataInput';
 import { DashboardInput } from 'sql/workbench/browser/editor/profiler/dashboardInput';
 import { IClipboardService } from 'vs/platform/clipboard/common/clipboardService';
 import { IQuickInputService } from 'vs/platform/quickinput/common/quickInput';
-import { find } from 'vs/base/common/arrays';
 
 /**
  * Workbench action to clear the recent connnections list
@@ -49,7 +48,7 @@ export class ClearRecentConnectionsAction extends Action {
 		this._useConfirmationMessage = value;
 	}
 
-	public run(): Promise<void> {
+	public override run(): Promise<void> {
 		if (this._useConfirmationMessage) {
 			return this.promptConfirmationMessage().then(result => {
 				if (result.confirmed) {
@@ -83,7 +82,7 @@ export class ClearRecentConnectionsAction extends Action {
 			];
 
 			self._quickInputService.pick(choices.map(x => x.key), { placeHolder: nls.localize('ClearRecentlyUsedLabel', "Clear List"), ignoreFocusLost: true }).then((choice) => {
-				let confirm = find(choices, x => x.key === choice);
+				let confirm = choices.find(x => x.key === choice);
 				resolve(confirm && confirm.value);
 			});
 		});
@@ -125,7 +124,7 @@ export class ClearSingleRecentConnectionAction extends Action {
 		this.enabled = true;
 	}
 
-	public run(): Promise<void> {
+	public override run(): Promise<void> {
 		return new Promise<void>((resolve, reject) => {
 			resolve(this._connectionManagementService.clearRecentConnection(this._connectionProfile));
 			this._onRecentConnectionRemoved.fire();
@@ -153,7 +152,7 @@ export class GetCurrentConnectionStringAction extends Action {
 		this.enabled = true;
 	}
 
-	public run(): Promise<void> {
+	public override run(): Promise<void> {
 		return new Promise<void>((resolve, reject) => {
 			let activeInput = this._editorService.activeEditor;
 			if (activeInput && (activeInput instanceof QueryEditorInput || activeInput instanceof EditDataInput || activeInput instanceof DashboardInput)

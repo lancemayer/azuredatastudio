@@ -26,7 +26,6 @@
 	flex: 1 1;
 	min-height: 120px;
 	overflow: hidden;
-	margin: 0px 11px;
 }
 
 .connection-dialog .tab-container {
@@ -34,16 +33,6 @@
 	flex: 1 1;
 	display: flex;
 	flex-direction: column;
-}
-
-.connection-recent, .connection-saved {
-	flex: 1 1;
-	overflow-y: auto;
-}
-
-.no-recent-connections, .no-saved-connections {
-	font-size: 12px;
-	padding-top: 5px;
 }
 
 .connection-history-label {
@@ -60,7 +49,6 @@
 }
 
 .connection-provider-info {
-	overflow-y: hidden;
 	margin: 15px;
 }
 
@@ -79,10 +67,6 @@
 	table-layout: fixed;
 }
 
-.connection-saved-content {
-	height: 100%;
-}
-
 .connection-type {
 	flex: 0 0 auto;
 	overflow: hidden;
@@ -97,14 +81,6 @@
 	height: 100%;
 }
 
-.connection-saved-tab {
-	height: 100%;
-}
-
-.connection-saved {
-	height: 100%;
-}
-
 .vs-dark .connection-dialog .connection-history-actions .action-label.codicon,
 .hc-black .connection-dialog .connection-history-actions .action-label.codicon,
 .connection-dialog .connection-history-actions .action-label.codicon {
@@ -116,6 +92,7 @@
 	background-position: 2px center;
 	background-repeat: no-repeat;
 	padding-left: 25px;
+	width: auto;
 }
 
 .search-action.clear-search-results {
@@ -163,4 +140,9 @@
 .connection-input .monaco-inputbox .monaco-action-bar .action-item .codicon {
 	width: 8px;
 	height: 8px;
+}
+
+.connection-dialog .explorer-servers .connection-profile .monaco-tl-twistie {
+	/* Hide twisties */
+	display: none !important;
 }

@@ -12,6 +12,10 @@ import { CustomDialogService } from 'sql/workbench/services/dialog/browser/custo
 import { Dialog, DialogTab, Wizard } from 'sql/workbench/services/dialog/common/dialogTypes';
 import { ExtHostModelViewDialogShape } from 'sql/workbench/api/common/sqlExtHost.protocol';
 import { Emitter } from 'vs/base/common/event';
+import { TestInstantiationService } from 'vs/platform/instantiation/test/common/instantiationServiceMock';
+import { TestDialogModal } from 'sql/workbench/services/dialog/test/browser/testDialogModal';
+import { IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
+import { MockContextKeyService } from 'vs/platform/keybinding/test/common/mockKeybindingService';
 
 
 suite('MainThreadModelViewDialog Tests', () => {
@@ -52,6 +56,7 @@ suite('MainThreadModelViewDialog Tests', () => {
 	let page2Handle = 12;
 	let wizardHandle = 13;
 	let page3Handle = 14;
+	let source = 'command palette';
 
 	setup(() => {
 		mockExtHostModelViewDialog = Mock.ofInstance(<ExtHostModelViewDialogShape>{
@@ -65,15 +70,20 @@ suite('MainThreadModelViewDialog Tests', () => {
 		let extHostContext = <IExtHostContext>{
 			getProxy: proxyType => mockExtHostModelViewDialog.object
 		};
-		mainThreadModelViewDialog = new MainThreadModelViewDialog(extHostContext, undefined, undefined);
+		mainThreadModelViewDialog = new MainThreadModelViewDialog(extHostContext, undefined, undefined, undefined);
 
 		// Set up the mock dialog service
 		mockDialogService = Mock.ofType(CustomDialogService, undefined);
+		const testInstantiationService = new TestInstantiationService();
+		testInstantiationService.set(IContextKeyService, new MockContextKeyService());
+		const testDialogModal = testInstantiationService.createInstance(TestDialogModal);
 		openedDialog = undefined;
 		mockDialogService.setup(x => x.showDialog(It.isAny(), undefined, It.isAny())).callback((dialog) => {
 			openedDialog = dialog;
-		});
-		mockDialogService.setup(x => x.showWizard(It.isAny(), It.isAny())).callback(wizard => {
+			return {};
+		}).returns(() => testDialogModal);
+
+		mockDialogService.setup(x => x.showWizard(It.isAny(), It.isAny(), It.isAny())).callback(wizard => {
 			openedWizard = wizard;
 			// The actual service will set the page to 0 when it opens the wizard
 			openedWizard.setCurrentPage(0);
@@ -112,6 +122,11 @@ suite('MainThreadModelViewDialog Tests', () => {
 		dialogDetails = {
 			title: 'dialog1',
 			width: 'narrow',
+			dialogStyle: 'callout',
+			dialogPosition: 'left',
+			renderHeader: true,
+			renderFooter: true,
+			dialogProperties: { xPos: 1200, yPos: 100, width: 20, height: 20 },
 			content: [tab1Handle, tab2Handle],
 			okButton: okButtonHandle,
 			cancelButton: cancelButtonHandle,
@@ -140,14 +155,16 @@ suite('MainThreadModelViewDialog Tests', () => {
 			content: 'content1',
 			enabled: true,
 			customButtons: [],
-			description: 'description1'
+			description: 'description1',
+			pageName: 'pageName1'
 		};
 		page2Details = {
 			title: 'page2',
 			content: 'content2',
 			enabled: true,
 			customButtons: [button1Handle, button2Handle],
-			description: 'description2'
+			description: 'description2',
+			pageName: undefined
 		};
 		wizardDetails = {
 			backButton: backButtonHandle,
@@ -188,22 +205,22 @@ suite('MainThreadModelViewDialog Tests', () => {
 
 		// Then the opened dialog's content and buttons match what was set
 		mockDialogService.verify(x => x.showDialog(It.isAny(), undefined, It.isAny()), Times.once());
-		assert.notEqual(openedDialog, undefined);
-		assert.equal(openedDialog.title, dialogDetails.title);
-		assert.equal(openedDialog.okButton.label, okButtonDetails.label);
-		assert.equal(openedDialog.okButton.enabled, okButtonDetails.enabled);
-		assert.equal(openedDialog.cancelButton.label, cancelButtonDetails.label);
-		assert.equal(openedDialog.cancelButton.enabled, cancelButtonDetails.enabled);
-		assert.equal(openedDialog.customButtons.length, 2);
-		assert.equal(openedDialog.customButtons[0].label, button1Details.label);
-		assert.equal(openedDialog.customButtons[0].enabled, button1Details.enabled);
-		assert.equal(openedDialog.customButtons[1].label, button2Details.label);
-		assert.equal(openedDialog.customButtons[1].enabled, button2Details.enabled);
-		assert.equal(openedDialog.content.length, 2);
-		assert.equal((openedDialog.content[0] as DialogTab).content, tab1Details.content);
-		assert.equal((openedDialog.content[0] as DialogTab).title, tab1Details.title);
-		assert.equal((openedDialog.content[1] as DialogTab).content, tab2Details.content);
-		assert.equal((openedDialog.content[1] as DialogTab).title, tab2Details.title);
+		assert.notStrictEqual(openedDialog, undefined);
+		assert.strictEqual(openedDialog.title, dialogDetails.title);
+		assert.strictEqual(openedDialog.okButton.label, okButtonDetails.label);
+		assert.strictEqual(openedDialog.okButton.enabled, okButtonDetails.enabled);
+		assert.strictEqual(openedDialog.cancelButton.label, cancelButtonDetails.label);
+		assert.strictEqual(openedDialog.cancelButton.enabled, cancelButtonDetails.enabled);
+		assert.strictEqual(openedDialog.customButtons.length, 2);
+		assert.strictEqual(openedDialog.customButtons[0].label, button1Details.label);
+		assert.strictEqual(openedDialog.customButtons[0].enabled, button1Details.enabled);
+		assert.strictEqual(openedDialog.customButtons[1].label, button2Details.label);
+		assert.strictEqual(openedDialog.customButtons[1].enabled, button2Details.enabled);
+		assert.strictEqual(openedDialog.content.length, 2);
+		assert.strictEqual((openedDialog.content[0] as DialogTab).content, tab1Details.content);
+		assert.strictEqual((openedDialog.content[0] as DialogTab).title, tab1Details.title);
+		assert.strictEqual((openedDialog.content[1] as DialogTab).content, tab2Details.content);
+		assert.strictEqual((openedDialog.content[1] as DialogTab).title, tab2Details.title);
 	});
 
 	test('Button presses are forwarded to the extension host', () => {
@@ -235,46 +252,46 @@ suite('MainThreadModelViewDialog Tests', () => {
 		okEmitter.fire();
 
 		// Verify that the correct button click notifications were sent to the proxy
-		assert.deepEqual(pressedHandles, [button1Handle, button2Handle, okButtonHandle, cancelButtonHandle, button2Handle, cancelButtonHandle, button1Handle, okButtonHandle]);
+		assert.deepStrictEqual(pressedHandles, [button1Handle, button2Handle, okButtonHandle, cancelButtonHandle, button2Handle, cancelButtonHandle, button1Handle, okButtonHandle]);
 	});
 
 	test('Creating a wizard and calling open on it causes a wizard with correct pages and buttons to open', () => {
 		// If I open the wizard
-		mainThreadModelViewDialog.$openWizard(wizardHandle);
+		mainThreadModelViewDialog.$openWizard(wizardHandle, source);
 
 		// Then the opened wizard's content and buttons match what was set
-		mockDialogService.verify(x => x.showWizard(It.isAny(), It.isAny()), Times.once());
-		assert.notEqual(openedWizard, undefined);
-		assert.equal(openedWizard.title, wizardDetails.title);
-		assert.equal(openedWizard.doneButton.label, okButtonDetails.label);
-		assert.equal(openedWizard.doneButton.enabled, okButtonDetails.enabled);
-		assert.equal(openedWizard.cancelButton.label, cancelButtonDetails.label);
-		assert.equal(openedWizard.cancelButton.enabled, cancelButtonDetails.enabled);
-		assert.equal(openedWizard.customButtons.length, 0);
-		assert.equal(openedWizard.pages.length, 2);
-		assert.equal(openedWizard.currentPage, 0);
-		assert.equal(openedWizard.displayPageTitles, wizardDetails.displayPageTitles);
+		mockDialogService.verify(x => x.showWizard(It.isAny(), It.isAny(), It.isAny()), Times.once());
+		assert.notStrictEqual(openedWizard, undefined);
+		assert.strictEqual(openedWizard.title, wizardDetails.title);
+		assert.strictEqual(openedWizard.doneButton.label, okButtonDetails.label);
+		assert.strictEqual(openedWizard.doneButton.enabled, okButtonDetails.enabled);
+		assert.strictEqual(openedWizard.cancelButton.label, cancelButtonDetails.label);
+		assert.strictEqual(openedWizard.cancelButton.enabled, cancelButtonDetails.enabled);
+		assert.strictEqual(openedWizard.customButtons.length, 0);
+		assert.strictEqual(openedWizard.pages.length, 2);
+		assert.strictEqual(openedWizard.currentPage, 0);
+		assert.strictEqual(openedWizard.displayPageTitles, wizardDetails.displayPageTitles);
 		let page1 = openedWizard.pages[0];
-		assert.equal(page1.title, page1Details.title);
-		assert.equal(page1.content, page1Details.content);
-		assert.equal(page1.enabled, page1Details.enabled);
-		assert.equal(page1.valid, true);
-		assert.equal(page1.customButtons.length, 0);
-		assert.equal(page1.description, page1Details.description);
+		assert.strictEqual(page1.title, page1Details.title);
+		assert.strictEqual(page1.content, page1Details.content);
+		assert.strictEqual(page1.enabled, page1Details.enabled);
+		assert.strictEqual(page1.valid, true);
+		assert.strictEqual(page1.customButtons.length, 0);
+		assert.strictEqual(page1.description, page1Details.description);
 		let page2 = openedWizard.pages[1];
-		assert.equal(page2.title, page2Details.title);
-		assert.equal(page2.content, page2Details.content);
-		assert.equal(page2.enabled, page2Details.enabled);
-		assert.equal(page2.valid, true);
-		assert.equal(page2.customButtons.length, 2);
-		assert.equal(page2.description, page2Details.description);
+		assert.strictEqual(page2.title, page2Details.title);
+		assert.strictEqual(page2.content, page2Details.content);
+		assert.strictEqual(page2.enabled, page2Details.enabled);
+		assert.strictEqual(page2.valid, true);
+		assert.strictEqual(page2.customButtons.length, 2);
+		assert.strictEqual(page2.description, page2Details.description);
 	});
 
 	test('The extension host gets notified when wizard page change events occur', () => {
 		mockExtHostModelViewDialog.setup(x => x.$onWizardPageChanged(It.isAny(), It.isAny()));
 
 		// If I open the wizard and change the page to index 1
-		mainThreadModelViewDialog.$openWizard(wizardHandle);
+		mainThreadModelViewDialog.$openWizard(wizardHandle, source);
 		openedWizard.setCurrentPage(1);
 
 		// Then a page changed event gets sent to the extension host
@@ -302,11 +319,12 @@ suite('MainThreadModelViewDialog Tests', () => {
 			content: 'content_3',
 			customButtons: [],
 			enabled: true,
-			description: undefined
+			description: undefined,
+			pageName: undefined
 		};
 
 		// If I open the wizard and then add a page
-		mainThreadModelViewDialog.$openWizard(wizardHandle);
+		mainThreadModelViewDialog.$openWizard(wizardHandle, source);
 		mainThreadModelViewDialog.$setWizardPageDetails(page3Handle, page3Details);
 		mainThreadModelViewDialog.$addWizardPage(wizardHandle, page3Handle, 0);
 
@@ -321,7 +339,7 @@ suite('MainThreadModelViewDialog Tests', () => {
 		mockExtHostModelViewDialog.setup(x => x.$updateWizardPageInfo(It.isAny(), It.isAny(), It.isAny()));
 
 		// If I open the wizard and then remove a page
-		mainThreadModelViewDialog.$openWizard(wizardHandle);
+		mainThreadModelViewDialog.$openWizard(wizardHandle, source);
 		mainThreadModelViewDialog.$removeWizardPage(wizardHandle, 0);
 
 		// Then the updated page info gets sent to the extension host
@@ -335,7 +353,7 @@ suite('MainThreadModelViewDialog Tests', () => {
 		mockExtHostModelViewDialog.setup(x => x.$validateNavigation(It.isAny(), It.isAny()));
 
 		// If I call validateNavigation on the wizard that gets created
-		mainThreadModelViewDialog.$openWizard(wizardHandle);
+		mainThreadModelViewDialog.$openWizard(wizardHandle, source);
 		openedWizard.validateNavigation(1);
 
 		// Then the call gets forwarded to the extension host
@@ -343,7 +361,7 @@ suite('MainThreadModelViewDialog Tests', () => {
 	});
 
 	test('Adding a message to a wizard fires events on the created wizard', () => {
-		mainThreadModelViewDialog.$openWizard(wizardHandle);
+		mainThreadModelViewDialog.$openWizard(wizardHandle, source);
 		let newMessage: DialogMessage;
 		openedWizard.onMessageChange(message => newMessage = message);
 
@@ -355,8 +373,8 @@ suite('MainThreadModelViewDialog Tests', () => {
 		mainThreadModelViewDialog.$setWizardDetails(wizardHandle, wizardDetails);
 
 		// Then the message gets changed on the wizard
-		assert.equal(newMessage, wizardDetails.message, 'New message was not included in the fired event');
-		assert.equal(openedWizard.message, wizardDetails.message, 'New message was not set on the wizard');
+		assert.strictEqual(newMessage, wizardDetails.message, 'New message was not included in the fired event');
+		assert.strictEqual(openedWizard.message, wizardDetails.message, 'New message was not set on the wizard');
 	});
 
 	test('Creating a dialog adds a close validation that calls the extension host', () => {

@@ -5,9 +5,9 @@
 /**
  * This code is also used by standalone cli's. Avoid adding dependencies to keep the size of the cli small.
  */
-import * as paths from 'vs/base/common/path';
 import * as fs from 'fs';
 import * as os from 'os';
+import * as paths from 'vs/base/common/path';
 import { resolveTerminalEncoding } from 'vs/base/node/terminalEncoding';
 
 export function hasStdinWithoutTty() {
@@ -20,14 +20,14 @@ export function hasStdinWithoutTty() {
 }
 
 export function stdinDataListener(durationinMs: number): Promise<boolean> {
-	return new Promise(c => {
-		const dataListener = () => c(true);
+	return new Promise(resolve => {
+		const dataListener = () => resolve(true);
 
 		// wait for 1s maximum...
 		setTimeout(() => {
 			process.stdin.removeListener('data', dataListener);
 
-			c(false);
+			resolve(false);
 		}, durationinMs);
 
 		// ...but finish early if we detect data
@@ -36,7 +36,7 @@ export function stdinDataListener(durationinMs: number): Promise<boolean> {
 }
 
 export function getStdinFilePath(): string {
-	return paths.join(os.tmpdir(), `code-stdin-${Math.random().toString(36).replace(/[^a-z]+/g, '').substr(0, 3)}.txt`);
+	return paths.join(os.tmpdir(), `code-stdin-${Math.random().toString(36).replace(/[^a-z]+/g, '').substr(0, 3)}`);
 }
 
 export async function readFromStdin(targetPath: string, verbose: boolean): Promise<void> {
@@ -46,13 +46,22 @@ export async function readFromStdin(targetPath: string, verbose: boolean): Promi
 
 	let encoding = await resolveTerminalEncoding(verbose);
 
-	const iconv = await import('iconv-lite');
+	const iconv = await import('iconv-lite-umd');
 	if (!iconv.encodingExists(encoding)) {
 		console.log(`Unsupported terminal encoding: ${encoding}, falling back to UTF-8.`);
 		encoding = 'utf8';
 	}
 
 	// Pipe into tmp file using terminals encoding
-	const converterStream = iconv.decodeStream(encoding);
-	process.stdin.pipe(converterStream).pipe(stdinFileStream);
+	const decoder = iconv.getDecoder(encoding);
+	process.stdin.on('data', chunk => stdinFileStream.write(decoder.write(chunk)));
+	process.stdin.on('end', () => {
+		const end = decoder.end();
+		if (typeof end === 'string') {
+			stdinFileStream.write(end);
+		}
+		stdinFileStream.end();
+	});
+	process.stdin.on('error', error => stdinFileStream.destroy(error));
+	process.stdin.on('close', () => stdinFileStream.close());
 }

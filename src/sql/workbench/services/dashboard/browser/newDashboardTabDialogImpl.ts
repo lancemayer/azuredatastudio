@@ -10,7 +10,7 @@ import { List } from 'vs/base/browser/ui/list/listWidget';
 import { Event, Emitter } from 'vs/base/common/event';
 import { localize } from 'vs/nls';
 import { IThemeService } from 'vs/platform/theme/common/themeService';
-import { attachListStyler } from 'vs/platform/theme/common/styler';
+import { attachButtonStyler, attachListStyler } from 'vs/platform/theme/common/styler';
 import { IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
 import { IListVirtualDelegate, IListRenderer } from 'vs/base/browser/ui/list/list';
 import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
@@ -18,7 +18,6 @@ import { KeyCode } from 'vs/base/common/keyCodes';
 
 import { Button } from 'sql/base/browser/ui/button/button';
 import { Modal } from 'sql/workbench/browser/modal/modal';
-import { attachButtonStyler } from 'sql/platform/theme/common/styler';
 import * as TelemetryKeys from 'sql/platform/telemetry/common/telemetryKeys';
 import { NewDashboardTabViewModel, IDashboardUITab } from 'sql/workbench/services/dashboard/browser/newDashboardTabViewModel';
 import { IDashboardTab } from 'sql/workbench/services/dashboard/browser/common/interfaces';
@@ -76,7 +75,7 @@ class ExtensionListRenderer implements IListRenderer<IDashboardUITab, ExtensionL
 			templateData.icon.classList.add(ExtensionListRenderer.OPENED_TAB_CLASS);
 		}
 		templateData.title.innerText = dashboardTab.tabConfig.title;
-		templateData.description.innerText = dashboardTab.tabConfig.description;
+		templateData.description.innerText = dashboardTab.tabConfig.description ?? '';
 		templateData.publisher.innerText = dashboardTab.tabConfig.publisher;
 	}
 
@@ -92,11 +91,11 @@ class ExtensionListRenderer implements IListRenderer<IDashboardUITab, ExtensionL
 export class NewDashboardTabDialog extends Modal {
 
 	// MEMBER letIABLES ////////////////////////////////////////////////////
-	private _addNewTabButton: Button;
-	private _cancelButton: Button;
-	private _extensionList: List<IDashboardUITab>;
-	private _extensionViewContainer: HTMLElement;
-	private _noExtensionViewContainer: HTMLElement;
+	private _addNewTabButton?: Button;
+	private _cancelButton?: Button;
+	private _extensionList?: List<IDashboardUITab>;
+	private _extensionViewContainer?: HTMLElement;
+	private _noExtensionViewContainer?: HTMLElement;
 
 	private _viewModel: NewDashboardTabViewModel;
 
@@ -118,7 +117,7 @@ export class NewDashboardTabDialog extends Modal {
 	) {
 		super(
 			localize('newDashboardTab.openDashboardExtensions', "Open dashboard extensions"),
-			TelemetryKeys.AddNewDashboardTab,
+			TelemetryKeys.ModalDialogName.AddNewDashboardTab,
 			telemetryService,
 			layoutService,
 			clipboardService,
@@ -139,15 +138,15 @@ export class NewDashboardTabDialog extends Modal {
 
 	// MODAL OVERRIDE METHODS //////////////////////////////////////////////
 	protected layout(height?: number): void {
-		this._extensionList.layout(height);
+		this._extensionList!.layout(height);
 	}
 
-	public render() {
+	public override render() {
 		super.render();
 		attachModalDialogStyler(this, this._themeService);
 
 		this._addNewTabButton = this.addFooterButton(localize('newDashboardTab.ok', "OK"), () => this.addNewTabs());
-		this._cancelButton = this.addFooterButton(localize('newDashboardTab.cancel', "Cancel"), () => this.cancel());
+		this._cancelButton = this.addFooterButton(localize('newDashboardTab.cancel', "Cancel"), () => this.cancel(), 'right', true);
 		this.registerListeners();
 	}
 
@@ -188,33 +187,33 @@ export class NewDashboardTabDialog extends Modal {
 
 	private registerListeners(): void {
 		// Theme styler
-		this._register(attachButtonStyler(this._cancelButton, this._themeService));
-		this._register(attachButtonStyler(this._addNewTabButton, this._themeService));
+		this._register(attachButtonStyler(this._cancelButton!, this._themeService));
+		this._register(attachButtonStyler(this._addNewTabButton!, this._themeService));
 	}
 
 	/* Overwrite escape key behavior */
-	protected onClose() {
+	protected override onClose() {
 		this.cancel();
 	}
 
 	/* Overwrite enter key behavior */
-	protected onAccept() {
+	protected override onAccept() {
 		this.addNewTabs();
 	}
 
 	public close() {
-		this.hide();
+		this.hide('close');
 	}
 
 	private addNewTabs() {
-		if (this._addNewTabButton.enabled) {
-			let selectedTabs = this._extensionList.getSelectedElements();
+		if (this._addNewTabButton!.enabled) {
+			let selectedTabs = this._extensionList!.getSelectedElements();
 			this._onAddTabs.fire(selectedTabs);
 		}
 	}
 
 	public cancel() {
-		this.hide();
+		this.hide('cancel');
 	}
 
 	public open(dashboardTabs: Array<IDashboardTab>, openedTabs: Array<IDashboardTab>) {
@@ -223,23 +222,23 @@ export class NewDashboardTabDialog extends Modal {
 	}
 
 	private onUpdateTabList(tabs: IDashboardUITab[]) {
-		this._extensionList.splice(0, this._extensionList.length, tabs);
+		this._extensionList!.splice(0, this._extensionList!.length, tabs);
 		this.layout();
-		if (this._extensionList.length > 0) {
-			this._extensionViewContainer.hidden = false;
-			this._noExtensionViewContainer.hidden = true;
-			this._extensionList.setSelection([0]);
-			this._extensionList.domFocus();
-			this._addNewTabButton.enabled = true;
+		if (this._extensionList!.length > 0) {
+			this._extensionViewContainer!.hidden = false;
+			this._noExtensionViewContainer!.hidden = true;
+			this._extensionList!.setSelection([0]);
+			this._extensionList!.domFocus();
+			this._addNewTabButton!.enabled = true;
 		} else {
-			this._extensionViewContainer.hidden = true;
-			this._noExtensionViewContainer.hidden = false;
-			this._addNewTabButton.enabled = false;
-			this._cancelButton.focus();
+			this._extensionViewContainer!.hidden = true;
+			this._noExtensionViewContainer!.hidden = false;
+			this._addNewTabButton!.enabled = false;
+			this._cancelButton!.focus();
 		}
 	}
 
-	public dispose(): void {
+	public override dispose(): void {
 		super.dispose();
 	}
 }

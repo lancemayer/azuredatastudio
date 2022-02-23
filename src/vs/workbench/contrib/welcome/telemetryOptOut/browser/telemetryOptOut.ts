@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { IWorkbenchContribution } from 'vs/workbench/common/contributions';
-import { IStorageService, StorageScope } from 'vs/platform/storage/common/storage';
+import { IStorageService, StorageScope, StorageTarget } from 'vs/platform/storage/common/storage';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { IOpenerService } from 'vs/platform/opener/common/opener';
 import { INotificationService, Severity } from 'vs/platform/notification/common/notification';
@@ -18,6 +18,7 @@ import { CancellationToken } from 'vs/base/common/cancellation';
 import { IProductService } from 'vs/platform/product/common/productService';
 import { IHostService } from 'vs/workbench/services/host/browser/host';
 import { IEnvironmentService } from 'vs/platform/environment/common/environment';
+import { IJSONEditingService } from 'vs/workbench/services/configuration/common/jsonEditing';
 
 export abstract class AbstractTelemetryOptOut implements IWorkbenchContribution {
 
@@ -34,11 +35,15 @@ export abstract class AbstractTelemetryOptOut implements IWorkbenchContribution 
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IExtensionGalleryService private readonly galleryService: IExtensionGalleryService,
 		@IProductService private readonly productService: IProductService,
-		@IEnvironmentService private readonly environmentService: IEnvironmentService // {{SQL CARBON EDIT}} add service
-	) { }
+		@IEnvironmentService private readonly environmentService: IEnvironmentService,
+		@IJSONEditingService private readonly jsonEditingService: IJSONEditingService
+	) {
+	}
 
 	protected async handleTelemetryOptOut(): Promise<void> {
-		if (!this.environmentService.disableTelemetry && this.productService.telemetryOptOutUrl && !this.storageService.get(AbstractTelemetryOptOut.TELEMETRY_OPT_OUT_SHOWN, StorageScope.GLOBAL)) { // {{SQL CARBON EDIT}} add disableTelemetry check
+		if (this.productService.telemetryOptOutUrl &&
+			!this.storageService.get(AbstractTelemetryOptOut.TELEMETRY_OPT_OUT_SHOWN, StorageScope.GLOBAL) &&
+			!this.environmentService.disableTelemetry) { // {{SQL CARBON EDIT}} Adding check to disable opt out toast when this flag is set.
 			const experimentId = 'telemetryOptOut';
 
 			const [count, experimentState] = await Promise.all([this.getWindowCount(), this.experimentService.getExperimentById(experimentId)]);
@@ -47,7 +52,7 @@ export abstract class AbstractTelemetryOptOut implements IWorkbenchContribution 
 				return; // return early if meanwhile another window opened (we only show the opt-out once)
 			}
 
-			this.storageService.store(AbstractTelemetryOptOut.TELEMETRY_OPT_OUT_SHOWN, true, StorageScope.GLOBAL);
+			this.storageService.store(AbstractTelemetryOptOut.TELEMETRY_OPT_OUT_SHOWN, true, StorageScope.GLOBAL, StorageTarget.USER);
 
 			this.privacyUrl = this.productService.privacyStatementUrl || this.productService.telemetryOptOutUrl;
 
@@ -138,10 +143,10 @@ export abstract class AbstractTelemetryOptOut implements IWorkbenchContribution 
 					},
 					{
 						label: noLabel,
-						run: () => {
+						run: async () => {
 							logTelemetry(true);
 							this.configurationService.updateValue('telemetry.enableTelemetry', false);
-							this.configurationService.updateValue('telemetry.enableCrashReporter', false);
+							await this.jsonEditingService.write(this.environmentService.argvResource, [{ path: ['enable-crash-reporter'], value: false }], true);
 						}
 					}
 				],
@@ -167,9 +172,10 @@ export class BrowserTelemetryOptOut extends AbstractTelemetryOptOut {
 		@IConfigurationService configurationService: IConfigurationService,
 		@IExtensionGalleryService galleryService: IExtensionGalleryService,
 		@IProductService productService: IProductService,
-		@IEnvironmentService environmentService: IEnvironmentService // {{SQL CARBON EDIT}} add service
+		@IEnvironmentService environmentService: IEnvironmentService,
+		@IJSONEditingService jsonEditingService: IJSONEditingService
 	) {
-		super(storageService, openerService, notificationService, hostService, telemetryService, experimentService, configurationService, galleryService, productService, environmentService);
+		super(storageService, openerService, notificationService, hostService, telemetryService, experimentService, configurationService, galleryService, productService, environmentService, jsonEditingService);
 
 		this.handleTelemetryOptOut();
 	}

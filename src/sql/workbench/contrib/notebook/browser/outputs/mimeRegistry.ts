@@ -23,6 +23,8 @@ export interface IMimeComponent {
 	mimeType: string;
 	cellModel?: ICellModel;
 	cellOutput?: nb.ICellOutput;
+	batchId?: number;
+	id?: number;
 	layout(): void;
 }
 

@@ -28,7 +28,7 @@ abstract class ControllerTreeNode extends TreeNode {
 		return this.children as ControllerTreeNode[];
 	}
 
-	public refresh(): void {
+	public override refresh(): void {
 		super.refresh();
 		this.treeChangeHandler.notifyNodeChanged(this);
 	}
@@ -98,7 +98,7 @@ export class ControllerRootNode extends ControllerTreeNode {
 		super('root', undefined, treeChangeHandler, undefined, BdcItemType.controllerRoot);
 	}
 
-	public async getChildren(): Promise<ControllerNode[]> {
+	public override async getChildren(): Promise<ControllerNode[]> {
 		return this.children as ControllerNode[];
 	}
 
@@ -128,7 +128,7 @@ export class ControllerRootNode extends ControllerTreeNode {
 		}
 	}
 
-	public deleteControllerNode(url: string, auth: AuthType, username: string): ControllerNode[] | undefined {
+	public removeControllerNode(url: string, auth: AuthType, username: string): ControllerNode[] | undefined {
 		if (!url || (auth === 'basic' && !username)) {
 			return undefined;
 		}
@@ -168,13 +168,13 @@ export class ControllerNode extends ControllerTreeNode {
 		this.description = description;
 	}
 
-	public async getChildren(): Promise<ControllerTreeNode[] | undefined> {
+	public override async getChildren(): Promise<ControllerTreeNode[] | undefined> {
 		if (this.children && this.children.length > 0) {
 			this.clearChildren();
 		}
 
 		if (!this._password) {
-			vscode.commands.executeCommand('bigDataClusters.command.addController', this);
+			vscode.commands.executeCommand('bigDataClusters.command.connectController', this);
 			return this.children as ControllerTreeNode[];
 		}
 		return undefined;
@@ -209,7 +209,7 @@ export class ControllerNode extends ControllerTreeNode {
 		this._password = pw;
 	}
 
-	public set label(label: string) {
+	public override set label(label: string) {
 		super.label = label || this.generateLabel();
 	}
 
@@ -229,15 +229,15 @@ export class ControllerNode extends ControllerTreeNode {
 		return label;
 	}
 
-	public get label(): string {
+	public override get label(): string {
 		return super.label;
 	}
 
-	public set description(description: string) {
+	public override set description(description: string) {
 		super.description = description || super.label;
 	}
 
-	public get description(): string {
+	public override get description(): string {
 		return super.description;
 	}
 }

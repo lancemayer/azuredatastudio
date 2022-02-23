@@ -32,39 +32,41 @@ export class AddNewPackageTab {
 		this.addNewPkgTab = azdata.window.createTab(localize('managePackages.addNewTabTitle', "Add new"));
 
 		this.addNewPkgTab.registerContent(async view => {
-			this.newPackagesSearchBar = view.modelBuilder.inputBox().withProperties({ width: '400px' }).component();
+			this.newPackagesSearchBar = view.modelBuilder.inputBox().withProps({ width: '400px' }).component();
 			// Search package by name when pressing enter
 			this.newPackagesSearchBar.onEnterKeyPressed(async () => {
 				await this.loadNewPackageInfo();
 			});
 
 			this.packagesSearchButton = view.modelBuilder.button()
-				.withProperties<azdata.ButtonProperties>({
+				.withProps({
 					label: localize('managePackages.searchButtonLabel', "Search"),
-					width: '200px'
+					width: '200px',
+					secondary: true
 				}).component();
 			this.packagesSearchButton.onDidClick(async () => {
 				await this.loadNewPackageInfo();
 			});
 
-			this.newPackagesName = view.modelBuilder.text().withProperties({ width: '400px' }).component();
+			this.newPackagesName = view.modelBuilder.text().withProps({ width: '400px' }).component();
 			this.newPackagesNameLoader = view.modelBuilder.loadingComponent()
 				.withItem(this.newPackagesName)
 				.component();
 
-			this.newPackagesVersions = view.modelBuilder.dropDown().withProperties({ width: '400px' }).component();
+			this.newPackagesVersions = view.modelBuilder.dropDown().withProps({ width: '400px' }).component();
 			this.newPackagesVersionsLoader = view.modelBuilder.loadingComponent()
 				.withItem(this.newPackagesVersions)
 				.component();
 
-			this.newPackagesSummary = view.modelBuilder.text().withProperties({ width: '400px' }).component();
+			this.newPackagesSummary = view.modelBuilder.text().withProps({ width: '400px' }).component();
 			this.newPackagesSummaryLoader = view.modelBuilder.loadingComponent()
 				.withItem(this.newPackagesSummary)
 				.component();
 
-			this.packageInstallButton = view.modelBuilder.button().withProperties({
+			this.packageInstallButton = view.modelBuilder.button().withProps({
 				label: localize('managePackages.installButtonText', "Install"),
-				width: '200px'
+				width: '200px',
+				secondary: true
 			}).component();
 			this.packageInstallButton.onDidClick(async () => {
 				await this.doPackageInstall();
@@ -111,6 +113,8 @@ export class AddNewPackageTab {
 				placeHolder: this.SearchPlaceholder(this.dialog.model.currentPackageType)
 			});
 			await this.setFieldsToEmpty();
+		} catch (err) {
+			console.error('Exception encountered when resetting new package page fields: ', err);
 		} finally {
 			await this.toggleNewPackagesFields(true);
 		}
@@ -179,7 +183,7 @@ export class AddNewPackageTab {
 
 
 	private async doPackageInstall(): Promise<void> {
-		let packageName = this.newPackagesName.value;
+		let packageName = this.newPackagesName.value as string;
 		let packageVersion = this.newPackagesVersions.value as string;
 		if (!packageName || packageName.length === 0 ||
 			!packageVersion || packageVersion.length === 0) {
@@ -190,7 +194,7 @@ export class AddNewPackageTab {
 			"Installing {0} {1}",
 			packageName,
 			packageVersion);
-		this.jupyterInstallation.apiWrapper.startBackgroundOperation({
+		azdata.tasks.startBackgroundOperation({
 			displayName: taskName,
 			description: taskName,
 			isCancelable: false,

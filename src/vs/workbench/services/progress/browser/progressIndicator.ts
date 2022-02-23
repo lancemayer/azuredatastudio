@@ -61,7 +61,7 @@ export class ProgressBarIndicator extends Disposable implements IProgressIndicat
 
 export class EditorProgressIndicator extends ProgressBarIndicator {
 
-	_serviceBrand: undefined;
+	declare readonly _serviceBrand: undefined;
 
 	constructor(progressBar: ProgressBar, private readonly group: IEditorGroupView) {
 		super(progressBar);
@@ -77,9 +77,9 @@ export class EditorProgressIndicator extends ProgressBarIndicator {
 		}));
 	}
 
-	show(infinite: true, delay?: number): IProgressRunner;
-	show(total: number, delay?: number): IProgressRunner;
-	show(infiniteOrTotal: true | number, delay?: number): IProgressRunner {
+	override show(infinite: true, delay?: number): IProgressRunner;
+	override show(total: number, delay?: number): IProgressRunner;
+	override show(infiniteOrTotal: true | number, delay?: number): IProgressRunner {
 
 		// No editor open: ignore any progress reporting
 		if (this.group.isEmpty) {
@@ -93,7 +93,7 @@ export class EditorProgressIndicator extends ProgressBarIndicator {
 		return super.show(infiniteOrTotal, delay);
 	}
 
-	async showWhile(promise: Promise<unknown>, delay?: number): Promise<void> {
+	override async showWhile(promise: Promise<unknown>, delay?: number): Promise<void> {
 
 		// No editor open: ignore any progress reporting
 		if (this.group.isEmpty) {

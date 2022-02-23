@@ -62,6 +62,7 @@ export class SqlFlavorStatusbarItem extends Disposable implements IWorkbenchCont
 	private statusItem: IStatusbarEntryAccessor;
 
 	private _sqlStatusEditors: { [editorUri: string]: SqlProviderEntry };
+	private readonly name = nls.localize('status.query.flavor', "SQL Language Flavor");
 
 	constructor(
 		@IStatusbarService private readonly statusbarService: IStatusbarService,
@@ -73,12 +74,12 @@ export class SqlFlavorStatusbarItem extends Disposable implements IWorkbenchCont
 
 		this.statusItem = this._register(
 			this.statusbarService.addEntry({
+				name: this.name,
 				text: nls.localize('changeProvider', "Change SQL language provider"),
 				ariaLabel: nls.localize('changeProvider', "Change SQL language provider"),
 				command: 'sql.action.editor.changeProvider'
 			},
 				SqlFlavorStatusbarItem.ID,
-				nls.localize('status.query.flavor', "SQL Language Flavor"),
 				StatusbarAlignment.RIGHT, 100)
 		);
 
@@ -160,7 +161,8 @@ export class SqlFlavorStatusbarItem extends Disposable implements IWorkbenchCont
 
 	private updateFlavorElement(text: string): void {
 		const props: IStatusbarEntry = {
-			text,
+			name: this.name,
+			text: text,
 			ariaLabel: text,
 			command: 'sql.action.editor.changeProvider'
 		};
@@ -185,9 +187,9 @@ export class ChangeFlavorAction extends Action {
 		super(actionId, actionLabel);
 	}
 
-	public run(): Promise<any> {
+	public override run(): Promise<any> {
 		let activeEditor = this._editorService.activeEditorPane;
-		let currentUri = activeEditor?.input.resource?.toString();
+		let currentUri = activeEditor?.input.resource?.toString(true);
 		if (this._connectionManagementService.isConnected(currentUri)) {
 			let currentProvider = this._connectionManagementService.getProviderIdFromUri(currentUri);
 			return this._showMessage(Severity.Info, nls.localize('alreadyConnected',
@@ -205,7 +207,7 @@ export class ChangeFlavorAction extends Action {
 		let providerNameToDisplayNameMap = this._connectionManagementService.providerNameToDisplayNameMap;
 		let providerOptions = Object.keys(this._connectionManagementService.getUniqueConnectionProvidersByNameMap(providerNameToDisplayNameMap)).map(p => new SqlProviderEntry(p));
 
-		return this._quickInputService.pick(providerOptions, { placeHolder: nls.localize('pickSqlProvider', "Select SQL Language Provider") }).then(provider => {
+		return this._quickInputService.pick(providerOptions, { placeHolder: nls.localize('pickSqlProvider', "Select Language Provider") }).then(provider => {
 			if (provider) {
 				let activeEditor = this._editorService.activeEditorPane.getControl();
 				const editorWidget = getCodeEditor(activeEditor);

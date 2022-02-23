@@ -4,19 +4,18 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.prepareIslFiles = exports.prepareI18nPackFiles = exports.pullI18nPackFiles = exports.prepareI18nFiles = exports.pullSetupXlfFiles = exports.pullCoreAndExtensionsXlfFiles = exports.findObsoleteResources = exports.pushXlfFiles = exports.createXlfFilesForIsl = exports.createXlfFilesForExtensions = exports.createXlfFilesForCoreBundle = exports.getResource = exports.processNlsFiles = exports.Limiter = exports.XLF = exports.Line = exports.externalExtensionsWithTranslations = exports.extraLanguages = exports.defaultLanguages = void 0;
+exports.prepareIslFiles = exports.prepareI18nPackFiles = exports.i18nPackVersion = exports.createI18nFile = exports.prepareI18nFiles = exports.pullSetupXlfFiles = exports.findObsoleteResources = exports.pushXlfFiles = exports.createXlfFilesForIsl = exports.createXlfFilesForExtensions = exports.createXlfFilesForCoreBundle = exports.getResource = exports.processNlsFiles = exports.Limiter = exports.XLF = exports.Line = exports.externalExtensionsWithTranslations = exports.extraLanguages = exports.defaultLanguages = void 0;
 const path = require("path");
 const fs = require("fs");
 const event_stream_1 = require("event-stream");
 const File = require("vinyl");
 const Is = require("is");
 const xml2js = require("xml2js");
-const glob = require("glob");
 const https = require("https");
 const gulp = require("gulp");
 const fancyLog = require("fancy-log");
 const ansiColors = require("ansi-colors");
-const iconv = require("iconv-lite");
+const iconv = require("iconv-lite-umd");
 const NUMBER_OF_CONCURRENT_DOWNLOADS = 4;
 function log(message, ...rest) {
     fancyLog(ansiColors.green('[i18n]'), message, ...rest);
@@ -101,161 +100,162 @@ class TextModel {
         return this._lines;
     }
 }
-let XLF = /** @class */ (() => {
-    class XLF {
-        constructor(project) {
-            this.project = project;
-            this.buffer = [];
-            this.files = Object.create(null);
-            this.numberOfMessages = 0;
+class XLF {
+    constructor(project) {
+        this.project = project;
+        this.buffer = [];
+        this.files = Object.create(null);
+        this.numberOfMessages = 0;
+    }
+    toString() {
+        this.appendHeader();
+        const files = Object.keys(this.files).sort();
+        for (const file of files) {
+            this.appendNewLine(`<file original="${file}" source-language="en" datatype="plaintext"><body>`, 2);
+            const items = this.files[file].sort((a, b) => {
+                return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+            });
+            for (const item of items) {
+                this.addStringItem(file, item);
+            }
+            this.appendNewLine('</body></file>');
         }
-        toString() {
-            this.appendHeader();
-            for (let file in this.files) {
-                this.appendNewLine(`<file original="${file}" source-language="en" datatype="plaintext"><body>`, 2);
-                for (let item of this.files[file]) {
-                    this.addStringItem(file, item);
+        this.appendFooter();
+        return this.buffer.join('\r\n');
+    }
+    addFile(original, keys, messages) {
+        if (keys.length === 0) {
+            console.log('No keys in ' + original);
+            return;
+        }
+        if (keys.length !== messages.length) {
+            throw new Error(`Unmatching keys(${keys.length}) and messages(${messages.length}).`);
+        }
+        this.numberOfMessages += keys.length;
+        this.files[original] = [];
+        let existingKeys = new Set();
+        for (let i = 0; i < keys.length; i++) {
+            let key = keys[i];
+            let realKey;
+            let comment;
+            if (Is.string(key)) {
+                realKey = key;
+                comment = undefined;
+            }
+            else if (LocalizeInfo.is(key)) {
+                realKey = key.key;
+                if (key.comment && key.comment.length > 0) {
+                    comment = key.comment.map(comment => encodeEntities(comment)).join('\r\n');
                 }
-                this.appendNewLine('</body></file>', 2);
             }
-            this.appendFooter();
-            return this.buffer.join('\r\n');
-        }
-        addFile(original, keys, messages) {
-            if (keys.length === 0) {
-                console.log('No keys in ' + original);
-                return;
+            if (!realKey || existingKeys.has(realKey)) {
+                continue;
             }
-            if (keys.length !== messages.length) {
-                throw new Error(`Unmatching keys(${keys.length}) and messages(${messages.length}).`);
-            }
-            this.numberOfMessages += keys.length;
-            this.files[original] = [];
-            let existingKeys = new Set();
-            for (let i = 0; i < keys.length; i++) {
-                let key = keys[i];
-                let realKey;
-                let comment;
-                if (Is.string(key)) {
-                    realKey = key;
-                    comment = undefined;
-                }
-                else if (LocalizeInfo.is(key)) {
-                    realKey = key.key;
-                    if (key.comment && key.comment.length > 0) {
-                        comment = key.comment.map(comment => encodeEntities(comment)).join('\r\n');
-                    }
-                }
-                if (!realKey || existingKeys.has(realKey)) {
-                    continue;
-                }
-                existingKeys.add(realKey);
-                let message = encodeEntities(messages[i]);
-                this.files[original].push({ id: realKey, message: message, comment: comment });
-            }
-        }
-        addStringItem(file, item) {
-            if (!item.id || item.message === undefined || item.message === null) {
-                throw new Error(`No item ID or value specified: ${JSON.stringify(item)}. File: ${file}`);
-            }
-            if (item.message.length === 0) {
-                log(`Item with id ${item.id} in file ${file} has an empty message.`);
-            }
-            this.appendNewLine(`<trans-unit id="${item.id}">`, 4);
-            this.appendNewLine(`<source xml:lang="en">${item.message}</source>`, 6);
-            if (item.comment) {
-                this.appendNewLine(`<note>${item.comment}</note>`, 6);
-            }
-            this.appendNewLine('</trans-unit>', 4);
-        }
-        appendHeader() {
-            this.appendNewLine('<?xml version="1.0" encoding="utf-8"?>', 0);
-            this.appendNewLine('<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">', 0);
-        }
-        appendFooter() {
-            this.appendNewLine('</xliff>', 0);
-        }
-        appendNewLine(content, indent) {
-            let line = new Line(indent);
-            line.append(content);
-            this.buffer.push(line.toString());
+            existingKeys.add(realKey);
+            let message = encodeEntities(messages[i]);
+            this.files[original].push({ id: realKey, message: message, comment: comment });
         }
     }
-    XLF.parsePseudo = function (xlfString) {
-        return new Promise((resolve) => {
-            let parser = new xml2js.Parser();
-            let files = [];
-            parser.parseString(xlfString, function (_err, result) {
-                const fileNodes = result['xliff']['file'];
-                fileNodes.forEach(file => {
-                    const originalFilePath = file.$.original;
-                    const messages = {};
-                    const transUnits = file.body[0]['trans-unit'];
-                    if (transUnits) {
-                        transUnits.forEach((unit) => {
-                            const key = unit.$.id;
-                            const val = pseudify(unit.source[0]['_'].toString());
-                            if (key && val) {
-                                messages[key] = decodeEntities(val);
-                            }
-                        });
-                        files.push({ messages: messages, originalFilePath: originalFilePath, language: 'ps' });
-                    }
-                });
-                resolve(files);
-            });
-        });
-    };
-    XLF.parse = function (xlfString) {
-        return new Promise((resolve, reject) => {
-            let parser = new xml2js.Parser();
-            let files = [];
-            parser.parseString(xlfString, function (err, result) {
-                if (err) {
-                    reject(new Error(`XLF parsing error: Failed to parse XLIFF string. ${err}`));
-                }
-                const fileNodes = result['xliff']['file'];
-                if (!fileNodes) {
-                    reject(new Error(`XLF parsing error: XLIFF file does not contain "xliff" or "file" node(s) required for parsing.`));
-                }
-                fileNodes.forEach((file) => {
-                    const originalFilePath = file.$.original;
-                    if (!originalFilePath) {
-                        reject(new Error(`XLF parsing error: XLIFF file node does not contain original attribute to determine the original location of the resource file.`));
-                    }
-                    let language = file.$['target-language'];
-                    if (!language) {
-                        reject(new Error(`XLF parsing error: XLIFF file node does not contain target-language attribute to determine translated language.`));
-                    }
-                    const messages = {};
-                    const transUnits = file.body[0]['trans-unit'];
-                    if (transUnits) {
-                        transUnits.forEach((unit) => {
-                            const key = unit.$.id;
-                            if (!unit.target) {
-                                return; // No translation available
-                            }
-                            let val = unit.target[0];
-                            if (typeof val !== 'string') {
-                                val = val._;
-                            }
-                            if (key && val) {
-                                messages[key] = decodeEntities(val);
-                            }
-                            else {
-                                reject(new Error(`XLF parsing error: XLIFF file ${originalFilePath} does not contain full localization data. ID or target translation for one of the trans-unit nodes is not present.`));
-                            }
-                        });
-                        files.push({ messages: messages, originalFilePath: originalFilePath, language: language.toLowerCase() });
-                    }
-                });
-                resolve(files);
-            });
-        });
-    };
-    return XLF;
-})();
+    addStringItem(file, item) {
+        if (!item.id || item.message === undefined || item.message === null) {
+            throw new Error(`No item ID or value specified: ${JSON.stringify(item)}. File: ${file}`);
+        }
+        if (item.message.length === 0) {
+            log(`Item with id ${item.id} in file ${file} has an empty message.`);
+        }
+        this.appendNewLine(`<trans-unit id="${item.id}">`, 4);
+        this.appendNewLine(`<source xml:lang="en">${item.message}</source>`, 6);
+        if (item.comment) {
+            this.appendNewLine(`<note>${item.comment}</note>`, 6);
+        }
+        this.appendNewLine('</trans-unit>', 4);
+    }
+    appendHeader() {
+        this.appendNewLine('<?xml version="1.0" encoding="utf-8"?>', 0);
+        this.appendNewLine('<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">', 0);
+    }
+    appendFooter() {
+        this.appendNewLine('</xliff>', 0);
+    }
+    appendNewLine(content, indent) {
+        let line = new Line(indent);
+        line.append(content);
+        this.buffer.push(line.toString());
+    }
+}
 exports.XLF = XLF;
+XLF.parsePseudo = function (xlfString) {
+    return new Promise((resolve) => {
+        let parser = new xml2js.Parser();
+        let files = [];
+        parser.parseString(xlfString, function (_err, result) {
+            const fileNodes = result['xliff']['file'];
+            fileNodes.forEach(file => {
+                const originalFilePath = file.$.original;
+                const messages = {};
+                const transUnits = file.body[0]['trans-unit'];
+                if (transUnits) {
+                    transUnits.forEach((unit) => {
+                        const key = unit.$.id;
+                        const val = pseudify(unit.source[0]['_'].toString());
+                        if (key && val) {
+                            messages[key] = decodeEntities(val);
+                        }
+                    });
+                    files.push({ messages: messages, originalFilePath: originalFilePath, language: 'ps' });
+                }
+            });
+            resolve(files);
+        });
+    });
+};
+XLF.parse = function (xlfString) {
+    return new Promise((resolve, reject) => {
+        let parser = new xml2js.Parser();
+        let files = [];
+        parser.parseString(xlfString, function (err, result) {
+            if (err) {
+                reject(new Error(`XLF parsing error: Failed to parse XLIFF string. ${err}`));
+            }
+            const fileNodes = result['xliff']['file'];
+            if (!fileNodes) {
+                reject(new Error(`XLF parsing error: XLIFF file does not contain "xliff" or "file" node(s) required for parsing.`));
+            }
+            fileNodes.forEach((file) => {
+                const originalFilePath = file.$.original;
+                if (!originalFilePath) {
+                    reject(new Error(`XLF parsing error: XLIFF file node does not contain original attribute to determine the original location of the resource file.`));
+                }
+                let language = file.$['target-language'];
+                if (!language) {
+                    reject(new Error(`XLF parsing error: XLIFF file node does not contain target-language attribute to determine translated language.`));
+                }
+                const messages = {};
+                const transUnits = file.body[0]['trans-unit'];
+                if (transUnits) {
+                    transUnits.forEach((unit) => {
+                        const key = unit.$.id;
+                        if (!unit.target) {
+                            return; // No translation available
+                        }
+                        let val = unit.target[0];
+                        if (typeof val !== 'string') {
+                            // We allow empty source values so support them for translations as well.
+                            val = val._ ? val._ : '';
+                        }
+                        if (!key) {
+                            reject(new Error(`XLF parsing error: trans-unit ${JSON.stringify(unit, undefined, 0)} defined in file ${originalFilePath} is missing the ID attribute.`));
+                            return;
+                        }
+                        messages[key] = decodeEntities(val);
+                    });
+                    files.push({ messages: messages, originalFilePath: originalFilePath, language: language.toLowerCase() });
+                }
+            });
+            resolve(files);
+        });
+    });
+};
 class Limiter {
     constructor(maxDegreeOfParalellism) {
         this.maxDegreeOfParalellism = maxDegreeOfParalellism;
@@ -466,7 +466,7 @@ function processCoreBundleFormat(fileHeader, languages, json, emitter) {
     });
 }
 function processNlsFiles(opts) {
-    return event_stream_1.through(function (file) {
+    return (0, event_stream_1.through)(function (file) {
         let fileName = path.basename(file.path);
         if (fileName === 'nls.metadata.json') {
             let json = null;
@@ -487,7 +487,7 @@ function processNlsFiles(opts) {
 exports.processNlsFiles = processNlsFiles;
 const editorProject = 'vscode-editor', workbenchProject = 'vscode-workbench', extensionsProject = 'vscode-extensions', setupProject = 'vscode-setup';
 // {{SQL CARBON EDIT}}
-const sqlopsProject = 'sqlops-core';
+const adsProject = 'ads-core';
 function getResource(sourceFile) {
     let resource;
     if (/^vs\/platform/.test(sourceFile)) {
@@ -518,19 +518,23 @@ function getResource(sourceFile) {
     }
     // {{SQL CARBON EDIT}}
     else if (/^sql/.test(sourceFile)) {
-        return { name: 'sql', project: sqlopsProject };
+        return { name: 'sql', project: adsProject };
     }
     throw new Error(`Could not identify the XLF bundle for ${sourceFile}`);
 }
 exports.getResource = getResource;
 function createXlfFilesForCoreBundle() {
-    return event_stream_1.through(function (file) {
+    return (0, event_stream_1.through)(function (file) {
         const basename = path.basename(file.path);
         if (basename === 'nls.metadata.json') {
             if (file.isBuffer()) {
                 const xlfs = Object.create(null);
                 const json = JSON.parse(file.contents.toString('utf8'));
-                for (let coreModule in json.keys) {
+                // {{SQL CARBON EDIT}} - Must sort the keys for easier translation.
+                let sortedKeys = Object.keys(json.keys).sort();
+                for (let i = 0; i < sortedKeys.length; i++) {
+                    let coreModule = sortedKeys[i];
+                    // {{SQL CARBON EDIT}} - End
                     const projectResource = getResource(coreModule);
                     const resource = projectResource.name;
                     const project = projectResource.project;
@@ -575,7 +579,7 @@ function createXlfFilesForExtensions() {
     let counter = 0;
     let folderStreamEnded = false;
     let folderStreamEndEmitted = false;
-    return event_stream_1.through(function (extensionFolder) {
+    return (0, event_stream_1.through)(function (extensionFolder) {
         const folderStream = this;
         const stat = fs.statSync(extensionFolder.path);
         if (!stat.isDirectory()) {
@@ -593,7 +597,7 @@ function createXlfFilesForExtensions() {
             }
             return _xlf;
         }
-        gulp.src([`.build/extensions/${extensionName}/package.nls.json`, `.build/extensions/${extensionName}/**/nls.metadata.json`], { allowEmpty: true }).pipe(event_stream_1.through(function (file) {
+        gulp.src([`.build/extensions/${extensionName}/package.nls.json`, `.build/extensions/${extensionName}/**/nls.metadata.json`], { allowEmpty: true }).pipe((0, event_stream_1.through)(function (file) {
             if (file.isBuffer()) {
                 const buffer = file.contents;
                 const basename = path.basename(file.path);
@@ -652,15 +656,14 @@ function createXlfFilesForExtensions() {
 }
 exports.createXlfFilesForExtensions = createXlfFilesForExtensions;
 function createXlfFilesForIsl() {
-    return event_stream_1.through(function (file) {
+    return (0, event_stream_1.through)(function (file) {
         let projectName, resourceFile;
-        if (path.basename(file.path) === 'Default.isl') {
+        if (path.basename(file.path) === 'messages.en.isl') {
             projectName = setupProject;
-            resourceFile = 'setup_default.xlf';
+            resourceFile = 'messages.xlf';
         }
         else {
-            projectName = workbenchProject;
-            resourceFile = 'setup_messages.xlf';
+            throw new Error(`Unknown input file ${file.path}`);
         }
         let xlf = new XLF(projectName), keys = [], messages = [];
         let model = new TextModel(file.contents.toString());
@@ -706,7 +709,7 @@ exports.createXlfFilesForIsl = createXlfFilesForIsl;
 function pushXlfFiles(apiHostname, username, password) {
     let tryGetPromises = [];
     let updateCreatePromises = [];
-    return event_stream_1.through(function (file) {
+    return (0, event_stream_1.through)(function (file) {
         const project = path.dirname(file.relative);
         const fileName = path.basename(file.path);
         const slug = fileName.substr(0, fileName.length - '.xlf'.length);
@@ -768,7 +771,7 @@ function getAllResources(project, apiHostname, username, password) {
 function findObsoleteResources(apiHostname, username, password) {
     let resourcesByProject = Object.create(null);
     resourcesByProject[extensionsProject] = [].concat(exports.externalExtensionsWithTranslations); // clone
-    return event_stream_1.through(function (file) {
+    return (0, event_stream_1.through)(function (file) {
         const project = path.dirname(file.relative);
         const fileName = path.basename(file.path);
         const slug = fileName.substr(0, fileName.length - '.xlf'.length);
@@ -908,31 +911,6 @@ function updateResource(project, slug, xlfFile, apiHostname, credentials) {
         request.end();
     });
 }
-// cache resources
-let _coreAndExtensionResources;
-function pullCoreAndExtensionsXlfFiles(apiHostname, username, password, language, externalExtensions) {
-    if (!_coreAndExtensionResources) {
-        _coreAndExtensionResources = [];
-        // editor and workbench
-        const json = JSON.parse(fs.readFileSync('./build/lib/i18n.resources.json', 'utf8'));
-        _coreAndExtensionResources.push(...json.editor);
-        _coreAndExtensionResources.push(...json.workbench);
-        // extensions
-        let extensionsToLocalize = Object.create(null);
-        glob.sync('.build/extensions/**/*.nls.json').forEach(extension => extensionsToLocalize[extension.split('/')[2]] = true);
-        glob.sync('.build/extensions/*/node_modules/vscode-nls').forEach(extension => extensionsToLocalize[extension.split('/')[2]] = true);
-        Object.keys(extensionsToLocalize).forEach(extension => {
-            _coreAndExtensionResources.push({ name: extension, project: extensionsProject });
-        });
-        if (externalExtensions) {
-            for (let resourceName in externalExtensions) {
-                _coreAndExtensionResources.push({ name: resourceName, project: extensionsProject });
-            }
-        }
-    }
-    return pullXlfFiles(apiHostname, username, password, language, _coreAndExtensionResources);
-}
-exports.pullCoreAndExtensionsXlfFiles = pullCoreAndExtensionsXlfFiles;
 function pullSetupXlfFiles(apiHostname, username, password, language, includeDefault) {
     let setupResources = [{ name: 'setup_messages', project: workbenchProject }];
     if (includeDefault) {
@@ -945,7 +923,7 @@ function pullXlfFiles(apiHostname, username, password, language, resources) {
     const credentials = `${username}:${password}`;
     let expectedTranslationsCount = resources.length;
     let translationsRetrieved = 0, called = false;
-    return event_stream_1.readable(function (_count, callback) {
+    return (0, event_stream_1.readable)(function (_count, callback) {
         // Mark end of stream when all resources were retrieved
         if (translationsRetrieved === expectedTranslationsCount) {
             return this.emit('end');
@@ -1003,7 +981,7 @@ function retrieveResource(language, resource, apiHostname, credentials) {
 }
 function prepareI18nFiles() {
     let parsePromises = [];
-    return event_stream_1.through(function (xlf) {
+    return (0, event_stream_1.through)(function (xlf) {
         let stream = this;
         let parsePromise = XLF.parse(xlf.contents.toString());
         parsePromises.push(parsePromise);
@@ -1041,21 +1019,18 @@ function createI18nFile(originalFilePath, messages) {
         contents: Buffer.from(content, 'utf8')
     });
 }
-const i18nPackVersion = "1.0.0";
-function pullI18nPackFiles(apiHostname, username, password, language, resultingTranslationPaths) {
-    return pullCoreAndExtensionsXlfFiles(apiHostname, username, password, language, exports.externalExtensionsWithTranslations)
-        .pipe(prepareI18nPackFiles(exports.externalExtensionsWithTranslations, resultingTranslationPaths, language.id === 'ps'));
-}
-exports.pullI18nPackFiles = pullI18nPackFiles;
+exports.createI18nFile = createI18nFile;
+exports.i18nPackVersion = '1.0.0'; // {{SQL CARBON EDIT}} Needed in locfunc.
 function prepareI18nPackFiles(externalExtensions, resultingTranslationPaths, pseudo = false) {
     let parsePromises = [];
-    let mainPack = { version: i18nPackVersion, contents: {} };
+    let mainPack = { version: exports.i18nPackVersion, contents: {} };
     let extensionsPacks = {};
     let errors = [];
-    return event_stream_1.through(function (xlf) {
-        let project = path.basename(path.dirname(xlf.relative));
+    return (0, event_stream_1.through)(function (xlf) {
+        let project = path.basename(path.dirname(path.dirname(xlf.relative)));
         let resource = path.basename(xlf.relative, '.xlf');
         let contents = xlf.contents.toString();
+        log(`Found ${project}: ${resource}`);
         let parsePromise = pseudo ? XLF.parsePseudo(contents) : XLF.parse(contents);
         parsePromises.push(parsePromise);
         parsePromise.then(resolvedFiles => {
@@ -1065,7 +1040,7 @@ function prepareI18nPackFiles(externalExtensions, resultingTranslationPaths, pse
                 if (project === extensionsProject) {
                     let extPack = extensionsPacks[resource];
                     if (!extPack) {
-                        extPack = extensionsPacks[resource] = { version: i18nPackVersion, contents: {} };
+                        extPack = extensionsPacks[resource] = { version: exports.i18nPackVersion, contents: {} };
                     }
                     const externalId = externalExtensions[resource];
                     if (!externalId) { // internal extension: remove 'extensions/extensionId/' segnent
@@ -1113,15 +1088,12 @@ function prepareI18nPackFiles(externalExtensions, resultingTranslationPaths, pse
 exports.prepareI18nPackFiles = prepareI18nPackFiles;
 function prepareIslFiles(language, innoSetupConfig) {
     let parsePromises = [];
-    return event_stream_1.through(function (xlf) {
+    return (0, event_stream_1.through)(function (xlf) {
         let stream = this;
         let parsePromise = XLF.parse(xlf.contents.toString());
         parsePromises.push(parsePromise);
         parsePromise.then(resolvedFiles => {
             resolvedFiles.forEach(file => {
-                if (path.basename(file.originalFilePath) === 'Default' && !innoSetupConfig.defaultInfo) {
-                    return;
-                }
                 let translatedFile = createIslFile(file.originalFilePath, file.messages, language, innoSetupConfig);
                 stream.queue(translatedFile);
             });
@@ -1150,32 +1122,16 @@ function createIslFile(originalFilePath, messages, language, innoSetup) {
         if (line.length > 0) {
             let firstChar = line.charAt(0);
             if (firstChar === '[' || firstChar === ';') {
-                if (line === '; *** Inno Setup version 5.5.3+ English messages ***') {
-                    content.push(`; *** Inno Setup version 5.5.3+ ${innoSetup.defaultInfo.name} messages ***`);
-                }
-                else {
-                    content.push(line);
-                }
+                content.push(line);
             }
             else {
                 let sections = line.split('=');
                 let key = sections[0];
                 let translated = line;
                 if (key) {
-                    if (key === 'LanguageName') {
-                        translated = `${key}=${innoSetup.defaultInfo.name}`;
-                    }
-                    else if (key === 'LanguageID') {
-                        translated = `${key}=${innoSetup.defaultInfo.id}`;
-                    }
-                    else if (key === 'LanguageCodePage') {
-                        translated = `${key}=${innoSetup.codePage.substr(2)}`;
-                    }
-                    else {
-                        let translatedMessage = messages[key];
-                        if (translatedMessage) {
-                            translated = `${key}=${translatedMessage}`;
-                        }
+                    let translatedMessage = messages[key];
+                    if (translatedMessage) {
+                        translated = `${key}=${translatedMessage}`;
                     }
                 }
                 content.push(translated);
@@ -1184,9 +1140,10 @@ function createIslFile(originalFilePath, messages, language, innoSetup) {
     });
     const basename = path.basename(originalFilePath);
     const filePath = `${basename}.${language.id}.isl`;
+    const encoded = iconv.encode(Buffer.from(content.join('\r\n'), 'utf8').toString(), innoSetup.codePage);
     return new File({
         path: filePath,
-        contents: iconv.encode(Buffer.from(content.join('\r\n'), 'utf8').toString(), innoSetup.codePage)
+        contents: Buffer.from(encoded),
     });
 }
 function encodeEntities(value) {

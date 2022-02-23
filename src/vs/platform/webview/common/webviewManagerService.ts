@@ -3,22 +3,41 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { UriComponents } from 'vs/base/common/uri';
+import { Event } from 'vs/base/common/event';
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
 
 export const IWebviewManagerService = createDecorator<IWebviewManagerService>('webviewManagerService');
 
+export interface WebviewWebContentsId {
+	readonly webContentsId: number;
+}
+
+export interface WebviewWindowId {
+	readonly windowId: number;
+}
+
+export interface FindInFrameOptions {
+	forward?: boolean;
+	findNext?: boolean;
+	matchCase?: boolean;
+}
+
+export interface FoundInFrameResult {
+	requestId: number;
+	activeMatchOrdinal: number;
+	matches: number;
+	selectionArea: any;
+	finalUpdate: boolean;
+}
+
 export interface IWebviewManagerService {
 	_serviceBrand: unknown;
 
-	registerWebview(id: string, metadata: RegisterWebviewMetadata): Promise<void>;
-	unregisterWebview(id: string): Promise<void>;
-	updateLocalResourceRoots(id: string, roots: UriComponents[]): Promise<void>;
+	onFoundInFrame: Event<FoundInFrameResult>;
 
-	setIgnoreMenuShortcuts(webContentsId: number, enabled: boolean): Promise<void>;
-}
+	setIgnoreMenuShortcuts(id: WebviewWebContentsId | WebviewWindowId, enabled: boolean): Promise<void>;
 
-export interface RegisterWebviewMetadata {
-	readonly extensionLocation: UriComponents | undefined;
-	readonly localResourceRoots: readonly UriComponents[];
+	findInFrame(windowId: WebviewWindowId, frameName: string, text: string, options: FindInFrameOptions): Promise<void>;
+
+	stopFindInFrame(windowId: WebviewWindowId, frameName: string, options: { keepSelection?: boolean }): Promise<void>;
 }

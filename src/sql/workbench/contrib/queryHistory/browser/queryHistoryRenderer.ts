@@ -42,7 +42,7 @@ export class QueryHistoryRenderer implements IRenderer {
 	 * Returns a template ID for a given element.
 	 */
 	public getTemplateId(tree: ITree, element: QueryHistoryNode): string {
-		return element.info.id;
+		return element.info?.id || '';
 	}
 
 	/**
@@ -63,15 +63,15 @@ export class QueryHistoryRenderer implements IRenderer {
 	 * Render a element, given an object bag returned by the template
 	 */
 	public renderElement(tree: ITree, element: QueryHistoryNode, templateId: string, templateData: IQueryHistoryItemTemplateData): void {
-		let taskStatus;
+		let taskStatus = '';
 		if (element && element.info) {
 			templateData.icon.className = 'query-history-icon';
 			if (element.info.status === QueryStatus.Succeeded) {
-				dom.addClass(templateData.icon, QueryHistoryRenderer.SUCCESS_CLASS);
+				templateData.icon.classList.add(QueryHistoryRenderer.SUCCESS_CLASS);
 				taskStatus = localize('succeeded', "succeeded");
 			}
 			else if (element.info.status === QueryStatus.Failed) {
-				dom.addClass(templateData.icon, QueryHistoryRenderer.FAIL_CLASS);
+				templateData.icon.classList.add(QueryHistoryRenderer.FAIL_CLASS);
 				taskStatus = localize('failed', "failed");
 			}
 

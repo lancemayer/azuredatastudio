@@ -9,7 +9,6 @@ import { ICapabilitiesService } from 'sql/platform/capabilities/common/capabilit
 import * as azdata from 'azdata';
 import { localize } from 'vs/nls';
 import { getErrorMessage } from 'vs/base/common/errors';
-import { find } from 'vs/base/common/arrays';
 
 export const SERVICE_ID = 'serializationService';
 
@@ -28,7 +27,7 @@ export interface SerializeDataParams {
 	 * @param rowStart Index in the array to start copying rows from
 	 * @param numberOfRows Total number of rows to copy. If 0 or undefined, will copy all
 	 */
-	getRowRange(rowStart: number, numberOfRows?: number): azdata.DbCellValue[][];
+	getRowRange(rowStart: number, includeHeaders: boolean, numberOfRows?: number): azdata.DbCellValue[][];
 	rowCount: number;
 	columns: azdata.IDbColumn[];
 	includeHeaders?: boolean;
@@ -96,7 +95,7 @@ export class SerializationService implements ISerializationService {
 		let providerCapabilities = this._capabilitiesService.getLegacyCapabilities(providerId);
 
 		if (providerCapabilities) {
-			return find(providerCapabilities.features, f => f.featureName === SERVICE_ID);
+			return providerCapabilities.features.find(f => f.featureName === SERVICE_ID);
 		}
 
 		return undefined;
@@ -120,6 +119,10 @@ export class SerializationService implements ISerializationService {
 			let index = 0;
 			let startRequestParams = this.createStartRequest(serializationRequest, index);
 			index = index + startRequestParams.rows.length;
+			// Adjust row index based on whether or not header row is included
+			if (serializationRequest.includeHeaders) {
+				index--;
+			}
 
 			let startResult = await provider.startSerialization(startRequestParams);
 
@@ -157,7 +160,7 @@ export class SerializationService implements ISerializationService {
 
 	private createStartRequest(serializationRequest: SerializeDataParams, index: number): azdata.SerializeDataStartRequestParams {
 		let batchSize = getBatchSize(serializationRequest.rowCount, index);
-		let rows = serializationRequest.getRowRange(index, batchSize);
+		let rows = serializationRequest.getRowRange(index, serializationRequest.includeHeaders ?? false, batchSize);
 		let columns: azdata.SimpleColumnInfo[] = serializationRequest.columns.map(c => {
 			// For now treat all as strings. In the future, would like to use the
 			// type info for correct data type mapping
@@ -186,7 +189,7 @@ export class SerializationService implements ISerializationService {
 
 	private createContinueRequest(serializationRequest: SerializeDataParams, index: number): azdata.SerializeDataContinueRequestParams {
 		let numberOfRows = getBatchSize(serializationRequest.rowCount, index);
-		let rows = serializationRequest.getRowRange(index, numberOfRows);
+		let rows = serializationRequest.getRowRange(index, false, numberOfRows);
 		let isLastBatch = index + rows.length >= serializationRequest.rowCount;
 		let continueSerializeRequest: azdata.SerializeDataContinueRequestParams = {
 			filePath: serializationRequest.filePath,

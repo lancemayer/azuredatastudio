@@ -20,6 +20,7 @@ import { generateUuid } from 'vs/base/common/uuid';
 import { ComponentBase } from 'sql/workbench/browser/modelComponents/componentBase';
 import { ComponentEventType, IModelStore, IComponentDescriptor, IComponent } from 'sql/platform/dashboard/browser/interfaces';
 import { onUnexpectedError } from 'vs/base/common/errors';
+import { ILogService } from 'vs/platform/log/common/log';
 
 function reviveWebviewOptions(options: vscode.WebviewOptions): vscode.WebviewOptions {
 	return {
@@ -28,11 +29,15 @@ function reviveWebviewOptions(options: vscode.WebviewOptions): vscode.WebviewOpt
 	};
 }
 
+interface WebViewProperties extends azdata.WebViewProperties {
+	extensionLocation: UriComponents
+}
+
 @Component({
 	template: '',
 	selector: 'modelview-webview-component'
 })
-export default class WebViewComponent extends ComponentBase implements IComponent, OnDestroy {
+export default class WebViewComponent extends ComponentBase<WebViewProperties> implements IComponent, OnDestroy {
 	@Input() descriptor: IComponentDescriptor;
 	@Input() modelStore: IModelStore;
 
@@ -53,17 +58,18 @@ export default class WebViewComponent extends ComponentBase implements IComponen
 		@Inject(forwardRef(() => ElementRef)) el: ElementRef,
 		@Inject(IOpenerService) private readonly _openerService: IOpenerService,
 		@Inject(IWorkspaceContextService) private readonly _contextService: IWorkspaceContextService,
-		@Inject(IWebviewService) private readonly webviewService: IWebviewService
+		@Inject(IWebviewService) private readonly webviewService: IWebviewService,
+		@Inject(ILogService) logService: ILogService
 	) {
-		super(changeRef, el);
+		super(changeRef, el, logService);
 	}
 
-	ngOnInit(): void {
-		this.baseInit();
+	ngAfterViewInit(): void {
 		this._createWebview();
 		this._register(addDisposableListener(window, EventType.RESIZE, e => {
 			this.layout();
 		}));
+		this.baseInit();
 	}
 
 	private _createWebview(): void {
@@ -99,7 +105,7 @@ export default class WebViewComponent extends ComponentBase implements IComponen
 		}).catch(onUnexpectedError);
 	}
 
-	ngOnDestroy(): void {
+	override ngOnDestroy(): void {
 		this.baseDestroy();
 	}
 
@@ -114,7 +120,7 @@ export default class WebViewComponent extends ComponentBase implements IComponen
 
 	private sendMessage(): void {
 		if (this._webview && this.message) {
-			this._webview.sendMessage(this.message);
+			this._webview.postMessage(this.message);
 		}
 	}
 
@@ -122,8 +128,10 @@ export default class WebViewComponent extends ComponentBase implements IComponen
 		if (!link) {
 			return;
 		}
-		if (WebViewComponent.standardSupportedLinkSchemes.indexOf(link.scheme) >= 0 || this.enableCommandUris && link.scheme === 'command') {
+		if (WebViewComponent.standardSupportedLinkSchemes.indexOf(link.scheme) >= 0) {
 			this._openerService.open(link);
+		} else if (this.enableCommandUris && link.scheme === 'command') {
+			this._openerService.open(link, { allowCommands: true });
 		}
 	}
 
@@ -137,7 +145,7 @@ export default class WebViewComponent extends ComponentBase implements IComponen
 
 	/// IComponent implementation
 
-	public layout(): void {
+	public override layout(): void {
 		if (this._ready) {
 			this._ready.then(() => {
 				let element = <HTMLElement>this._el.nativeElement;
@@ -151,7 +159,7 @@ export default class WebViewComponent extends ComponentBase implements IComponen
 		this.layout();
 	}
 
-	public setProperties(properties: { [key: string]: any; }): void {
+	public override setProperties(properties: { [key: string]: any; }): void {
 		if (this._ready) {
 			this._ready.then(() => {
 				super.setProperties(properties);
@@ -172,27 +180,27 @@ export default class WebViewComponent extends ComponentBase implements IComponen
 	// CSS-bound properties
 
 	public get message(): any {
-		return this.getPropertyOrDefault<azdata.WebViewProperties, any>((props) => props.message, undefined);
+		return this.getPropertyOrDefault<any>((props) => props.message, undefined);
 	}
 
 	public set message(newValue: any) {
-		this.setPropertyFromUI<azdata.WebViewProperties, any>((properties, message) => { properties.message = message; }, newValue);
+		this.setPropertyFromUI<any>((properties, message) => { properties.message = message; }, newValue);
 	}
 
 	public get html(): string {
-		return this.getPropertyOrDefault<azdata.WebViewProperties, string>((props) => props.html, undefined);
+		return this.getPropertyOrDefault<string>((props) => props.html, undefined);
 	}
 
 	public set html(newValue: string) {
-		this.setPropertyFromUI<azdata.WebViewProperties, string>((properties, html) => { properties.html = html; }, newValue);
+		this.setPropertyFromUI<string>((properties, html) => { properties.html = html; }, newValue);
 	}
 
 	public get options(): vscode.WebviewOptions {
-		return this.getPropertyOrDefault<azdata.WebViewProperties, vscode.WebviewOptions>((props) => props.options, undefined);
+		return this.getPropertyOrDefault<vscode.WebviewOptions>((props) => props.options, undefined);
 	}
 
 	public get extensionLocation(): UriComponents {
-		return this.getPropertyOrDefault<azdata.WebViewProperties, UriComponents>((props) => props.extensionLocation, undefined);
+		return this.getPropertyOrDefault<UriComponents>((props) => props.extensionLocation, undefined);
 	}
 
 	private get extensionLocationUri(): URI {

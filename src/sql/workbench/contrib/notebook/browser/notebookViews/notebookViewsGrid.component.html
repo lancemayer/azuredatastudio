@@ -1,0 +1,20 @@
+<!--
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the Source EULA. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+-->
+<div class="nb-grid-stack grid-stack">
+	<ng-container *ngFor="let cell of cells">
+		<view-card-component #wrapper [ready]="loaded" [activeView]="activeView" [meta]="cell.metadata" [cell]="cell" [model]="model" (onChange)="onCellChanged($event)"></view-card-component>
+		<ng-content *ngTemplateOutlet='wrapper.templateRef'></ng-content>
+	</ng-container>
+</div>
+
+<div class="empty-message" *ngIf="empty && loaded">
+	{{emptyText}}
+</div>
+
+<div *ngIf="!loaded" style="display: block; position: absolute; height: 100%; width: 100%; z-index: 1; background: #fff;">
+	<loading-spinner [loading]="!loaded" [loadingMessage]="loadingMessage"></loading-spinner>
+</div>

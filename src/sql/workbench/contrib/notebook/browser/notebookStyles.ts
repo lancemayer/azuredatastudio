@@ -8,7 +8,7 @@ import { registerThemingParticipant, IColorTheme, ICssStyleCollector } from 'vs/
 import { SIDE_BAR_BACKGROUND, EDITOR_GROUP_HEADER_TABS_BACKGROUND } from 'vs/workbench/common/theme';
 import { activeContrastBorder, contrastBorder, buttonBackground, textLinkForeground, textLinkActiveForeground, textPreformatForeground, textBlockQuoteBackground, textBlockQuoteBorder, buttonForeground } from 'vs/platform/theme/common/colorRegistry';
 import { editorLineHighlight, editorLineHighlightBorder } from 'vs/editor/common/view/editorColorRegistry';
-import { cellBorder, notebookToolbarIcon, notebookToolbarLines, buttonMenuArrow, dropdownArrow, markdownEditorBackground, splitBorder, codeEditorBackground, codeEditorBackgroundActive, codeEditorLineNumber, codeEditorToolbarIcon, codeEditorToolbarBackground, codeEditorToolbarBorder, toolbarBackground, toolbarIcon, toolbarBottomBorder, notebookToolbarSelectBackground } from 'sql/platform/theme/common/colorRegistry';
+import { cellBorder, notebookToolbarIcon, notebookToolbarLines, buttonMenuArrow, dropdownArrow, markdownEditorBackground, codeEditorBackground, codeEditorBackgroundActive, codeEditorLineNumber, codeEditorToolbarIcon, codeEditorToolbarBackground, codeEditorToolbarBorder, toolbarBackground, toolbarIcon, toolbarBottomBorder, notebookToolbarSelectBackground, splitBorder, notebookCellTagBackground, notebookCellTagForeground, notebookFindMatchHighlight, notebookFindRangeHighlight } from 'sql/platform/theme/common/colorRegistry';
 import { IDisposable } from 'vs/base/common/lifecycle';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { BareResultsGridInfo, getBareResultsGridInfoStyles } from 'sql/workbench/contrib/query/browser/queryResultsEditor';
@@ -150,8 +150,8 @@ export function registerNotebookThemes(overrideEditorThemeSetting: boolean, conf
 		//Notebook toolbar masked icons
 		const notebookToolbarIconColor = theme.getColor(notebookToolbarIcon);
 		if (notebookToolbarIconColor) {
-			collector.addRule(`.notebookEditor .notebook-button.masked-icon:before { background-color: ${notebookToolbarIconColor};}`);
-			collector.addRule(`.notebookEditor .notebook-button.masked-pseudo:before { background-color: ${notebookToolbarIconColor};}`);
+			collector.addRule(`.masked-icon:before { background-color: ${notebookToolbarIconColor};}`);
+			collector.addRule(`.masked-pseudo:before { background-color: ${notebookToolbarIconColor};}`);
 		}
 		const notebookToolbarLinesColor = theme.getColor(notebookToolbarLines);
 		if (notebookToolbarLinesColor) {
@@ -164,15 +164,16 @@ export function registerNotebookThemes(overrideEditorThemeSetting: boolean, conf
 		}
 		const buttonMenuArrowColor = theme.getColor(buttonMenuArrow);
 		if (buttonMenuArrowColor) {
-			collector.addRule(`.notebookEditor .notebook-button.masked-pseudo-after:after { background-color: ${buttonMenuArrowColor};}`);
+			collector.addRule(`.notebookEditor .masked-pseudo-after:after { background-color: ${buttonMenuArrowColor};}`);
 		}
 
-		// Active cell border, cell toolbar border, cell toolbar icons
+		// Active cell border, cell toolbar border, cell toolbar icons, view toggle active button bottom border
 		const cellBorderColor = theme.getColor(cellBorder);
 		if (cellBorderColor) {
 			collector.addRule(`.notebookEditor .notebook-cell.active { border-color: ${cellBorderColor};}`);
 			collector.addRule(`.notebookEditor .notebook-cell.active cell-toolbar-component { border-color: ${cellBorderColor};}`);
 			collector.addRule(`.notebookEditor .notebook-cell.active cell-toolbar-component .codicon:before { background-color: ${cellBorderColor};}`);
+			collector.addRule(`.markdown-toolbar a.active::after { border-bottom-color: ${cellBorderColor};}`);
 		}
 		// Cell toolbar background
 		const notebookToolbarSelectBackgroundColor = theme.getColor(notebookToolbarSelectBackground);
@@ -183,11 +184,16 @@ export function registerNotebookThemes(overrideEditorThemeSetting: boolean, conf
 		// Markdown editor toolbar
 		const toolbarBackgroundColor = theme.getColor(toolbarBackground);
 		if (toolbarBackgroundColor) {
-			collector.addRule(`markdown-toolbar-component { background: ${toolbarBackgroundColor};}`);
+			collector.addRule(`markdown-toolbar-component {
+				background: ${toolbarBackgroundColor};
+				position: sticky;
+				top: -16px;
+				z-index: 1;
+			}`);
 		}
 		const toolbarIconColor = theme.getColor(toolbarIcon);
 		if (toolbarIconColor) {
-			collector.addRule(`.markdown-toolbar li a { background-color: ${toolbarIconColor};}`);
+			collector.addRule(`.markdown-toolbar a::before { background-color: ${toolbarIconColor};}`);
 		}
 		const toolbarBottomBorderColor = theme.getColor(toolbarBottomBorder);
 		if (toolbarBottomBorderColor) {
@@ -201,7 +207,7 @@ export function registerNotebookThemes(overrideEditorThemeSetting: boolean, conf
 		}
 		const splitBorderColor = theme.getColor(splitBorder);
 		if (splitBorderColor) {
-			collector.addRule(`.notebookEditor .notebook-cell.active text-cell-component code-component { border-bottom-color: ${splitBorderColor}; }`);
+			collector.addRule(`.notebookEditor .notebook-cell.active text-cell-component .notebook-preview { border-left-color: ${splitBorderColor}; }`);
 		}
 
 		// Code editor colors
@@ -230,6 +236,21 @@ export function registerNotebookThemes(overrideEditorThemeSetting: boolean, conf
 		const codeEditorToolbarBorderColor = theme.getColor(codeEditorToolbarBorder);
 		if (codeEditorToolbarBorderColor) {
 			collector.addRule(`.notebook-cell.active code-cell-component code-component .toolbar { border-right-color: ${codeEditorToolbarBorderColor}!important;}`);
+		}
+		const notebookCellTagBackgroundColor = theme.getColor(notebookCellTagBackground);
+		const notebookCellTagForegroundColor = theme.getColor(notebookCellTagForeground);
+		if (notebookCellTagBackgroundColor && notebookCellTagForegroundColor) {
+			collector.addRule(`code-component .parameter span { background-color: ${notebookCellTagBackgroundColor}; color: ${notebookCellTagForegroundColor};}`);
+		}
+
+		// Notebook Find colors
+		const notebookFindMatchHighlightColor = theme.getColor(notebookFindMatchHighlight);
+		const notebookFindRangeHighlightColor = theme.getColor(notebookFindRangeHighlight);
+		if (notebookFindMatchHighlightColor) {
+			collector.addRule(`.notebook-preview .rangeHighlight { background-color: ${notebookFindMatchHighlightColor};}`);
+		}
+		if (notebookFindRangeHighlightColor) {
+			collector.addRule(`mark .rangeSpecificHighlight { background-color: ${notebookFindRangeHighlightColor}!important;}`);
 		}
 	});
 }

@@ -29,7 +29,6 @@ import { localize } from 'vs/nls';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { CmsConnectionController } from 'sql/workbench/services/connection/browser/cmsConnectionController';
 import { entries } from 'sql/base/common/collections';
-import { find } from 'vs/base/common/arrays';
 import { onUnexpectedError } from 'vs/base/common/errors';
 import { ILogService } from 'vs/platform/log/common/log';
 
@@ -43,7 +42,7 @@ export interface IConnectionComponentCallbacks {
 	onCreateNewServerGroup?: () => void;
 	onAdvancedProperties?: () => void;
 	onSetAzureTimeOut?: () => void;
-	onFetchDatabases?: (serverName: string, authenticationType: string, userName?: string, password?: string) => Promise<string[]>;
+	onFetchDatabases?: (serverName: string, authenticationType: string, userName?: string, password?: string, token?: string) => Promise<string[]>;
 	onAzureTenantSelection?: (azureTenantId?: string) => void;
 }
 
@@ -153,13 +152,26 @@ export class ConnectionDialogService implements IConnectionDialogService {
 		return defaultProvider || Constants.mssqlProviderName;
 	}
 
+	private getDefaultAuthenticationTypeName(): string {
+		let defaultAuthenticationType: string;
+		if (!defaultAuthenticationType && this._configurationService) {
+			defaultAuthenticationType = WorkbenchUtils.getSqlConfigValue<string>(this._configurationService, Constants.defaultAuthenticationType);
+		}
+
+		return defaultAuthenticationType || Constants.sqlLogin;  // as a fallback, default to sql login if the value from settings is not available
+
+	}
+
 	private handleOnConnect(params: INewConnectionParams, profile?: IConnectionProfile): void {
+		this._logService.debug('ConnectionDialogService: onConnect event is received');
 		if (!this._connecting) {
+			this._logService.debug('ConnectionDialogService: Start connecting');
 			this._connecting = true;
 			this.handleProviderOnConnecting();
 			if (!profile) {
 				let result = this.uiController.validateConnection();
 				if (!result.isValid) {
+					this._logService.debug('ConnectionDialogService: Connection is invalid');
 					this._connecting = false;
 					this._connectionDialog.resetConnection();
 					return;
@@ -202,7 +214,7 @@ export class ConnectionDialogService implements IConnectionDialogService {
 	private handleOnCancel(params: INewConnectionParams): void {
 		if (this.ignoreNextConnect) {
 			this._connectionDialog.resetConnection();
-			this._connectionDialog.close();
+			this._connectionDialog.close('cancel');
 			this.ignoreNextConnect = false;
 			this._dialogDeferredPromise.resolve(undefined);
 			return;
@@ -230,7 +242,7 @@ export class ConnectionDialogService implements IConnectionDialogService {
 	private async handleDefaultOnConnect(params: INewConnectionParams, connection: IConnectionProfile): Promise<void> {
 		if (this.ignoreNextConnect) {
 			this._connectionDialog.resetConnection();
-			this._connectionDialog.close();
+			this._connectionDialog.close('ok');
 			this.ignoreNextConnect = false;
 			this._connecting = false;
 			this._dialogDeferredPromise.resolve(connection);
@@ -254,20 +266,23 @@ export class ConnectionDialogService implements IConnectionDialogService {
 			const connectionResult = await this._connectionManagementService.connectAndSaveProfile(connection, uri, options, params && params.input);
 			this._connecting = false;
 			if (connectionResult && connectionResult.connected) {
-				this._connectionDialog.close();
+				this._connectionDialog.close('ok');
 				if (this._dialogDeferredPromise) {
 					this._dialogDeferredPromise.resolve(connectionResult.connectionProfile);
 				}
 			} else if (connectionResult && connectionResult.errorHandled) {
 				this._connectionDialog.resetConnection();
+				this._logService.debug(`ConnectionDialogService: Error handled and connection reset - Error: ${connectionResult.errorMessage}`);
 			} else {
 				this._connectionDialog.resetConnection();
 				this.showErrorDialog(Severity.Error, this._connectionErrorTitle, connectionResult.errorMessage, connectionResult.callStack);
+				this._logService.debug(`ConnectionDialogService: Connection error: ${connectionResult.errorMessage}`);
 			}
 		} catch (err) {
 			this._connecting = false;
 			this._connectionDialog.resetConnection();
 			this.showErrorDialog(Severity.Error, this._connectionErrorTitle, err);
+			this._logService.debug(`ConnectionDialogService: Error encountered while connecting ${err}`);
 		}
 	}
 
@@ -316,7 +331,7 @@ export class ConnectionDialogService implements IConnectionDialogService {
 			}
 			if (!isProviderInParams) {
 				let uniqueProvidersMap = this._connectionManagementService.getUniqueConnectionProvidersByNameMap(this._providerNameToDisplayNameMap);
-				this._currentProviderType = find(Object.keys(uniqueProvidersMap), (key) => uniqueProvidersMap[key] === input.selectedProviderDisplayName);
+				this._currentProviderType = Object.keys(uniqueProvidersMap).find((key) => uniqueProvidersMap[key] === input.selectedProviderDisplayName);
 			}
 		}
 		this._model.providerName = this._currentProviderType;
@@ -378,11 +393,19 @@ export class ConnectionDialogService implements IConnectionDialogService {
 		if (model && !model.providerName) {
 			model.providerName = providerName;
 		}
+
+		const defaultAuthenticationType = this.getDefaultAuthenticationTypeName();
+		let authenticationTypeName = model ? model.authenticationType : defaultAuthenticationType;
+		authenticationTypeName = authenticationTypeName ? authenticationTypeName : defaultAuthenticationType;
+		if (model && !model.authenticationType) {
+			model.authenticationType = authenticationTypeName;
+		}
+
 		let newProfile = new ConnectionProfile(this._capabilitiesService, model || providerName);
 		newProfile.saveProfile = true;
 		newProfile.generateNewId();
 		// If connecting from a query editor set "save connection" to false
-		if (this._params && this._params.input && this._params.connectionType === ConnectionType.editor) {
+		if (this._params?.connectionType === ConnectionType.editor) {
 			newProfile.saveProfile = false;
 		}
 		return newProfile;
@@ -450,13 +473,16 @@ export class ConnectionDialogService implements IConnectionDialogService {
 				this.handleOnCancel(this._connectionDialog.newConnectionParams);
 			});
 			this._connectionDialog.onConnect((profile) => {
-				this.handleOnConnect(this._connectionDialog.newConnectionParams, profile);
+				this.handleOnConnect(this._connectionDialog.newConnectionParams, profile as IConnectionProfile);
 			});
 			this._connectionDialog.onShowUiComponent((input) => this.handleShowUiComponent(input));
 			this._connectionDialog.onInitDialog(() => this.handleInitDialog());
-			this._connectionDialog.onFillinConnectionInputs((input) => this.handleFillInConnectionInputs(input));
+			this._connectionDialog.onFillinConnectionInputs((input) => this.handleFillInConnectionInputs(input as IConnectionProfile));
 			this._connectionDialog.onResetConnection(() => this.handleProviderOnResetConnection());
 			this._connectionDialog.render();
+			this._connectionDialog.onClosed(() => {
+				this._model?.dispose();
+			});
 		}
 		this._connectionDialog.newConnectionParams = params;
 		this._connectionDialog.updateProvider(this._providerNameToDisplayNameMap[this._currentProviderType]);

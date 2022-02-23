@@ -11,13 +11,14 @@ import { BasePage } from './basePage';
 
 export abstract class ImportPage extends BasePage {
 
-	protected readonly wizardPage: azdata.window.WizardPage;
+	protected override readonly wizardPage: azdata.window.WizardPage;
 	protected readonly instance: FlatFileWizard;
-	protected readonly model: ImportDataModel;
-	protected readonly view: azdata.ModelView;
+	protected override readonly model: ImportDataModel;
+	protected override readonly view: azdata.ModelView;
 	protected readonly provider: FlatFileProvider;
 
-	protected constructor(instance: FlatFileWizard, wizardPage: azdata.window.WizardPage, model: ImportDataModel, view: azdata.ModelView, provider: FlatFileProvider) {
+
+	constructor(instance: FlatFileWizard, wizardPage: azdata.window.WizardPage, model: ImportDataModel, view: azdata.ModelView, provider: FlatFileProvider) {
 		super();
 		this.instance = instance;
 		this.wizardPage = wizardPage;

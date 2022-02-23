@@ -4,7 +4,8 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Registry } from 'vs/platform/registry/common/platform';
-import { IEditorInput, EditorInput } from 'vs/workbench/common/editor';
+import { IEditorInput } from 'vs/workbench/common/editor';
+import { EditorInput } from 'vs/workbench/common/editor/editorInput';
 import { ServicesAccessor, IInstantiationService, BrandedService } from 'vs/platform/instantiation/common/instantiation';
 import { IDisposable, toDisposable } from 'vs/base/common/lifecycle';
 
@@ -13,11 +14,7 @@ export type BaseInputCreator = (activeEditor: IEditorInput) => IEditorInput;
 
 export interface ILanguageAssociation {
 	convertInput(activeEditor: IEditorInput): Promise<EditorInput | undefined> | EditorInput | undefined;
-	/**
-	 * Used for scenarios when we need to synchrounly create inputs, currently only for handling upgrades
-	 * and planned to be removed eventually
-	 */
-	syncConvertinput?(activeEditor: IEditorInput): EditorInput | undefined;
+	syncConvertInput?(activeEditor: IEditorInput): EditorInput | undefined;
 	createBase(activeEditor: IEditorInput): IEditorInput;
 }
 
@@ -25,8 +22,12 @@ type ILanguageAssociationSignature<Services extends BrandedService[]> = new (...
 
 export interface ILanguageAssociationRegistry {
 	registerLanguageAssociation<Services extends BrandedService[]>(languages: string[], contribution: ILanguageAssociationSignature<Services>, isDefault?: boolean): IDisposable;
-	getAssociationForLanguage(language: string): ILanguageAssociation;
-	readonly defaultAssociation: [string, ILanguageAssociation];
+	/**
+	 * Gets the registered association for a language if one is registered
+	 * @param language The case-insensitive language ID to get the association for
+	 */
+	getAssociationForLanguage(language: string): ILanguageAssociation | undefined;
+	readonly defaultAssociation: [string, ILanguageAssociation] | undefined;
 
 	/**
 	 * Starts the registry by providing the required services.
@@ -54,6 +55,7 @@ const languageAssociationRegistry = new class implements ILanguageAssociationReg
 	}
 
 	registerLanguageAssociation(languages: string[], contribution: ILanguageAssociationSignature<BrandedService[]>, isDefault?: boolean): IDisposable {
+		languages = languages.map(lang => lang.toLowerCase());
 		for (const language of languages) {
 			this.associationContructors.set(language, contribution);
 		}
@@ -71,7 +73,7 @@ const languageAssociationRegistry = new class implements ILanguageAssociationReg
 	}
 
 	getAssociationForLanguage(language: string): ILanguageAssociation | undefined {
-		return this.associationsInstances.get(language);
+		return this.associationsInstances.get(language.toLowerCase());
 	}
 
 	get defaultAssociation(): [string, ILanguageAssociation] | undefined {

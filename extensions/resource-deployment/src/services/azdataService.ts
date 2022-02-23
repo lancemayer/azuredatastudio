@@ -18,7 +18,6 @@ export interface BdcEndpoint {
 
 export interface IAzdataService {
 	getDeploymentProfiles(deploymentType: BdcDeploymentType): Promise<BigDataClusterDeploymentProfile[]>;
-	getEndpoints(clusterName: string, userName: string, password: string): Promise<BdcEndpoint[]>;
 }
 
 export class AzdataService implements IAzdataService {
@@ -34,6 +33,12 @@ export class AzdataService implements IAzdataService {
 				break;
 			case BdcDeploymentType.ExistingKubeAdm:
 				profilePrefix = 'kubeadm';
+				break;
+			case BdcDeploymentType.ExistingARO:
+				profilePrefix = 'aro';
+				break;
+			case BdcDeploymentType.ExistingOpenShift:
+				profilePrefix = 'openshift';
 				break;
 			default:
 				throw new Error(`Unknown deployment type: ${deploymentType}`);
@@ -56,7 +61,7 @@ export class AzdataService implements IAzdataService {
 		const env: NodeJS.ProcessEnv = {};
 		// azdata requires this environment variables to be set
 		env['ACCEPT_EULA'] = 'yes';
-		await this.platformService.runCommand(`azdata bdc config init --source ${profileName} --target ${profileName} --force`, { workingDirectory: this.platformService.storagePath(), additionalEnvironmentVariables: env });
+		await this.platformService.runCommand(`azdata bdc config init --source ${profileName} --path ${profileName} --force`, { workingDirectory: this.platformService.storagePath(), additionalEnvironmentVariables: env });
 		const configObjects = await Promise.all([
 			this.getJsonObjectFromFile(path.join(this.platformService.storagePath(), profileName, 'bdc.json')),
 			this.getJsonObjectFromFile(path.join(this.platformService.storagePath(), profileName, 'control.json'))
@@ -66,17 +71,5 @@ export class AzdataService implements IAzdataService {
 
 	private async getJsonObjectFromFile(path: string): Promise<any> {
 		return JSON.parse(await this.platformService.readTextFile(path));
-	}
-
-	public async getEndpoints(clusterName: string, userName: string, password: string): Promise<BdcEndpoint[]> {
-		const env: NodeJS.ProcessEnv = {};
-		env['AZDATA_USERNAME'] = userName;
-		env['AZDATA_PASSWORD'] = password;
-		env['ACCEPT_EULA'] = 'yes';
-		let cmd = 'azdata login -n ' + clusterName;
-		await this.platformService.runCommand(cmd, { additionalEnvironmentVariables: env });
-		cmd = 'azdata bdc endpoint list';
-		const stdout = await this.platformService.runCommand(cmd, { additionalEnvironmentVariables: env });
-		return <BdcEndpoint[]>JSON.parse(stdout);
 	}
 }

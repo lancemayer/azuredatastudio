@@ -3,56 +3,35 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { EditorInput, EditorModel, IEditorInput } from 'vs/workbench/common/editor';
-import { IConnectionProfile } from 'sql/platform/connection/common/interfaces';
-import { IFileService } from 'vs/platform/files/common/files';
 import { URI } from 'vs/base/common/uri';
+import { EditorInput } from 'vs/workbench/common/editor/editorInput';
+import { EditorModel } from 'vs/workbench/common/editor/editorModel';
+import { ITextFileService } from 'vs/workbench/services/textfile/common/textfiles';
 import { UntitledTextEditorInput } from 'vs/workbench/services/untitled/common/untitledTextEditorInput';
-import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
-import { ILanguageAssociation } from 'sql/workbench/services/languageAssociation/common/languageAssociation';
-
-export class QueryPlanConverter implements ILanguageAssociation {
-	static readonly languages = ['sqlplan'];
-
-	constructor(@IInstantiationService private instantiationService: IInstantiationService) { }
-
-	convertInput(activeEditor: IEditorInput): QueryPlanInput {
-		return this.instantiationService.createInstance(QueryPlanInput, activeEditor.resource);
-	}
-
-	createBase(activeEditor: QueryPlanInput): IEditorInput {
-		return undefined;
-	}
-}
 
 export class QueryPlanInput extends EditorInput {
 
 	public static ID: string = 'workbench.editorinputs.queryplan';
 	public static SCHEMA: string = 'queryplan';
 
-	private _uniqueSelector: string;
-	private _xml: string;
+	private _xml?: string;
 
 	constructor(
 		private _uri: URI,
-		@IFileService private readonly fileService: IFileService
+		@ITextFileService private readonly fileService: ITextFileService
 	) {
 		super();
 	}
 
-	public setUniqueSelector(uniqueSelector: string): void {
-		this._uniqueSelector = uniqueSelector;
-	}
-
-	public getTypeId(): string {
+	override get typeId(): string {
 		return UntitledTextEditorInput.ID;
 	}
 
-	public getName(): string {
+	public override getName(): string {
 		return 'Query Plan';
 	}
 
-	public get planXml(): string {
+	public get planXml(): string | undefined {
 		return this._xml;
 	}
 
@@ -64,24 +43,11 @@ export class QueryPlanInput extends EditorInput {
 		return false;
 	}
 
-	public getConnectionProfile(): IConnectionProfile {
-		//return this._connection.connectionProfile;
-		return undefined;
-	}
-
-	public async resolve(refresh?: boolean): Promise<EditorModel> {
+	public override async resolve(refresh?: boolean): Promise<EditorModel | null> {
 		if (!this._xml) {
-			this._xml = (await this.fileService.readFile(this._uri)).value.toString();
+			this._xml = (await this.fileService.read(this._uri, { acceptTextOnly: true })).value;
 		}
-		return undefined;
-	}
-
-	public get hasInitialized(): boolean {
-		return !!this._uniqueSelector;
-	}
-
-	public get uniqueSelector(): string {
-		return this._uniqueSelector;
+		return null;
 	}
 
 	get resource(): URI | undefined {

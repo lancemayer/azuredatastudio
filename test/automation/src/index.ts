@@ -23,6 +23,7 @@ export * from './settings';
 export * from './statusbar';
 export * from './terminal';
 export * from './viewlet';
+export * from './localization';
 export * from './workbench';
 export * from './driver';
 
@@ -30,5 +31,3 @@ export * from './driver';
 export * from './sql/connectionDialog';
 export * from './sql/profiler';
 export * from './sql/queryEditors';
-export * from './sql/sqlutils';
-export * from './sql/testConfig';

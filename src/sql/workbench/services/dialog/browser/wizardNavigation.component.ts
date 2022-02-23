@@ -10,10 +10,12 @@ import { Wizard } from '../common/dialogTypes';
 import { IWorkbenchThemeService } from 'vs/workbench/services/themes/common/workbenchThemeService';
 import { SIDE_BAR_BACKGROUND } from 'vs/workbench/common/theme';
 import { IBootstrapParams } from 'sql/workbench/services/bootstrap/common/bootstrapParams';
+import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
+import { KeyCode } from 'vs/base/common/keyCodes';
 
 export class WizardNavigationParams implements IBootstrapParams {
-	wizard: Wizard;
-	navigationHandler: (index: number) => void;
+	wizard!: Wizard;
+	navigationHandler!: (index: number) => void;
 }
 
 @Component({
@@ -24,8 +26,8 @@ export class WizardNavigationParams implements IBootstrapParams {
 			<ng-container *ngFor="let item of _params.wizard.pages; let i = index">
 				<div class="wizardNavigation-pageNumber">
 					<div class="wizardNavigation-connector" [ngClass]="{'invisible': !hasTopConnector(i), 'active': isActive(i)}"></div>
-					<a [attr.href]="isActive(i) ? '' : null" [title]="item.title">
-						<span class="wizardNavigation-dot" [ngClass]="{'active': isActive(i), 'currentPage': isCurrentPage(i)}" (click)="navigate(i)">{{i+1}}</span>
+					<a [tabindex]="isActive(i) ? 0 : -1" [attr.href]="isActive(i) ? '' : null" [title]="item.title" (click)="navigate(i)" (keydown)="onKey($event,i)" [attr.aria-current]="isCurrentPage(i) ? 'step' : null" [attr.aria-disabled]="isActive(i) ? null : 'true'">
+						<span class="wizardNavigation-dot" [ngClass]="{'active': isActive(i), 'currentPage': isCurrentPage(i)}">{{i+1}}</span>
 					</a>
 					<div class="wizardNavigation-connector" [ngClass]="{'invisible': !hasBottomConnector(i), 'active': isActive(i)}"></div>
 				</div>
@@ -39,7 +41,7 @@ export class WizardNavigation implements AfterViewInit {
 	private _onResize = new Emitter<void>();
 	public readonly onResize: Event<void> = this._onResize.event;
 
-	@ViewChild('container', { read: ElementRef }) private _container: ElementRef;
+	@ViewChild('container', { read: ElementRef }) private _container!: ElementRef;
 	constructor(
 		@Inject(forwardRef(() => ChangeDetectorRef)) private _changeRef: ChangeDetectorRef,
 		@Inject(IBootstrapParams) private _params: WizardNavigationParams,
@@ -74,9 +76,21 @@ export class WizardNavigation implements AfterViewInit {
 		}
 	}
 
+	onKey(e: KeyboardEvent, index: number): void {
+		const event = new StandardKeyboardEvent(e);
+		if (event.equals(KeyCode.Space) || event.equals(KeyCode.Enter)) {
+			this.navigate(index);
+			e.preventDefault();
+			e.stopPropagation();
+		}
+	}
+
 	private style(): void {
 		let theme = this._themeService.getColorTheme();
 		let navigationBackgroundColor = theme.getColor(SIDE_BAR_BACKGROUND);
+		if (!navigationBackgroundColor) {
+			return;
+		}
 		if (theme.type === 'light') {
 			navigationBackgroundColor = navigationBackgroundColor.lighten(0.03);
 		} else if (theme.type === 'dark') {

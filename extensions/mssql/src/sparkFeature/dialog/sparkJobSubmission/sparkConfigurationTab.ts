@@ -11,12 +11,26 @@ import * as utils from '../../../utils';
 import * as LocalizedConstants from '../../../localizedConstants';
 import * as constants from '../../../constants';
 
-import { AppContext } from '../../../appContext';
-import { ApiWrapper } from '../../../apiWrapper';
 import { SparkJobSubmissionModel } from './sparkJobSubmissionModel';
 import { SparkFileSource } from './sparkJobSubmissionService';
 
 const localize = nls.loadMessageBundle();
+
+/**
+ * Configuration values for the general tab of the spark job submission dialog.
+ * See https://livy.incubator.apache.org/docs/latest/rest-api.html for more information
+ * on the specific values
+ */
+export interface SparkConfigModel {
+	jobName: string,
+	mainClass: string,
+	arguments: string
+}
+
+const baseFormItemLayout: azdata.FormItemLayout = {
+	horizontal: false,
+	componentWidth: '400px'
+};
 
 export class SparkConfigurationTab {
 	private _tab: azdata.window.DialogTab;
@@ -33,24 +47,16 @@ export class SparkConfigurationTab {
 	private _mainClassInputBox: azdata.InputBoxComponent;
 	private _argumentsInputBox: azdata.InputBoxComponent;
 
-	private get apiWrapper(): ApiWrapper {
-		return this.appContext.apiWrapper;
-	}
-
 	// If path is specified, means the default source setting for this tab is HDFS file, otherwise, it would be local file.
-	constructor(private _dataModel: SparkJobSubmissionModel, private appContext: AppContext, private _path?: string) {
-		this._tab = this.apiWrapper.createTab(localize('sparkJobSubmission.GeneralTabName', "GENERAL"));
+	constructor(private _dataModel: SparkJobSubmissionModel, private _path?: string) {
+		this._tab = azdata.window.createTab(localize('sparkJobSubmission.GeneralTabName', "GENERAL"));
 
 		this._tab.registerContent(async (modelView) => {
 			let builder = modelView.modelBuilder;
-			let parentLayout: azdata.FormItemLayout = {
-				horizontal: false,
-				componentWidth: '400px'
-			};
 
 			let formContainer = builder.formContainer();
 
-			this._jobNameInputBox = builder.inputBox().withProperties({
+			this._jobNameInputBox = builder.inputBox().withProps({
 				placeHolder: localize('sparkJobSubmission.JobNamePlaceHolder', "Enter a name ..."),
 				value: (this._path) ? fspath.basename(this._path) : ''
 			}).component();
@@ -59,26 +65,26 @@ export class SparkConfigurationTab {
 				component: this._jobNameInputBox,
 				title: localize('sparkJobSubmission.JobName', "Job Name"),
 				required: true
-			}, parentLayout);
+			}, baseFormItemLayout);
 
-			this._sparkContextLabel = builder.text().withProperties({
+			this._sparkContextLabel = builder.text().withProps({
 				value: this._dataModel.getSparkClusterUrl()
 			}).component();
 			formContainer.addFormItem({
 				component: this._sparkContextLabel,
 				title: localize('sparkJobSubmission.SparkCluster', "Spark Cluster")
-			}, parentLayout);
+			}, baseFormItemLayout);
 
-			this._fileSourceDropDown = builder.dropDown().withProperties<azdata.DropDownProperties>({
+			this._fileSourceDropDown = builder.dropDown().withProps({
 				values: [SparkFileSource.Local.toString(), SparkFileSource.HDFS.toString()],
 				value: (this._path) ? SparkFileSource.HDFS.toString() : SparkFileSource.Local.toString()
 			}).component();
 
-			this._fileSourceDropDown.onValueChanged(selection => {
+			this._fileSourceDropDown.onValueChanged(async selection => {
 				let isLocal = selection.selected === SparkFileSource.Local.toString();
 				// Disable browser button for cloud source.
 				if (this._filePickerButton) {
-					this._filePickerButton.updateProperties({
+					await this._filePickerButton.updateProperties({
 						enabled: isLocal,
 						required: isLocal
 					});
@@ -98,12 +104,12 @@ export class SparkConfigurationTab {
 				}
 			});
 
-			this._sparkSourceFileInputBox = builder.inputBox().withProperties({
+			this._sparkSourceFileInputBox = builder.inputBox().withProps({
 				required: true,
 				placeHolder: localize('sparkJobSubmission.FilePathPlaceHolder', "Path to a .jar or .py file"),
 				value: (this._path) ? this._path : ''
 			}).component();
-			this._sparkSourceFileInputBox.onTextChanged(text => {
+			this._sparkSourceFileInputBox.onTextChanged(async text => {
 				if (this._fileSourceDropDown.value === SparkFileSource.Local.toString()) {
 					this._dataModel.updateModelByLocalPath(text);
 					if (this._localUploadDestinationLabel) {
@@ -120,19 +126,19 @@ export class SparkConfigurationTab {
 
 				// main class disable/enable is according to whether it's jar file.
 				let isJarFile = this._dataModel.isJarFile();
-				this._mainClassInputBox.updateProperties({ enabled: isJarFile, required: isJarFile });
+				await this._mainClassInputBox.updateProperties({ enabled: isJarFile, required: isJarFile });
 				if (!isJarFile) {
 					// Clear main class for py file.
 					this._mainClassInputBox.value = '';
 				}
 			});
 
-			this._filePickerButton = builder.button().withProperties({
-				required: (this._path) ? false : true,
+			this._filePickerButton = builder.button().withProps({
 				enabled: (this._path) ? false : true,
 				label: '•••',
 				width: constants.mssqlClusterSparkJobFileSelectorButtonWidth,
-				height: constants.mssqlClusterSparkJobFileSelectorButtonHeight
+				height: constants.mssqlClusterSparkJobFileSelectorButtonHeight,
+				secondary: true
 			}).component();
 			this._filePickerButton.onDidClick(() => this.onSelectFile());
 
@@ -149,7 +155,7 @@ export class SparkConfigurationTab {
 				alignContent: 'stretch'
 			});
 
-			this._localUploadDestinationLabel = builder.text().withProperties({
+			this._localUploadDestinationLabel = builder.text().withProps({
 				value: (this._path) ? '' : LocalizedConstants.sparkLocalFileDestinationHint
 			}).component();
 			this._sourceFlexContainerWithHint = builder.flexContainer().component();
@@ -167,23 +173,24 @@ export class SparkConfigurationTab {
 				component: this._sourceFlexContainerWithHint,
 				title: localize('sparkJobSubmission.MainFilePath', "JAR/py File"),
 				required: true
-			}, parentLayout);
+			}, baseFormItemLayout);
 
 			this._mainClassInputBox = builder.inputBox().component();
 			formContainer.addFormItem({
 				component: this._mainClassInputBox,
 				title: localize('sparkJobSubmission.MainClass', "Main Class"),
 				required: true
-			}, parentLayout);
+			}, baseFormItemLayout);
 
 			this._argumentsInputBox = builder.inputBox().component();
 			formContainer.addFormItem({
 				component: this._argumentsInputBox,
 				title: localize('sparkJobSubmission.Arguments', "Arguments")
 			},
-				Object.assign(
-					{ info: localize('sparkJobSubmission.ArgumentsTooltip', "Command line arguments used in your main class, multiple arguments should be split by space.") },
-					parentLayout));
+				{
+					...baseFormItemLayout,
+					info: localize('sparkJobSubmission.ArgumentsTooltip', "Command line arguments used in your main class, multiple arguments should be split by space.")
+				});
 
 			await modelView.initializeModel(formContainer.component());
 		});
@@ -248,8 +255,12 @@ export class SparkConfigurationTab {
 		}
 	}
 
-	public getInputValues(): string[] {
-		return [this._jobNameInputBox.value, this._mainClassInputBox.value, this._argumentsInputBox.value];
+	public getSparkConfigValues(): SparkConfigModel {
+		return {
+			jobName: this._jobNameInputBox.value ?? '',
+			mainClass: this._mainClassInputBox.value ?? '',
+			arguments: this._argumentsInputBox.value ?? ''
+		};
 	}
 
 	public async pickFile(): Promise<string> {
@@ -263,14 +274,14 @@ export class SparkConfigurationTab {
 				filters: filter
 			};
 
-			let fileUris: vscode.Uri[] = await this.apiWrapper.showOpenDialog(options);
+			let fileUris: vscode.Uri[] = await vscode.window.showOpenDialog(options);
 			if (fileUris && fileUris[0]) {
 				return fileUris[0].fsPath;
 			}
 
 			return undefined;
 		} catch (err) {
-			this.apiWrapper.showErrorMessage(localize('sparkJobSubmission.SelectFileError', "Error in locating the file due to Error: {0}", utils.getErrorMessage(err)));
+			void vscode.window.showErrorMessage(localize('sparkJobSubmission.SelectFileError', "Error in locating the file due to Error: {0}", utils.getErrorMessage(err)));
 			return undefined;
 		}
 	}

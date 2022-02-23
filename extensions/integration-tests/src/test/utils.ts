@@ -35,9 +35,15 @@ export async function connectToServer(connectionInfo: TestConnectionInfo, timeou
 		options: {}
 	};
 	await ensureConnectionViewOpened();
-	let result = <azdata.ConnectionResult>await azdata.connection.connect(connectionProfile);
-	assert(result.connected, `Failed to connect to "${connectionProfile.serverName}", error code: ${result.errorCode}, error message: ${result.errorMessage}`);
 
+	// Try connecting 3 times
+	let result = await retryFunction(
+		async () => {
+			let connection = <azdata.ConnectionResult>await azdata.connection.connect(connectionProfile);
+			assert(connection?.connected, `Failed to connect to "${connectionProfile.serverName}", error code: ${connection.errorCode}, error message: ${connection.errorMessage}`);
+			return connection;
+
+		}, 3);
 	//workaround
 	//wait for OE to load
 	await pollTimeout(async () => {
@@ -109,6 +115,12 @@ export async function createDB(dbName: string, ownerUri: string): Promise<void> 
 	assert(dbCreatedResult.columnInfo[0].columnName !== 'ErrorMessage', 'DB creation threw error');
 }
 
+/**
+ * Attempts to delete a database, throwing an exception if it fails.
+ * @param server The server information
+ * @param dbName The name of the DB to delete
+ * @param ownerUri The ownerUri of the connection used to run the query
+ */
 export async function deleteDB(server: TestServerProfile, dbName: string, ownerUri: string): Promise<void> {
 	let query = `BEGIN TRY
 			ALTER DATABASE ${dbName}
@@ -123,7 +135,23 @@ export async function deleteDB(server: TestServerProfile, dbName: string, ownerU
 
 	ownerUri = await ensureServerConnected(server, ownerUri);
 	let dbDeleteResult = await runQuery(query, ownerUri);
-	assert(dbDeleteResult.columnInfo[0].columnName !== 'ErrorMessage', 'DB deletion threw error');
+	assert(dbDeleteResult.columnInfo[0].columnName !== 'ErrorMessage', `Error deleting db ${dbName} : ${dbDeleteResult.rows[0][0]}`);
+}
+
+/**
+ * Attempts to delete a database, returning true if successful and false if not.
+ * @param server The server information
+ * @param dbName The name of the DB to delete
+ * @param ownerUri The ownerUri of the connection used to run the query
+ */
+export async function tryDeleteDB(server: TestServerProfile, dbName: string, ownerUri: string): Promise<boolean> {
+	try {
+		await deleteDB(server, dbName, ownerUri);
+		return true;
+	} catch (err) {
+		console.warn(err);
+		return false;
+	}
 }
 
 async function ensureServerConnected(server: TestServerProfile, ownerUri: string): Promise<string> {
@@ -157,6 +185,26 @@ export async function runQuery(query: string, ownerUri: string): Promise<azdata.
 	}
 
 }
+
+export async function retryFunction<T>(fn: () => Promise<T>, retryCount: number): Promise<T> {
+	let attempts: number = 1;
+	while (attempts <= retryCount) {
+		try {
+			return await fn();
+		}
+		catch (e) {
+			console.error(`utils.retryFunction: Attempt #${attempts} from ${retryCount} failed. Error: ${e}`);
+			if (attempts === retryCount) {
+				throw e;
+			}
+		}
+
+		await sleep(10000);
+		attempts++;
+	}
+	throw new Error(`utils.retryFunction: Failed after ${attempts} attempts`);
+}
+
 
 export async function assertThrowsAsync(fn: () => Promise<any>, msg: string): Promise<void> {
 	let f = () => {
@@ -228,8 +276,8 @@ export async function assertFileGenerationResult(filepath: string, retryCount: n
 
 /**
  *
- * @param tableName table to look for
  * @param schema schema to look for
+ * @param tableName table to look for
  * @param ownerUri owner uri
  * @param retryCount number of times to retry with a 5 second wait between each try
  * @param checkForData whether or not to check if the table has data

@@ -5,12 +5,12 @@
 
 import 'vs/css!./media/gridPanel';
 
-import { attachTableStyler } from 'sql/platform/theme/common/styler';
+import { ITableStyles, ITableMouseEvent, FilterableColumn } from 'sql/base/browser/ui/table/interfaces';
+import { attachTableFilterStyler, attachTableStyler } from 'sql/platform/theme/common/styler';
 import QueryRunner, { QueryGridDataProvider } from 'sql/workbench/services/query/common/queryRunner';
-import { ResultSetSummary, IColumn } from 'sql/workbench/services/query/common/query';
-import { VirtualizedCollection, AsyncDataProvider } from 'sql/base/browser/ui/table/asyncDataView';
+import { ResultSetSummary, IColumn, ICellValue } from 'sql/workbench/services/query/common/query';
+import { VirtualizedCollection } from 'sql/base/browser/ui/table/asyncDataView';
 import { Table } from 'sql/base/browser/ui/table/table';
-import { ScrollableSplitView, IView } from 'sql/base/browser/ui/scrollableSplitview/scrollableSplitview';
 import { MouseWheelSupport } from 'sql/base/browser/ui/table/plugins/mousewheelTableScroll.plugin';
 import { AutoColumnSize } from 'sql/base/browser/ui/table/plugins/autoSizeColumns.plugin';
 import { IGridActionContext, SaveResultAction, CopyResultAction, SelectAllGridAction, MaximizeTableAction, RestoreTableAction, ChartDataAction, VisualizerDataAction } from 'sql/workbench/contrib/query/browser/actions';
@@ -18,26 +18,23 @@ import { CellSelectionModel } from 'sql/base/browser/ui/table/plugins/cellSelect
 import { RowNumberColumn } from 'sql/base/browser/ui/table/plugins/rowNumberColumn.plugin';
 import { escape } from 'sql/base/common/strings';
 import { hyperLinkFormatter, textFormatter } from 'sql/base/browser/ui/table/formatters';
-import { CopyKeybind } from 'sql/base/browser/ui/table/plugins/copyKeybind.plugin';
 import { AdditionalKeyBindings } from 'sql/base/browser/ui/table/plugins/additionalKeyBindings.plugin';
-import { ITableStyles, ITableMouseEvent } from 'sql/base/browser/ui/table/interfaces';
+import { CopyKeybind } from 'sql/base/browser/ui/table/plugins/copyKeybind.plugin';
 
-import { IContextMenuService } from 'vs/platform/contextview/browser/contextView';
+import { IContextMenuService, IContextViewService } from 'vs/platform/contextview/browser/contextView';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
 import { IContextKeyService } from 'vs/platform/contextkey/common/contextkey';
 import { Emitter, Event } from 'vs/base/common/event';
 import { IThemeService } from 'vs/platform/theme/common/themeService';
 import { isUndefinedOrNull } from 'vs/base/common/types';
-import { range, find } from 'vs/base/common/arrays';
-import { Orientation } from 'vs/base/browser/ui/splitview/splitview';
 import { Disposable, dispose, DisposableStore } from 'vs/base/common/lifecycle';
+import { range } from 'vs/base/common/arrays';
 import { generateUuid } from 'vs/base/common/uuid';
-import { Separator, ActionBar, ActionsOrientation } from 'vs/base/browser/ui/actionbar/actionbar';
+import { ActionBar, ActionsOrientation } from 'vs/base/browser/ui/actionbar/actionbar';
 import { isInDOM, Dimension } from 'vs/base/browser/dom';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
 import { IEditorService } from 'vs/workbench/services/editor/common/editorService';
-import { IAction } from 'vs/base/common/actions';
-import { ScrollbarVisibility } from 'vs/base/common/scrollable';
+import { IAction, Separator } from 'vs/base/common/actions';
 import { ILogService } from 'vs/platform/log/common/log';
 import { localize } from 'vs/nls';
 import { IGridDataProvider } from 'sql/workbench/services/query/common/gridDataProvider';
@@ -47,6 +44,13 @@ import { GridPanelState, GridTableState } from 'sql/workbench/common/editor/quer
 import { IUntitledTextEditorService } from 'vs/workbench/services/untitled/common/untitledTextEditorService';
 import { SaveFormat } from 'sql/workbench/services/query/common/resultSerializer';
 import { Progress } from 'vs/platform/progress/common/progress';
+import { ScrollableView, IView } from 'sql/base/browser/ui/scrollableView/scrollableView';
+import { IQueryEditorConfiguration } from 'sql/platform/query/common/query';
+import { Orientation } from 'vs/base/browser/ui/splitview/splitview';
+import { IQueryModelService } from 'sql/workbench/services/query/common/queryModel';
+import { FilterButtonWidth, HeaderFilter } from 'sql/base/browser/ui/table/plugins/headerFilter.plugin';
+import { HybridDataProvider } from 'sql/base/browser/ui/table/hybridDataProvider';
+import { INotificationService } from 'vs/platform/notification/common/notification';
 
 const ROW_HEIGHT = 29;
 const HEADER_HEIGHT = 26;
@@ -63,11 +67,10 @@ const MIN_GRID_HEIGHT = (MIN_GRID_HEIGHT_ROWS * ROW_HEIGHT) + HEADER_HEIGHT + ES
 
 export class GridPanel extends Disposable {
 	private container = document.createElement('div');
-	private splitView: ScrollableSplitView;
-	private tables: GridTable<any>[] = [];
+	private scrollableView: ScrollableView;
+	private tables: Array<GridTable<any>> = [];
 	private tableDisposable = this._register(new DisposableStore());
 	private queryRunnerDisposables = this._register(new DisposableStore());
-	private currentHeight: number;
 
 	private runner: QueryRunner;
 
@@ -76,15 +79,15 @@ export class GridPanel extends Disposable {
 
 	constructor(
 		@IConfigurationService private readonly configurationService: IConfigurationService,
-		@IThemeService private readonly themeService: IThemeService,
 		@IInstantiationService private readonly instantiationService: IInstantiationService,
-		@ILogService private readonly logService: ILogService
+		@ILogService private readonly logService: ILogService,
+		@IThemeService private readonly themeService: IThemeService,
 	) {
 		super();
-		this.splitView = new ScrollableSplitView(this.container, { enableResizing: false, verticalScrollbarVisibility: ScrollbarVisibility.Visible });
-		this.splitView.onScroll(e => {
-			if (this.state && this.splitView.length !== 0) {
-				this.state.scrollPosition = e;
+		this.scrollableView = new ScrollableView(this.container);
+		this.scrollableView.onDidScroll(e => {
+			if (this.state && this.scrollableView.length !== 0) {
+				this.state.scrollPosition = e.scrollTop;
 			}
 		});
 	}
@@ -97,12 +100,7 @@ export class GridPanel extends Disposable {
 	}
 
 	public layout(size: Dimension): void {
-		this.splitView.layout(size.height);
-		// if the size hasn't change it won't layout our table so we have to do it manually
-		if (size.height === this.currentHeight) {
-			this.tables.map(e => e.layout());
-		}
-		this.currentHeight = size.height;
+		this.scrollableView.layout(size.height, size.width);
 	}
 
 	public focus(): void {
@@ -123,21 +121,21 @@ export class GridPanel extends Disposable {
 			this.reset();
 		}));
 		this.addResultSet(this.runner.batchSets.reduce<ResultSetSummary[]>((p, e) => {
-			if (this.configurationService.getValue<boolean>('sql.results.streaming')) {
-				p = p.concat(e.resultSetSummaries);
+			if (this.configurationService.getValue<IQueryEditorConfiguration>('queryEditor').results.streaming) {
+				p = p.concat(e.resultSetSummaries ?? []);
 			} else {
-				p = p.concat(e.resultSetSummaries.filter(c => c.complete));
+				p = p.concat(e.resultSetSummaries?.filter(c => c.complete) ?? []);
 			}
 			return p;
 		}, []));
 
 		if (this.state && this.state.scrollPosition) {
-			this.splitView.setScrollPosition(this.state.scrollPosition);
+			this.scrollableView.setScrollTop(this.state.scrollPosition);
 		}
 	}
 
 	public resetScrollPosition(): void {
-		this.splitView.setScrollPosition(this.state.scrollPosition);
+		this.scrollableView.setScrollTop(this.state.scrollPosition);
 	}
 
 	private onResultSet(resultSet: ResultSetSummary | ResultSetSummary[]) {
@@ -153,11 +151,11 @@ export class GridPanel extends Disposable {
 			});
 
 			if (this.state && this.state.scrollPosition) {
-				this.splitView.setScrollPosition(this.state.scrollPosition);
+				this.scrollableView.setScrollTop(this.state.scrollPosition);
 			}
 		};
 
-		if (this.configurationService.getValue<boolean>('sql.results.streaming')) {
+		if (this.configurationService.getValue<IQueryEditorConfiguration>('queryEditor').results.streaming) {
 			this.addResultSet(resultsToAdd);
 			sizeChanges();
 		} else {
@@ -179,13 +177,13 @@ export class GridPanel extends Disposable {
 
 		const sizeChanges = () => {
 			if (this.state && this.state.scrollPosition) {
-				this.splitView.setScrollPosition(this.state.scrollPosition);
+				this.scrollableView.setScrollTop(this.state.scrollPosition);
 			}
 		};
 
-		if (this.configurationService.getValue<boolean>('sql.results.streaming')) {
+		if (this.configurationService.getValue<IQueryEditorConfiguration>('queryEditor').results.streaming) {
 			for (let set of resultsToUpdate) {
-				let table = find(this.tables, t => t.resultSet.batchId === set.batchId && t.resultSet.id === set.id);
+				let table = this.tables.find(t => t.resultSet.batchId === set.batchId && t.resultSet.id === set.id);
 				if (table) {
 					table.updateResult(set);
 				} else {
@@ -203,16 +201,16 @@ export class GridPanel extends Disposable {
 	}
 
 	private addResultSet(resultSet: ResultSetSummary[]) {
-		let tables: GridTable<any>[] = [];
+		const tables: Array<GridTable<any>> = [];
 
-		for (let set of resultSet) {
+		for (const set of resultSet) {
 			// ensure we aren't adding a resultSet that is already visible
-			if (find(this.tables, t => t.resultSet.batchId === set.batchId && t.resultSet.id === set.id)) {
+			if (this.tables.find(t => t.resultSet.batchId === set.batchId && t.resultSet.id === set.id)) {
 				continue;
 			}
 			let tableState: GridTableState;
 			if (this.state) {
-				tableState = find(this.state.tableStates, e => e.batchId === set.batchId && e.resultId === set.id);
+				tableState = this.state.tableStates.find(e => e.batchId === set.batchId && e.resultId === set.id);
 			}
 			if (!tableState) {
 				tableState = new GridTableState(set.id, set.batchId);
@@ -220,7 +218,7 @@ export class GridPanel extends Disposable {
 					this.state.tableStates.push(tableState);
 				}
 			}
-			let table = this.instantiationService.createInstance(GridTable, this.runner, set, tableState);
+			const table = this.instantiationService.createInstance(GridTable, this.runner, set, tableState);
 			this.tableDisposable.add(tableState.onMaximizedChange(e => {
 				if (e) {
 					this.maximizeTable(table.id);
@@ -243,7 +241,7 @@ export class GridPanel extends Disposable {
 		}
 
 		if (isUndefinedOrNull(this.maximizedGrid)) {
-			this.splitView.addViews(tables, tables.map(i => i.minimumSize), this.splitView.length);
+			this.scrollableView.addViews(tables);
 		}
 	}
 
@@ -253,9 +251,7 @@ export class GridPanel extends Disposable {
 	}
 
 	private reset() {
-		for (let i = this.splitView.length - 1; i >= 0; i--) {
-			this.splitView.removeView(i);
-		}
+		this.scrollableView.clear();
 		dispose(this.tables);
 		this.tableDisposable.clear();
 		this.tables = [];
@@ -263,18 +259,19 @@ export class GridPanel extends Disposable {
 	}
 
 	private maximizeTable(tableid: string): void {
-		if (!find(this.tables, t => t.id === tableid)) {
+		if (!this.tables.find(t => t.id === tableid)) {
 			return;
 		}
 
 		for (let i = this.tables.length - 1; i >= 0; i--) {
 			if (this.tables[i].id === tableid) {
-				this.tables[i].state.maximized = true;
-				this.maximizedGrid = this.tables[i];
-				continue;
+				const selectedTable = this.tables[i];
+				selectedTable.state.maximized = true;
+				this.maximizedGrid = selectedTable;
+				this.scrollableView.clear();
+				this.scrollableView.addViews([selectedTable]);
+				break;
 			}
-
-			this.splitView.removeView(i);
 		}
 	}
 
@@ -282,8 +279,8 @@ export class GridPanel extends Disposable {
 		if (this.maximizedGrid) {
 			this.maximizedGrid.state.maximized = false;
 			this.maximizedGrid = undefined;
-			this.splitView.removeView(0);
-			this.splitView.addViews(this.tables, this.tables.map(i => i.minimumSize));
+			this.scrollableView.clear();
+			this.scrollableView.addViews(this.tables);
 		}
 	}
 
@@ -291,7 +288,7 @@ export class GridPanel extends Disposable {
 		this._state = val;
 		if (this.state) {
 			this.tables.map(t => {
-				let state = find(this.state.tableStates, s => s.batchId === t.resultSet.batchId && s.resultId === t.resultSet.id);
+				let state = this.state.tableStates.find(s => s.batchId === t.resultSet.batchId && s.resultId === t.resultSet.id);
 				if (!state) {
 					this.state.tableStates.push(t.state);
 				}
@@ -306,7 +303,7 @@ export class GridPanel extends Disposable {
 		return this._state;
 	}
 
-	public dispose() {
+	public override dispose() {
 		dispose(this.tables);
 		this.tables = undefined;
 		super.dispose();
@@ -318,6 +315,19 @@ export interface IDataSet {
 	columnInfo: IColumn[];
 }
 
+export interface IGridTableOptions {
+	actionOrientation: ActionsOrientation;
+	showActionBar?: boolean;
+	inMemoryDataProcessing: boolean;
+	inMemoryDataCountThreshold?: number;
+}
+
+const defaultGridTableOptions: IGridTableOptions = {
+	showActionBar: true,
+	inMemoryDataProcessing: false,
+	actionOrientation: ActionsOrientation.VERTICAL
+};
+
 export abstract class GridTableBase<T> extends Disposable implements IView {
 	private table: Table<T>;
 	private actionBar: ActionBar;
@@ -325,7 +335,8 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 	private selectionModel = new CellSelectionModel<T>();
 	private styles: ITableStyles;
 	private currentHeight: number;
-	private dataProvider: AsyncDataProvider<T>;
+	private dataProvider: HybridDataProvider<T>;
+	private filterPlugin: HeaderFilter<T>;
 
 	private columns: Slick.Column<T>[];
 
@@ -363,13 +374,20 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 	constructor(
 		state: GridTableState,
 		protected _resultSet: ResultSetSummary,
-		protected contextMenuService: IContextMenuService,
-		protected instantiationService: IInstantiationService,
-		protected editorService: IEditorService,
-		protected untitledEditorService: IUntitledTextEditorService,
-		protected configurationService: IConfigurationService
+		private readonly options: IGridTableOptions,
+		@IContextMenuService private readonly contextMenuService: IContextMenuService,
+		@IInstantiationService protected readonly instantiationService: IInstantiationService,
+		@IEditorService private readonly editorService: IEditorService,
+		@IUntitledTextEditorService private readonly untitledEditorService: IUntitledTextEditorService,
+		@IConfigurationService protected readonly configurationService: IConfigurationService,
+		@IQueryModelService private readonly queryModelService: IQueryModelService,
+		@IThemeService private readonly themeService: IThemeService,
+		@IContextViewService private readonly contextViewService: IContextViewService,
+		@INotificationService private readonly notificationService: INotificationService
 	) {
 		super();
+
+		this.options = { ...defaultGridTableOptions, ...options };
 		let config = this.configurationService.getValue<{ rowHeight: number }>('resultsGrid');
 		this.rowHeight = config && config.rowHeight ? config.rowHeight : ROW_HEIGHT;
 		this.state = state;
@@ -397,7 +415,10 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 		return this._resultSet;
 	}
 
-	public onAdd() {
+	public async onDidInsert() {
+		if (!this.table) {
+			this.build();
+		}
 		this.visible = true;
 		let collection = new VirtualizedCollection(
 			50,
@@ -409,11 +430,12 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 			this.renderGridDataRowsRange(startIndex, count);
 		});
 		this.dataProvider.dataRows = collection;
+		this.setFilterState();
 		this.table.updateRowCount();
-		this.setupState();
+		await this.setupState();
 	}
 
-	public onRemove() {
+	public onDidRemove() {
 		this.visible = false;
 		let collection = new VirtualizedCollection(
 			50,
@@ -428,17 +450,11 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 	}
 
 	// actionsOrientation controls the orientation (horizontal or vertical) of the actionBar
-	private build(actionsOrientation?: ActionsOrientation): void {
-
-		// Default is VERTICAL
-		if (isUndefinedOrNull(actionsOrientation)) {
-			actionsOrientation = ActionsOrientation.VERTICAL;
-		}
-
+	private build(): void {
 		let actionBarContainer = document.createElement('div');
 
 		// Create a horizontal actionbar if orientation passed in is HORIZONTAL
-		if (actionsOrientation === ActionsOrientation.HORIZONTAL) {
+		if (this.options.actionOrientation === ActionsOrientation.HORIZONTAL) {
 			actionBarContainer.className = 'grid-panel action-bar horizontal';
 			this.container.appendChild(actionBarContainer);
 		}
@@ -462,7 +478,7 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 		this.rowNumberColumn = new RowNumberColumn({ numberOfRows: this.resultSet.rowCount });
 		let copyHandler = new CopyKeybind<T>();
 		copyHandler.onCopy(e => {
-			new CopyResultAction(CopyResultAction.COPY_ID, CopyResultAction.COPY_LABEL, false).run(this.generateContext());
+			this.instantiationService.createInstance(CopyResultAction, CopyResultAction.COPY_ID, CopyResultAction.COPY_LABEL, false).run(this.generateContext());
 		});
 		this.columns.unshift(this.rowNumberColumn.getColumnDefinition());
 		let tableOptions: Slick.GridOptions<T> = {
@@ -471,23 +487,59 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 			forceFitColumns: false,
 			defaultColumnWidth: 120
 		};
-		this.dataProvider = new AsyncDataProvider(collection);
+		this.dataProvider = new HybridDataProvider(collection,
+			(offset, count) => { return this.loadData(offset, count); },
+			undefined,
+			undefined,
+			(data: ICellValue) => { return data.isNull ? undefined : data?.displayValue; },
+			{
+				inMemoryDataProcessing: this.options.inMemoryDataProcessing,
+				inMemoryDataCountThreshold: this.options.inMemoryDataCountThreshold
+			});
 		this.table = this._register(new Table(this.tableContainer, { dataProvider: this.dataProvider, columns: this.columns }, tableOptions));
 		this.table.setTableTitle(localize('resultsGrid', "Results grid"));
 		this.table.setSelectionModel(this.selectionModel);
 		this.table.registerPlugin(new MouseWheelSupport());
-		this.table.registerPlugin(new AutoColumnSize({ autoSizeOnRender: !this.state.columnSizes && this.configurationService.getValue('resultsGrid.autoSizeColumns'), maxWidth: this.configurationService.getValue<number>('resultsGrid.maxColumnWidth') }));
+		const autoSizeOnRender: boolean = !this.state.columnSizes && this.configurationService.getValue('resultsGrid.autoSizeColumns');
+		this.table.registerPlugin(new AutoColumnSize({ autoSizeOnRender: autoSizeOnRender, maxWidth: this.configurationService.getValue<number>('resultsGrid.maxColumnWidth'), extraColumnHeaderWidth: this.enableFilteringFeature ? FilterButtonWidth : 0 }));
 		this.table.registerPlugin(copyHandler);
 		this.table.registerPlugin(this.rowNumberColumn);
 		this.table.registerPlugin(new AdditionalKeyBindings());
+		this._register(this.dataProvider.onFilterStateChange(() => { this.layout(); }));
 		this._register(this.table.onContextMenu(this.contextMenu, this));
 		this._register(this.table.onClick(this.onTableClick, this));
-
+		//This listener is used for correcting auto-scroling when clicking on the header for reszing.
+		this._register(this.table.onHeaderClick(this.onHeaderClick, this));
+		this._register(this.dataProvider.onFilterStateChange(() => {
+			const columns = this.table.columns as FilterableColumn<T>[];
+			this.state.columnFilters = columns.filter((column) => column.filterValues?.length > 0).map(column => {
+				return {
+					filterValues: column.filterValues,
+					field: column.field
+				};
+			});
+			this.table.rerenderGrid();
+		}));
+		this._register(this.dataProvider.onSortComplete((args: Slick.OnSortEventArgs<T>) => {
+			this.state.sortState = {
+				field: args.sortCol.field,
+				sortAsc: args.sortAsc
+			};
+			this.table.rerenderGrid();
+		}));
+		if (this.enableFilteringFeature) {
+			this.filterPlugin = new HeaderFilter(this.contextViewService, this.notificationService, {
+				disabledFilterMessage: localize('resultsGrid.maxRowCountExceeded', "Max row count for filtering/sorting has been exceeded. To update it, navigate to User Settings and change the setting: 'queryEditor.results.inMemoryDataProcessingThreshold'"),
+				refreshColumns: !autoSizeOnRender // The auto size columns plugin refreshes the columns so we don't need to refresh twice if both plugins are on.
+			});
+			this._register(attachTableFilterStyler(this.filterPlugin, this.themeService));
+			this.table.registerPlugin(this.filterPlugin);
+		}
 		if (this.styles) {
 			this.table.style(this.styles);
 		}
 		// If the actionsOrientation passed in is "VERTICAL" (or no actionsOrientation is passed in at all), create a vertical actionBar
-		if (actionsOrientation === ActionsOrientation.VERTICAL) {
+		if (this.options.actionOrientation === ActionsOrientation.VERTICAL) {
 			actionBarContainer.className = 'grid-panel action-bar vertical';
 			actionBarContainer.style.width = ACTIONBAR_WIDTH + 'px';
 			this.container.appendChild(actionBarContainer);
@@ -500,18 +552,18 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 			resultId: this.resultSet.id
 		};
 		this.actionBar = new ActionBar(actionBarContainer, {
-			orientation: actionsOrientation, context: context
+			orientation: this.options.actionOrientation, context: context
 		});
 		// update context before we run an action
 		this.selectionModel.onSelectedRangesChanged.subscribe(e => {
 			this.actionBar.context = this.generateContext();
 		});
 		this.rebuildActionBar();
-
-		this.selectionModel.onSelectedRangesChanged.subscribe(e => {
+		this.selectionModel.onSelectedRangesChanged.subscribe(async e => {
 			if (this.state) {
 				this.state.selection = this.selectionModel.getSelectedRanges();
 			}
+			await this.notifyTableSelectionChanged();
 		});
 
 		this.table.grid.onScroll.subscribe((e, data) => {
@@ -550,7 +602,7 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 		}
 	}
 
-	private setupState() {
+	private async setupState() {
 		// change actionbar on maximize change
 		this._register(this.state.onMaximizedChange(this.rebuildActionBar, this));
 
@@ -570,6 +622,28 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 		if (savedSelection) {
 			this.selectionModel.setSelectedRanges(savedSelection);
 		}
+
+		if (this.state.sortState) {
+			const sortAsc = this.state.sortState.sortAsc;
+			const sortCol = this.columns.find((column) => column.field === this.state.sortState.field);
+			this.table.grid.setSortColumn(sortCol.id, sortAsc);
+			await this.dataProvider.sort({
+				multiColumnSort: false,
+				grid: this.table.grid,
+				sortAsc: sortAsc,
+				sortCol: sortCol
+			});
+		}
+
+		if (this.state.columnFilters) {
+			this.columns.forEach(column => {
+				const idx = this.state.columnFilters.findIndex(filter => filter.field === column.field);
+				if (idx !== -1) {
+					(<FilterableColumn<T>>column).filterValues = this.state.columnFilters[idx].filterValues;
+				}
+			});
+			await this.dataProvider.filter(this.columns);
+		}
 	}
 
 	public get state(): GridTableState {
@@ -578,6 +652,33 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 
 	public set state(val: GridTableState) {
 		this._state = val;
+	}
+
+	private onHeaderClick(event: ITableMouseEvent) {
+		//header clicks must be accounted for as they force the table to scroll to the top;
+		this.scrolled = false;
+	}
+
+	private async notifyTableSelectionChanged() {
+		const selectedCells = [];
+		for (const range of this.state.selection) {
+			let subset;
+			if (this.dataProvider.isDataInMemory) {
+				// handle the scenario when the data is sorted/filtered,
+				// we need to use the data that is being displayed
+				const data = await this.dataProvider.getRangeAsync(range.fromRow, range.toRow - range.fromRow + 1);
+				subset = data.map(item => Object.keys(item).map(key => item[key]));
+			} else {
+				subset = (await this.gridDataProvider.getRowData(range.fromRow, range.toRow - range.fromRow + 1)).rows;
+			}
+			subset.forEach(row => {
+				// start with range.fromCell -1 because we have row number column which is not available in the actual data
+				for (let i = range.fromCell - 1; i < range.toCell; i++) {
+					selectedCells.push(row[i]);
+				}
+			});
+		}
+		this.queryModelService.notifyCellSelectionChanged(selectedCells);
 	}
 
 	private onTableClick(event: ITableMouseEvent) {
@@ -590,8 +691,10 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 				let content = value.displayValue;
 
 				const input = this.untitledEditorService.create({ mode: column.isXml ? 'xml' : 'json', initialValue: content });
-				await input.load();
+				await input.resolve();
 				await this.instantiationService.invokeFunction(formatDocumentWithSelectedProvider, input.textEditorModel, FormattingMode.Explicit, Progress.None, CancellationToken.None);
+				input.setDirty(false);
+
 				return this.editorService.openEditor(input);
 			});
 		}
@@ -601,9 +704,22 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 		this._resultSet = resultSet;
 		if (this.table && this.visible) {
 			this.dataProvider.length = resultSet.rowCount;
+			this.setFilterState();
 			this.table.updateRowCount();
 		}
 		this._onDidChange.fire(undefined);
+	}
+
+	private get enableFilteringFeature(): boolean {
+		return this.configurationService.getValue<boolean>('workbench')['enablePreviewFeatures'];
+	}
+
+	private setFilterState(): void {
+		if (this.enableFilteringFeature) {
+			const rowCount = this.table.getData().getLength();
+			this.filterPlugin.enabled = this.options.inMemoryDataProcessing
+				&& (this.options.inMemoryDataCountThreshold === undefined || this.options.inMemoryDataCountThreshold >= rowCount);
+		}
 	}
 
 	private generateContext(cell?: Slick.Cell): IGridActionContext {
@@ -621,7 +737,20 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 	private rebuildActionBar() {
 		let actions = this.getCurrentActions();
 		this.actionBar.clear();
-		this.actionBar.push(actions, { icon: true, label: false });
+		if (this.options.showActionBar) {
+			this.actionBar.push(actions, { icon: true, label: false });
+		}
+	}
+
+	public get showActionBar(): boolean {
+		return this.options.showActionBar;
+	}
+
+	public set showActionBar(v: boolean) {
+		if (this.options.showActionBar !== v) {
+			this.options.showActionBar = v;
+			this.rebuildActionBar();
+		}
 	}
 
 	protected abstract getCurrentActions(): IAction[];
@@ -629,10 +758,7 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 	protected abstract getContextActions(): IAction[];
 
 	// The actionsOrientation passed in controls the actionBar orientation
-	public layout(size?: number, orientation?: Orientation, actionsOrientation?: ActionsOrientation): void {
-		if (!this.table) {
-			this.build(actionsOrientation);
-		}
+	public layout(size?: number): void {
 		if (!size) {
 			size = this.currentHeight;
 		} else {
@@ -664,7 +790,8 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 					dataWithSchema[this.columns[i].field] = {
 						displayValue: r[i - 1].displayValue,
 						ariaLabel: escape(r[i - 1].displayValue),
-						isNull: r[i - 1].isNull
+						isNull: r[i - 1].isNull,
+						invariantCultureDisplayValue: r[i - 1].invariantCultureDisplayValue
 					};
 				}
 				return dataWithSchema as T;
@@ -687,8 +814,8 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 					actions.push(new Separator());
 				}
 				actions.push(
-					new CopyResultAction(CopyResultAction.COPY_ID, CopyResultAction.COPY_LABEL, false),
-					new CopyResultAction(CopyResultAction.COPYWITHHEADERS_ID, CopyResultAction.COPYWITHHEADERS_LABEL, true)
+					this.instantiationService.createInstance(CopyResultAction, CopyResultAction.COPY_ID, CopyResultAction.COPY_LABEL, false),
+					this.instantiationService.createInstance(CopyResultAction, CopyResultAction.COPYWITHHEADERS_ID, CopyResultAction.COPYWITHHEADERS_LABEL, true)
 				);
 
 				if (this.state.canBeMaximized) {
@@ -712,16 +839,7 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 	}
 
 	private renderGridDataRowsRange(startIndex: number, count: number): void {
-		// let editor = this.table.getCellEditor();
-		// let oldValue = editor ? editor.getValue() : undefined;
-		// let wasValueChanged = editor ? editor.isValueChanged() : false;
 		this.invalidateRange(startIndex, startIndex + count);
-		// let activeCell = this._grid.getActiveCell();
-		// if (editor && activeCell.row >= startIndex && activeCell.row < startIndex + count) {
-		//     if (oldValue && wasValueChanged) {
-		//         editor.setValue(oldValue);
-		//     }
-		// }
 	}
 
 	private invalidateRange(start: number, end: number): void {
@@ -739,7 +857,7 @@ export abstract class GridTableBase<T> extends Disposable implements IView {
 		}
 	}
 
-	public dispose() {
+	public override dispose() {
 		this.container.remove();
 		if (this.table) {
 			this.table.dispose();
@@ -762,9 +880,18 @@ class GridTable<T> extends GridTableBase<T> {
 		@IContextKeyService private contextKeyService: IContextKeyService,
 		@IEditorService editorService: IEditorService,
 		@IUntitledTextEditorService untitledEditorService: IUntitledTextEditorService,
-		@IConfigurationService configurationService: IConfigurationService
+		@IConfigurationService configurationService: IConfigurationService,
+		@IQueryModelService queryModelService: IQueryModelService,
+		@IThemeService themeService: IThemeService,
+		@IContextViewService contextViewService: IContextViewService,
+		@INotificationService notificationService: INotificationService
 	) {
-		super(state, resultSet, contextMenuService, instantiationService, editorService, untitledEditorService, configurationService);
+		super(state, resultSet, {
+			actionOrientation: ActionsOrientation.VERTICAL,
+			inMemoryDataProcessing: true,
+			showActionBar: true,
+			inMemoryDataCountThreshold: configurationService.getValue<IQueryEditorConfiguration>('queryEditor').results.inMemoryDataProcessingThreshold,
+		}, contextMenuService, instantiationService, editorService, untitledEditorService, configurationService, queryModelService, themeService, contextViewService, notificationService);
 		this._gridDataProvider = this.instantiationService.createInstance(QueryGridDataProvider, this._runner, resultSet.batchId, resultSet.id);
 	}
 

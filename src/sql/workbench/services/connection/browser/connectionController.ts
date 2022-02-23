@@ -17,8 +17,6 @@ import { ConnectionWidget } from 'sql/workbench/services/connection/browser/conn
 import { IServerGroupController } from 'sql/platform/serverGroup/common/serverGroupController';
 import { ILogService } from 'vs/platform/log/common/log';
 import { ConnectionProviderProperties } from 'sql/platform/capabilities/common/capabilitiesService';
-import { assign } from 'vs/base/common/objects';
-import { find } from 'vs/base/common/arrays';
 
 export class ConnectionController implements IConnectionComponentController {
 	private _advancedController: AdvancedPropertiesController;
@@ -48,8 +46,8 @@ export class ConnectionController implements IConnectionComponentController {
 			onCreateNewServerGroup: () => this.onCreateNewServerGroup(),
 			onAdvancedProperties: () => this.handleOnAdvancedProperties(),
 			onSetAzureTimeOut: () => this.handleonSetAzureTimeOut(),
-			onFetchDatabases: (serverName: string, authenticationType: string, userName?: string, password?: string) => this.onFetchDatabases(
-				serverName, authenticationType, userName, password).then(result => {
+			onFetchDatabases: (serverName: string, authenticationType: string, userName?: string, password?: string, authToken?: string) => this.onFetchDatabases(
+				serverName, authenticationType, userName, password, authToken).then(result => {
 					return result;
 				}),
 			onAzureTenantSelection: (azureTenantId?: string) => this.onAzureTenantSelection(azureTenantId),
@@ -57,7 +55,7 @@ export class ConnectionController implements IConnectionComponentController {
 		this._providerName = providerName;
 	}
 
-	protected async onFetchDatabases(serverName: string, authenticationType: string, userName?: string, password?: string): Promise<string[]> {
+	protected async onFetchDatabases(serverName: string, authenticationType: string, userName?: string, password?: string, authToken?: string): Promise<string[]> {
 		let tempProfile = this._model;
 		tempProfile.serverName = serverName;
 		tempProfile.authenticationType = authenticationType;
@@ -65,6 +63,7 @@ export class ConnectionController implements IConnectionComponentController {
 		tempProfile.password = password;
 		tempProfile.groupFullName = '';
 		tempProfile.saveProfile = false;
+		tempProfile.azureAccount = authToken;
 		let uri = this._connectionManagementService.getConnectionUri(tempProfile);
 		if (this._databaseCache.has(uri)) {
 			let cachedDatabases: string[] = this._databaseCache.get(uri);
@@ -147,17 +146,17 @@ export class ConnectionController implements IConnectionComponentController {
 	private getAllServerGroups(providers?: string[]): IConnectionProfileGroup[] {
 		let connectionGroupRoot = this._connectionManagementService.getConnectionGroups(providers);
 		let allGroups: IConnectionProfileGroup[] = [];
-		if (connectionGroupRoot && connectionGroupRoot.length > 0) {
-			this.flattenGroups(connectionGroupRoot[0], allGroups);
-		}
 		let defaultGroupId: string;
 		if (connectionGroupRoot && connectionGroupRoot.length > 0 && ConnectionProfileGroup.isRoot(connectionGroupRoot[0].name)) {
 			defaultGroupId = connectionGroupRoot[0].id;
 		} else {
 			defaultGroupId = Utils.defaultGroupId;
 		}
-		allGroups.push(assign({}, this._connectionWidget.DefaultServerGroup, { id: defaultGroupId }));
+		allGroups.push(Object.assign({}, this._connectionWidget.DefaultServerGroup, { id: defaultGroupId }));
 		allGroups.push(this._connectionWidget.NoneServerGroup);
+		if (connectionGroupRoot && connectionGroupRoot.length > 0) {
+			this.flattenGroups(connectionGroupRoot[0], allGroups);
+		}
 		connectionGroupRoot.forEach(cpg => cpg.dispose());
 		return allGroups;
 	}
@@ -166,7 +165,7 @@ export class ConnectionController implements IConnectionComponentController {
 		this._connectionWidget.updateServerGroup(this.getAllServerGroups(providers));
 		this._model = connectionInfo;
 		this._model.providerName = this._providerName;
-		let appNameOption = find(this._providerOptions, option => option.specialValueType === ConnectionOptionSpecialType.appName);
+		let appNameOption = this._providerOptions.find(option => option.specialValueType === ConnectionOptionSpecialType.appName);
 		if (appNameOption) {
 			let appNameKey = appNameOption.name;
 			this._model.options[appNameKey] = Constants.applicationName;

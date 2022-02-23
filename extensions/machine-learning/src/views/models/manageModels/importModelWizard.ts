@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as azdata from 'azdata';
-import { ModelViewBase, ModelSourceType } from '../modelViewBase';
+import { ModelViewBase, ModelSourceType, ModelActionType } from '../modelViewBase';
 import { ApiWrapper } from '../../../common/apiWrapper';
 import { ModelSourcesComponent } from '../modelSourcesComponent';
 import { LocalModelsComponent } from '../localModelsComponent';
@@ -34,6 +34,7 @@ export class ImportModelWizard extends ModelViewBase {
 		parent?: ModelViewBase) {
 		super(apiWrapper, root);
 		this._parentView = parent;
+		this.modelActionType = ModelActionType.Import;
 	}
 
 	/**
@@ -46,10 +47,10 @@ export class ImportModelWizard extends ModelViewBase {
 		this.modelImportTargetPage = new ModelImportLocationPage(this._apiWrapper, this);
 		this.wizardView = new WizardView(this._apiWrapper);
 
-		let wizard = this.wizardView.createWizard(constants.registerModelTitle, [this.modelImportTargetPage, this.modelSourcePage, this.modelBrowsePage, this.modelDetailsPage]);
+		let wizard = this.wizardView.createWizard(constants.registerModelTitle, [this.modelSourcePage, this.modelBrowsePage, this.modelDetailsPage, this.modelImportTargetPage]);
 
 		this.mainViewPanel = wizard;
-		wizard.doneButton.label = constants.azureRegisterModel;
+		wizard.doneButton.label = constants.importModelDoneButton;
 		wizard.generateScriptButton.hidden = true;
 		wizard.displayPageTitles = true;
 		wizard.registerNavigationValidator(async (pageInfo: azdata.window.WizardPageChangeInfo) => {

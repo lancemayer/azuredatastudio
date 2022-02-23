@@ -6,8 +6,8 @@
 import * as nls from 'vscode-nls';
 const localize = nls.loadMessageBundle();
 
-import { ExtensionContext, workspace, window, Disposable, commands, OutputChannel, Uri } from 'vscode';
-import { findGit, Git, IGit } from './git';
+import { ExtensionContext, workspace, window, Disposable, commands, OutputChannel } from 'vscode';
+import { findGit, Git } from './git';
 import { Model } from './model';
 import { CommandCenter } from './commands';
 import { GitFileSystemProvider } from './fileSystemProvider';
@@ -18,8 +18,9 @@ import TelemetryReporter from 'vscode-extension-telemetry';
 import { GitExtension } from './api/git';
 import { GitProtocolHandler } from './protocolHandler';
 import { GitExtensionImpl } from './api/extension';
-// import * as path from 'path';
+import * as path from 'path';
 // import * as fs from 'fs';
+import * as os from 'os';
 import { GitTimelineProvider } from './timelineProvider';
 import { registerAPICommands } from './api/api1';
 import { TerminalEnvironmentManager } from './terminal';
@@ -33,17 +34,45 @@ export async function deactivate(): Promise<any> {
 }
 
 async function createModel(context: ExtensionContext, outputChannel: OutputChannel, telemetryReporter: TelemetryReporter, disposables: Disposable[]): Promise<Model> {
-	const pathHint = workspace.getConfiguration('git').get<string>('path');
-	const info = await findGit(pathHint, path => outputChannel.appendLine(localize('looking', "Looking for git in: {0}", path)));
+	const pathValue = workspace.getConfiguration('git').get<string | string[]>('path');
+	let pathHints = Array.isArray(pathValue) ? pathValue : pathValue ? [pathValue] : [];
+
+	const { isTrusted, workspaceFolders = [] } = workspace;
+	const excludes = isTrusted ? [] : workspaceFolders.map(f => path.normalize(f.uri.fsPath).replace(/[\r\n]+$/, ''));
+
+	if (!isTrusted && pathHints.length !== 0) {
+		// Filter out any non-absolute paths
+		pathHints = pathHints.filter(p => path.isAbsolute(p));
+	}
+
+	const info = await findGit(pathHints, gitPath => {
+		outputChannel.appendLine(localize('validating', "Validating found git in: {0}", gitPath));
+		if (excludes.length === 0) {
+			return true;
+		}
+
+		const normalized = path.normalize(gitPath).replace(/[\r\n]+$/, '');
+		const skip = excludes.some(e => normalized.startsWith(e));
+		if (skip) {
+			outputChannel.appendLine(localize('skipped', "Skipped found git in: {0}", gitPath));
+		}
+		return !skip;
+	});
 
 	const askpass = await Askpass.create(outputChannel, context.storagePath);
 	disposables.push(askpass);
 
-	const env = askpass.getEnv();
-	const terminalEnvironmentManager = new TerminalEnvironmentManager(context, env);
+	const environment = askpass.getEnv();
+	const terminalEnvironmentManager = new TerminalEnvironmentManager(context, environment);
 	disposables.push(terminalEnvironmentManager);
 
-	const git = new Git({ gitPath: info.path, version: info.version, env });
+
+	const git = new Git({
+		gitPath: info.path,
+		userAgent: `git/${info.version} (${(os as any).version?.() ?? os.type()} ${os.release()}; ${os.platform()} ${os.arch()}) azuredatudio`,
+		version: info.version,
+		env: environment,
+	});
 	const model = new Model(git, askpass, context.globalState, outputChannel);
 	disposables.push(model);
 
@@ -66,15 +95,16 @@ async function createModel(context: ExtensionContext, outputChannel: OutputChann
 	git.onOutput.addListener('log', onOutput);
 	disposables.push(toDisposable(() => git.onOutput.removeListener('log', onOutput)));
 
+	const cc = new CommandCenter(git, model, outputChannel, telemetryReporter);
 	disposables.push(
-		new CommandCenter(git, model, outputChannel, telemetryReporter),
+		cc,
 		new GitFileSystemProvider(model),
 		new GitDecorations(model),
 		new GitProtocolHandler(),
-		new GitTimelineProvider(model)
+		new GitTimelineProvider(model, cc)
 	);
 
-	// await checkGitVersion(info); {{SQL CARBON EDIT}} Don't check git version
+	// checkGitVersion(info); {{SQL CARBON EDIT}} Don't check git version
 
 	return model;
 }
@@ -128,7 +158,7 @@ async function warnAboutMissingGit(): Promise<void> {
 	}
 }*/
 
-export async function _activate(context: ExtensionContext): Promise<GitExtension> {
+export async function _activate(context: ExtensionContext): Promise<GitExtensionImpl> {
 	const disposables: Disposable[] = [];
 	context.subscriptions.push(new Disposable(() => Disposable.from(...disposables).dispose()));
 
@@ -170,37 +200,17 @@ export async function _activate(context: ExtensionContext): Promise<GitExtension
 	}
 }
 
+let _context: ExtensionContext;
+export function getExtensionContext(): ExtensionContext {
+	return _context;
+}
+
 export async function activate(context: ExtensionContext): Promise<GitExtension> {
+	_context = context;
+
 	const result = await _activate(context);
 	context.subscriptions.push(registerAPICommands(result));
 	return result;
 }
 
-// @ts-expect-error
-async function checkGitVersion(info: IGit): Promise<void> {
-	const config = workspace.getConfiguration('git');
-	const shouldIgnore = config.get<boolean>('ignoreLegacyWarning') === true;
-
-	if (shouldIgnore) {
-		return;
-	}
-
-	if (!/^[01]/.test(info.version)) {
-		return;
-	}
-
-	const update = localize('updateGit', "Update Git");
-	const neverShowAgain = localize('neverShowAgain', "Don't Show Again");
-
-	const choice = await window.showWarningMessage(
-		localize('git20', "You seem to have git {0} installed. Code works best with git >= 2", info.version),
-		update,
-		neverShowAgain
-	);
-
-	if (choice === update) {
-		commands.executeCommand('vscode.open', Uri.parse('https://git-scm.com/'));
-	} else if (choice === neverShowAgain) {
-		await config.update('ignoreLegacyWarning', true, true);
-	}
-}
+// {{SQL CARBON EDIT}} - delete unneeded functions at end of file

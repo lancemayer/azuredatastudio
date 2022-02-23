@@ -4,12 +4,12 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as path from 'path';
-const testRunner = require('vscodetestcover');
+import * as testRunner from '@microsoft/vscodetestcover';
 
 const suite = 'resource-deployment Extension Tests';
 
 const mochaOptions: any = {
-	ui: 'tdd',
+	ui: 'bdd',
 	useColors: true,
 	timeout: 10000
 };

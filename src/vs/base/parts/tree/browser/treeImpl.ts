@@ -189,7 +189,7 @@ export class Tree implements _.ITree {
 		return this.model.reveal(element, relativeTop);
 	}
 
-	// {{SQL CARBON EDIT }}	- add back deleted VS Code tree methods
+	// {{SQL CARBON EDIT}}	- add back deleted VS Code tree methods
 	public getExpandedElements(): any[] {
 		return this.model.getExpandedElements();
 	}
@@ -205,7 +205,14 @@ export class Tree implements _.ITree {
 	getContentHeight(): number {
 		return this.view.getContentHeight();
 	}
-	// {{SQL CARBON EDIT }} - end block
+
+	/**
+	 * Sets the `aria-label` attribute of the underlying root HTML element.
+	 */
+	public set ariaLabel(value: string) {
+		this.getHTMLElement().setAttribute('aria-label', value);
+	}
+	// {{SQL CARBON EDIT}} - end block
 
 
 	public getHighlight(): any {

@@ -8,33 +8,65 @@ import { promises as fs } from 'fs';
 
 // Project baselines
 export let newProjectFileBaseline: string;
+export let newProjectFileWithScriptBaseline: string;
 export let openProjectFileBaseline: string;
 export let openDataSourcesBaseline: string;
 export let SSDTProjectFileBaseline: string;
-export let SSDTProjectAfterUpdateBaselineWindows: string;
 export let SSDTProjectAfterUpdateBaseline: string;
-export let SSDTUpdatedProjectBaselineWindows: string;
 export let SSDTUpdatedProjectBaseline: string;
-export let SSDTUpdatedProjectAfterSystemDbUpdateBaselineWindows: string;
 export let SSDTUpdatedProjectAfterSystemDbUpdateBaseline: string;
-export let SSDTProjectBaselineWithCleanTarget: string;
-export let SSDTProjectBaselineWithCleanTargetAfterUpdate: string;
+export let SSDTProjectBaselineWithBeforeBuildTarget: string;
+export let SSDTProjectBaselineWithBeforeBuildTargetAfterUpdate: string;
+export let publishProfileIntegratedSecurityBaseline: string;
+export let publishProfileSqlLoginBaseline: string;
+export let publishProfileDefaultValueBaseline: string;
+export let openProjectWithProjectReferencesBaseline: string;
+export let openSqlProjectWithPrePostDeploymentError: string;
+export let openSqlProjectWithAdditionalSqlCmdVariablesBaseline: string;
+export let sqlProjectMissingVersionBaseline: string;
+export let sqlProjectInvalidVersionBaseline: string;
+export let sqlProjectCustomCollationBaseline: string;
+export let sqlProjectInvalidCollationBaseline: string;
+export let newSdkStyleProjectSdkNodeBaseline: string;
+export let newSdkStyleProjectSdkProjectAttributeBaseline: string;
+export let newStyleProjectSdkImportAttributeBaseline: string;
+export let openSdkStyleSqlProjectBaseline: string;
+export let openSdkStyleSqlProjectWithFilesSpecifiedBaseline: string;
+export let openSdkStyleSqlProjectWithGlobsSpecifiedBaseline: string;
+export let openSdkStyleSqlProjectWithBuildRemoveBaseline: string;
+export let openSdkStyleSqlProjectNoProjectGuidBaseline: string;
 
 const baselineFolderPath = __dirname;
 
 export async function loadBaselines() {
 	newProjectFileBaseline = await loadBaseline(baselineFolderPath, 'newSqlProjectBaseline.xml');
+	newProjectFileWithScriptBaseline = await loadBaseline(baselineFolderPath, 'newSqlProjectWithScriptBaseline.xml');
 	openProjectFileBaseline = await loadBaseline(baselineFolderPath, 'openSqlProjectBaseline.xml');
 	openDataSourcesBaseline = await loadBaseline(baselineFolderPath, 'openDataSourcesBaseline.json');
 	SSDTProjectFileBaseline = await loadBaseline(baselineFolderPath, 'SSDTProjectBaseline.xml');
-	SSDTProjectAfterUpdateBaselineWindows = await loadBaseline(baselineFolderPath, 'SSDTProjectAfterUpdateBaselineWindows.xml');
 	SSDTProjectAfterUpdateBaseline = await loadBaseline(baselineFolderPath, 'SSDTProjectAfterUpdateBaseline.xml');
-	SSDTUpdatedProjectBaselineWindows = await loadBaseline(baselineFolderPath, 'SSDTUpdatedProjectBaselineWindows.xml');
 	SSDTUpdatedProjectBaseline = await loadBaseline(baselineFolderPath, 'SSDTUpdatedProjectBaseline.xml');
-	SSDTUpdatedProjectAfterSystemDbUpdateBaselineWindows = await loadBaseline(baselineFolderPath, 'SSDTUpdatedProjectAfterSystemDbUpdateBaselineWindows.xml');
 	SSDTUpdatedProjectAfterSystemDbUpdateBaseline = await loadBaseline(baselineFolderPath, 'SSDTUpdatedProjectAfterSystemDbUpdateBaseline.xml');
-	SSDTProjectBaselineWithCleanTarget = await loadBaseline(baselineFolderPath, 'SSDTProjectBaselineWithCleanTarget.xml');
-	SSDTProjectBaselineWithCleanTargetAfterUpdate = await loadBaseline(baselineFolderPath, 'SSDTProjectBaselineWithCleanTargetAfterUpdate.xml');
+	SSDTProjectBaselineWithBeforeBuildTarget = await loadBaseline(baselineFolderPath, 'SSDTProjectBaselineWithBeforeBuildTarget.xml');
+	SSDTProjectBaselineWithBeforeBuildTargetAfterUpdate = await loadBaseline(baselineFolderPath, 'SSDTProjectBaselineWithBeforeBuildTargetAfterUpdate.xml');
+	publishProfileIntegratedSecurityBaseline = await loadBaseline(baselineFolderPath, 'publishProfileIntegratedSecurityBaseline.publish.xml');
+	publishProfileSqlLoginBaseline = await loadBaseline(baselineFolderPath, 'publishProfileSqlLoginBaseline.publish.xml');
+	publishProfileDefaultValueBaseline = await loadBaseline(baselineFolderPath, 'publishProfileDefaultValueBaseline.publish.xml');
+	openProjectWithProjectReferencesBaseline = await loadBaseline(baselineFolderPath, 'openSqlProjectWithProjectReferenceBaseline.xml');
+	openSqlProjectWithPrePostDeploymentError = await loadBaseline(baselineFolderPath, 'openSqlProjectWithPrePostDeploymentError.xml');
+	openSqlProjectWithAdditionalSqlCmdVariablesBaseline = await loadBaseline(baselineFolderPath, 'openSqlProjectWithAdditionalSqlCmdVariablesBaseline.xml');
+	sqlProjectMissingVersionBaseline = await loadBaseline(baselineFolderPath, 'sqlProjectMissingVersionBaseline.xml');
+	sqlProjectInvalidVersionBaseline = await loadBaseline(baselineFolderPath, 'sqlProjectInvalidVersionBaseline.xml');
+	sqlProjectCustomCollationBaseline = await loadBaseline(baselineFolderPath, 'sqlProjectCustomCollationBaseline.xml');
+	sqlProjectInvalidCollationBaseline = await loadBaseline(baselineFolderPath, 'sqlProjectInvalidCollationBaseline.xml');
+	newSdkStyleProjectSdkNodeBaseline = await loadBaseline(baselineFolderPath, 'newSdkStyleSqlProjectSdkNodeBaseline.xml');
+	newSdkStyleProjectSdkProjectAttributeBaseline = await loadBaseline(baselineFolderPath, 'newSdkStyleSqlProjectSdkProjectAttributeBaseline.xml');
+	newStyleProjectSdkImportAttributeBaseline = await loadBaseline(baselineFolderPath, 'newSdkStyleSqlProjectSdkImportAttributeBaseline.xml');
+	openSdkStyleSqlProjectBaseline = await loadBaseline(baselineFolderPath, 'openSdkStyleSqlProjectBaseline.xml');
+	openSdkStyleSqlProjectWithFilesSpecifiedBaseline = await loadBaseline(baselineFolderPath, 'openSdkStyleSqlProjectWithFilesSpecifiedBaseline.xml');
+	openSdkStyleSqlProjectWithGlobsSpecifiedBaseline = await loadBaseline(baselineFolderPath, 'openSdkStyleSqlProjectWithGlobsSpecifiedBaseline.xml');
+	openSdkStyleSqlProjectWithBuildRemoveBaseline = await loadBaseline(baselineFolderPath, 'openSdkStyleSqlProjectWithBuildRemoveBaseline.xml');
+	openSdkStyleSqlProjectNoProjectGuidBaseline = await loadBaseline(baselineFolderPath, 'openSdkStyleSqlProjectNoProjectGuidBaseline.xml');
 }
 
 async function loadBaseline(baselineFolderPath: string, fileName: string): Promise<string> {

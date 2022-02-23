@@ -5,7 +5,7 @@
 
 
 import { ResourceServiceBase, GraphData } from '../resourceTreeDataProviderBase';
-import { azureResource } from '../../azure-resource';
+import { azureResource } from 'azureResource';
 
 
 interface DbServerGraphData extends GraphData {
@@ -15,7 +15,7 @@ interface DbServerGraphData extends GraphData {
 	};
 }
 
-const serversQuery = 'where type == "microsoft.dbforpostgresql/servers"';
+const serversQuery = `where type == "${azureResource.AzureResourceType.postgresServer}"`;
 
 export class PostgresServerService extends ResourceServiceBase<DbServerGraphData, azureResource.AzureResourceDatabaseServer> {
 
@@ -30,7 +30,12 @@ export class PostgresServerService extends ResourceServiceBase<DbServerGraphData
 			fullName: resource.properties.fullyQualifiedDomainName,
 			loginName: resource.properties.administratorLogin,
 			defaultDatabaseName: 'postgres',
-			tenant: resource.tenantId
+			subscription: {
+				id: resource.subscriptionId,
+				name: resource.subscriptionName
+			},
+			tenant: resource.tenantId,
+			resourceGroup: resource.resourceGroup
 		};
 	}
 }

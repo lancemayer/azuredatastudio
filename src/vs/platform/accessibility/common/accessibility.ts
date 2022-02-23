@@ -3,14 +3,14 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
 import { Event } from 'vs/base/common/event';
 import { RawContextKey } from 'vs/platform/contextkey/common/contextkey';
+import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
 
 export const IAccessibilityService = createDecorator<IAccessibilityService>('accessibilityService');
 
 export interface IAccessibilityService {
-	_serviceBrand: undefined;
+	readonly _serviceBrand: undefined;
 
 	readonly onDidChangeScreenReaderOptimized: Event<void>;
 

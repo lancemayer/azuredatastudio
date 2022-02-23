@@ -3,8 +3,8 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { ServiceCollection } from './serviceCollection';
 import * as descriptors from './descriptors';
+import { ServiceCollection } from './serviceCollection';
 
 // ------ internal util
 
@@ -85,7 +85,7 @@ type GetLeadingNonServiceArgs<Args> =
 
 export interface IInstantiationService {
 
-	_serviceBrand: undefined;
+	readonly _serviceBrand: undefined;
 
 	/**
 	 * Synchronously creates an instance that is denoted by
@@ -153,6 +153,10 @@ export function createDecorator<T>(serviceId: string): ServiceIdentifier<T> {
 
 	_util.serviceIds.set(serviceId, id);
 	return id;
+}
+
+export function refineServiceDecorator<T1, T extends T1>(serviceIdentifier: ServiceIdentifier<T1>): ServiceIdentifier<T> {
+	return <ServiceIdentifier<T>>serviceIdentifier;
 }
 
 /**

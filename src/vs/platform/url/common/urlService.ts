@@ -3,23 +3,22 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IURLService, IURLHandler, IOpenURLOptions } from 'vs/platform/url/common/url';
-import { URI, UriComponents } from 'vs/base/common/uri';
-import { values } from 'vs/base/common/map';
 import { first } from 'vs/base/common/async';
-import { toDisposable, IDisposable, Disposable } from 'vs/base/common/lifecycle';
-import product from 'vs/platform/product/common/product';
+import { Disposable, IDisposable, toDisposable } from 'vs/base/common/lifecycle';
+import { URI, UriComponents } from 'vs/base/common/uri';
+import { IProductService } from 'vs/platform/product/common/productService';
+import { IOpenURLOptions, IURLHandler, IURLService } from 'vs/platform/url/common/url';
 
 export abstract class AbstractURLService extends Disposable implements IURLService {
 
-	_serviceBrand: undefined;
+	declare readonly _serviceBrand: undefined;
 
 	private handlers = new Set<IURLHandler>();
 
 	abstract create(options?: Partial<UriComponents>): URI;
 
 	open(uri: URI, options?: IOpenURLOptions): Promise<boolean> {
-		const handlers = values(this.handlers);
+		const handlers = [...this.handlers.values()];
 		return first(handlers.map(h => () => h.handleURL(uri, options)), undefined, false).then(val => val || false);
 	}
 
@@ -31,6 +30,12 @@ export abstract class AbstractURLService extends Disposable implements IURLServi
 
 export class NativeURLService extends AbstractURLService {
 
+	constructor(
+		@IProductService protected readonly productService: IProductService
+	) {
+		super();
+	}
+
 	create(options?: Partial<UriComponents>): URI {
 		let { authority, path, query, fragment } = options ? options : { authority: undefined, path: undefined, query: undefined, fragment: undefined };
 
@@ -38,6 +43,6 @@ export class NativeURLService extends AbstractURLService {
 			path = `/${path}`; // URI validation requires a path if there is an authority
 		}
 
-		return URI.from({ scheme: product.urlProtocol, authority, path, query, fragment });
+		return URI.from({ scheme: this.productService.urlProtocol, authority, path, query, fragment });
 	}
 }

@@ -3,7 +3,7 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { Uri, Event, Disposable, ProviderResult } from 'vscode';
+import { Uri, Event, Disposable, ProviderResult, CancellationToken, Progress } from 'vscode'; // {{SQL CARBON EDIT}} add CancellationToken
 export { ProviderResult } from 'vscode';
 
 export interface Git {
@@ -12,6 +12,11 @@ export interface Git {
 
 export interface InputBox {
 	value: string;
+}
+
+export const enum ForcePushMode {
+	Force,
+	ForceWithLease
 }
 
 export const enum RefType {
@@ -130,10 +135,22 @@ export interface CommitOptions {
 	signoff?: boolean;
 	signCommit?: boolean;
 	empty?: boolean;
+	noVerify?: boolean;
+	requireUserConfig?: boolean;
+}
+
+export interface FetchOptions {
+	remote?: string;
+	ref?: string;
+	all?: boolean;
+	prune?: boolean;
+	depth?: number;
 }
 
 export interface BranchQuery {
 	readonly remote?: boolean;
+	readonly pattern?: string;
+	readonly count?: number;
 	readonly contains?: string;
 }
 
@@ -188,9 +205,10 @@ export interface Repository {
 	removeRemote(name: string): Promise<void>;
 	renameRemote(name: string, newName: string): Promise<void>;
 
+	fetch(options?: FetchOptions): Promise<void>;
 	fetch(remote?: string, ref?: string, depth?: number): Promise<void>;
 	pull(unshallow?: boolean): Promise<void>;
-	push(remoteName?: string, branchName?: string, setUpstream?: boolean): Promise<void>;
+	push(remoteName?: string, branchName?: string, setUpstream?: boolean, force?: ForcePushMode): Promise<void>;
 
 	blame(path: string): Promise<string>;
 	log(options?: LogOptions): Promise<Commit[]>;
@@ -209,6 +227,7 @@ export interface RemoteSourceProvider {
 	readonly icon?: string; // codicon name
 	readonly supportsQuery?: boolean;
 	getRemoteSources(query?: string): ProviderResult<RemoteSource[]>;
+	getBranches?(url: string): ProviderResult<string[]>;
 	publishRepository?(repository: Repository): Promise<void>;
 }
 
@@ -221,22 +240,42 @@ export interface CredentialsProvider {
 	getCredentials(host: Uri): ProviderResult<Credentials>;
 }
 
+export interface PushErrorHandler {
+	handlePushError(repository: Repository, remote: Remote, refspec: string, error: Error & { gitErrorCode: GitErrorCodes }): Promise<boolean>;
+}
+
 export type APIState = 'uninitialized' | 'initialized';
+
+export interface PublishEvent {
+	repository: Repository;
+	branch?: string;
+}
 
 export interface API {
 	readonly state: APIState;
 	readonly onDidChangeState: Event<APIState>;
+	readonly onDidPublish: Event<PublishEvent>;
 	readonly git: Git;
 	readonly repositories: Repository[];
 	readonly onDidOpenRepository: Event<Repository>;
 	readonly onDidCloseRepository: Event<Repository>;
 
+	/**
+	 * clones the repository at the specified url locally
+	 * @param url url of repository to clone
+	 * @param options
+	 * @param cancellationToken
+	 * @returns a promise to the string location where the repository was cloned to
+	 */
+	clone(url: string, options: ICloneOptions, cancellationToken?: CancellationToken): Promise<string>; // {{SQL CARBON EDIT}}
 	toGitUri(uri: Uri, ref: string): Uri;
 	getRepository(uri: Uri): Repository | null;
 	init(root: Uri): Promise<Repository | null>;
+	openRepository(root: Uri): Promise<Repository | null>
 
 	registerRemoteSourceProvider(provider: RemoteSourceProvider): Disposable;
 	registerCredentialsProvider(provider: CredentialsProvider): Disposable;
+	registerPushErrorHandler(handler: PushErrorHandler): Disposable;
 }
 
 export interface GitExtension {
@@ -274,6 +313,7 @@ export const enum GitErrorCodes {
 	CantOpenResource = 'CantOpenResource',
 	GitNotFound = 'GitNotFound',
 	CantCreatePipe = 'CantCreatePipe',
+	PermissionDenied = 'PermissionDenied',
 	CantAccessRemote = 'CantAccessRemote',
 	RepositoryNotFound = 'RepositoryNotFound',
 	RepositoryIsLocked = 'RepositoryIsLocked',
@@ -292,4 +332,11 @@ export const enum GitErrorCodes {
 	PatchDoesNotApply = 'PatchDoesNotApply',
 	NoPathFound = 'NoPathFound',
 	UnknownPath = 'UnknownPath',
+}
+
+// {{SQL CARBON EDIT}} move ICloneOptions from git.ts to here since it's used in clone()
+export interface ICloneOptions {
+	readonly parentPath: string;
+	readonly progress: Progress<{ increment: number }>;
+	readonly recursive?: boolean;
 }

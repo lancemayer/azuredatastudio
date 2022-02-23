@@ -11,7 +11,7 @@ import { localize } from 'vs/nls';
 import * as resources from 'vs/base/common/resources';
 import { ConnectionProviderProperties, ICapabilitiesService } from 'sql/platform/capabilities/common/capabilitiesService';
 import { IWorkbenchContributionsRegistry, Extensions as WorkbenchExtensions, IWorkbenchContribution } from 'vs/workbench/common/contributions';
-import { LifecyclePhase } from 'vs/platform/lifecycle/common/lifecycle';
+import { LifecyclePhase } from 'vs/workbench/services/lifecycle/common/lifecycle';
 import type { IDisposable } from 'vs/base/common/lifecycle';
 import { isArray } from 'vs/base/common/types';
 
@@ -25,6 +25,14 @@ const ConnectionProviderContrib: IJSONSchema = {
 		displayName: {
 			type: 'string',
 			description: localize('schema.displayName', "Display Name for the provider")
+		},
+		notebookKernelAlias: {
+			type: 'string',
+			description: localize('schema.notebookKernelAlias', "Notebook Kernel Alias for the provider")
+		},
+		isQueryProvider: {
+			type: 'boolean',
+			description: localize('schema.isQueryProvider', "Whether the provider is also a query provider. The default value is true.")
 		},
 		iconPath: {
 			description: localize('schema.iconPath', "Icon path for the server type"),
@@ -195,7 +203,7 @@ function resolveIconPath(extension: IExtensionPointUser<any>): void {
 
 	let baseDir = extension.description.extensionLocation.fsPath;
 	let properties: ConnectionProviderProperties = extension.value;
-	if (Array.isArray<ConnectionProviderProperties>(properties)) {
+	if (Array.isArray(properties)) {
 		for (let p of properties) {
 			toAbsolutePath(p['iconPath']);
 		}

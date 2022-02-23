@@ -3,10 +3,11 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { IAdsTelemetryService, ITelemetryInfo, ITelemetryEvent, ITelemetryConnectionInfo, ITelemetryEventMeasures, ITelemetryEventProperties } from 'sql/platform/telemetry/common/telemetry';
+import * as azdata from 'azdata';
+import { IAdsTelemetryService, ITelemetryInfo, ITelemetryEvent, ITelemetryEventMeasures, ITelemetryEventProperties } from 'sql/platform/telemetry/common/telemetry';
 import { ILogService } from 'vs/platform/log/common/log';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
-import { assign } from 'vs/base/common/objects';
+import { EventName } from 'sql/platform/telemetry/common/telemetryKeys';
 
 
 class TelemetryEventImpl implements ITelemetryEvent {
@@ -16,8 +17,8 @@ class TelemetryEventImpl implements ITelemetryEvent {
 		private _eventName: string,
 		private _properties?: ITelemetryEventProperties,
 		private _measurements?: ITelemetryEventMeasures) {
-		_properties = _properties || {};
-		_measurements = _measurements || {};
+		this._properties = _properties || {};
+		this._measurements = _measurements || {};
 	}
 
 	public send(): void {
@@ -34,22 +35,32 @@ class TelemetryEventImpl implements ITelemetryEvent {
 	}
 
 	public withAdditionalProperties(additionalProperties: ITelemetryEventProperties): ITelemetryEvent {
-		assign(this._properties, additionalProperties);
+		Object.assign(this._properties, additionalProperties);
 		return this;
 	}
 
 	public withAdditionalMeasurements(additionalMeasurements: ITelemetryEventMeasures): ITelemetryEvent {
-		assign(this._measurements, additionalMeasurements);
+		Object.assign(this._measurements, additionalMeasurements);
 		return this;
 	}
 
-	public withConnectionInfo(connectionInfo: ITelemetryConnectionInfo): ITelemetryEvent {
-		assign(this._properties,
+	public withConnectionInfo(connectionInfo?: azdata.IConnectionProfile): ITelemetryEvent {
+		Object.assign(this._properties,
 			{
-				authenticationType: connectionInfo.authenticationType,
-				providerName: connectionInfo.providerName,
-				serverType: connectionInfo.serverType,
-				engineType: connectionInfo.engineType
+				authenticationType: connectionInfo?.authenticationType,
+				provider: connectionInfo?.providerName
+			});
+		return this;
+	}
+
+	public withServerInfo(serverInfo?: azdata.ServerInfo): ITelemetryEvent {
+		Object.assign(this._properties,
+			{
+				connectionType: serverInfo?.isCloud !== undefined ? (serverInfo.isCloud ? 'Azure' : 'Standalone') : '',
+				serverVersion: serverInfo?.serverVersion ?? '',
+				serverEdition: serverInfo?.serverEdition ?? '',
+				serverEngineEdition: serverInfo?.engineEditionId ?? '',
+				isBigDataCluster: serverInfo?.options?.isBigDataCluster ?? false,
 			});
 		return this;
 	}
@@ -64,7 +75,9 @@ class NullTelemetryEventImpl implements ITelemetryEvent {
 
 	public withAdditionalMeasurements(additionalMeasurements: ITelemetryEventMeasures): ITelemetryEvent { return this; }
 
-	public withConnectionInfo(connectionInfo: ITelemetryConnectionInfo): ITelemetryEvent { return this; }
+	public withConnectionInfo(connectionInfo: azdata.IConnectionProfile): ITelemetryEvent { return this; }
+
+	public withServerInfo(serverInfo: azdata.ServerInfo): ITelemetryEvent { return this; }
 }
 
 export class AdsTelemetryService implements IAdsTelemetryService {
@@ -93,7 +106,7 @@ export class AdsTelemetryService implements IAdsTelemetryService {
 	 * @param view The name of the page or item that was viewed
 	 */
 	public createViewEvent(view: string): ITelemetryEvent {
-		return new TelemetryEventImpl(this.telemetryService, this.logService, 'view', {
+		return new TelemetryEventImpl(this.telemetryService, this.logService, EventName.View, {
 			view: view
 		});
 	}
@@ -115,7 +128,7 @@ export class AdsTelemetryService implements IAdsTelemetryService {
 	 */
 	public createActionEvent(view: string, action: string, target: string = '', source: string = '', durationInMs?: number): ITelemetryEvent {
 		const measures: ITelemetryEventMeasures = durationInMs ? { durationInMs: durationInMs } : {};
-		return new TelemetryEventImpl(this.telemetryService, this.logService, 'action', {
+		return new TelemetryEventImpl(this.telemetryService, this.logService, EventName.Action, {
 			view: view,
 			action: action,
 			target: target,
@@ -139,12 +152,13 @@ export class AdsTelemetryService implements IAdsTelemetryService {
 	 * @param metrics The metrics to send
 	 */
 	public createMetricsEvent(metrics: ITelemetryEventMeasures, groupName: string = ''): ITelemetryEvent {
-		return new TelemetryEventImpl(this.telemetryService, this.logService, 'metrics', { groupName: groupName }, metrics);
+		return new TelemetryEventImpl(this.telemetryService, this.logService, EventName.Metrics, { groupName: groupName }, metrics);
 	}
 
 	/**
 	 * Sends a Metrics event. This is used to log measurements taken.
-	 * @param measurements The metrics to send
+	 * @param metrics The metrics to send
+	 * @param groupName The name of the group these metrics belong to
 	 */
 	public sendMetricsEvent(metrics: ITelemetryEventMeasures, groupName: string = ''): void {
 		this.createMetricsEvent(metrics, groupName).send();
@@ -156,10 +170,9 @@ export class AdsTelemetryService implements IAdsTelemetryService {
 	 * @param name The friendly name of the error
 	 * @param errorCode The error code returned
 	 * @param errorType The specific type of error
-	 * @param properties Optional additional properties
 	 */
 	public createErrorEvent(view: string, name: string, errorCode: string = '', errorType: string = ''): ITelemetryEvent {
-		return new TelemetryEventImpl(this.telemetryService, this.logService, 'error', {
+		return new TelemetryEventImpl(this.telemetryService, this.logService, EventName.Error, {
 			view: view,
 			name: name,
 			errorCode: errorCode,

@@ -6,9 +6,10 @@
 import { IQueryManagementService, QueryCancelResult, ExecutionPlanOptions } from 'sql/workbench/services/query/common/queryManagement';
 import * as Utils from 'sql/platform/connection/common/utils';
 import { Deferred } from 'sql/base/common/promise';
-import { IQueryPlanInfo } from 'sql/workbench/services/query/common/queryModel';
+import { IQueryPlanInfo, IQueryPlan2Info } from 'sql/workbench/services/query/common/queryModel';
 import { ResultSerializer, SaveFormat } from 'sql/workbench/services/query/common/resultSerializer';
 
+import * as azdata from 'azdata';
 import * as nls from 'vs/nls';
 import { IClipboardService } from 'vs/platform/clipboard/common/clipboardService';
 import * as types from 'vs/base/common/types';
@@ -23,9 +24,10 @@ import { mssqlProviderName } from 'sql/platform/connection/common/constants';
 import { IGridDataProvider, getResultsString } from 'sql/workbench/services/query/common/gridDataProvider';
 import { getErrorMessage } from 'vs/base/common/errors';
 import { ILogService } from 'vs/platform/log/common/log';
-import { find } from 'vs/base/common/arrays';
 import { IRange, Range } from 'vs/editor/common/core/range';
 import { BatchSummary, IQueryMessage, ResultSetSummary, QueryExecuteSubsetParams, CompleteBatchSummary, IResultMessage, ResultSetSubset, BatchStartSummary } from './query';
+import { IQueryEditorConfiguration } from 'sql/platform/query/common/query';
+import { IDisposableDataProvider } from 'sql/base/common/dataProvider';
 
 /*
 * Query Runner class which handles running a query, reports the results to the content manager,
@@ -71,6 +73,9 @@ export default class QueryRunner extends Disposable {
 	private readonly _onQueryPlanAvailable = this._register(new Emitter<IQueryPlanInfo>());
 	public readonly onQueryPlanAvailable = this._onQueryPlanAvailable.event;
 
+	private readonly _onQueryPlan2Available = this._register(new Emitter<IQueryPlan2Info>());
+	public readonly onQueryPlan2Available = this._onQueryPlan2Available.event;
+
 	private readonly _onVisualize = this._register(new Emitter<ResultSetSummary>());
 	public readonly onVisualize = this._onVisualize.event;
 
@@ -101,6 +106,12 @@ export default class QueryRunner extends Disposable {
 
 	get hasCompleted(): boolean {
 		return this._hasCompleted;
+	}
+
+	private _isDisposed: boolean = false;
+
+	get isDisposed(): boolean {
+		return this._isDisposed;
 	}
 
 	/**
@@ -137,7 +148,9 @@ export default class QueryRunner extends Disposable {
 	 */
 	public runQuery(input: IRange | undefined, runOptions?: ExecutionPlanOptions): Promise<void>;
 	public runQuery(input: string | IRange | undefined, runOptions?: ExecutionPlanOptions): Promise<void> {
-		if (types.isString(input) || types.isUndefined(input)) {
+		if (types.isString(input)) {
+			return this.doRunQuery(input, false, runOptions);
+		} else if (types.isUndefined(input)) {
 			return this.doRunQuery(input, false, runOptions);
 		} else {
 			return this.doRunQuery(input, false, runOptions);
@@ -156,8 +169,9 @@ export default class QueryRunner extends Disposable {
 	 * Implementation that runs the query with the provided query
 	 * @param input Query string to execute
 	 */
-	private doRunQuery(input: string, runCurrentStatement: boolean, runOptions?: ExecutionPlanOptions): Promise<void>;
-	private doRunQuery(input: IRange | undefined, runCurrentStatement: boolean, runOptions?: ExecutionPlanOptions): Promise<void>;
+	private doRunQuery(input: string, runCurrentStatement: false, runOptions?: ExecutionPlanOptions): Promise<void>;
+	private doRunQuery(input: IRange | undefined, runCurrentStatement: false, runOptions?: ExecutionPlanOptions): Promise<void>;
+	private doRunQuery(input: IRange, runCurrentStatement: true, runOptions?: ExecutionPlanOptions): Promise<void>;
 	private doRunQuery(input: string | IRange | undefined, runCurrentStatement: boolean, runOptions?: ExecutionPlanOptions): Promise<void> {
 		if (this.isExecuting) {
 			return Promise.resolve();
@@ -170,8 +184,9 @@ export default class QueryRunner extends Disposable {
 		this._messages = [];
 		if (isRangeOrUndefined(input)) {
 			// Update internal state to show that we're executing the query
-			this._resultLineOffset = input ? input.startLineNumber : 0;
-			this._resultColumnOffset = input ? input.startColumn : 0;
+			// startLineNumber/startColumn is 1 based, need to do a -1 to get the offset.
+			this._resultLineOffset = input ? (input.startLineNumber - 1) : 0;
+			this._resultColumnOffset = input ? (input.startColumn - 1) : 0;
 			this._isExecuting = true;
 			this._totalElapsedMilliseconds = 0;
 			// TODO issue #228 add statusview callbacks here
@@ -180,7 +195,7 @@ export default class QueryRunner extends Disposable {
 
 			// Send the request to execute the query
 			return runCurrentStatement
-				? this.queryManagementService.runQueryStatement(this.uri, input.startLineNumber, input.startColumn).then(() => this.handleSuccessRunQueryResult(), e => this.handleFailureRunQueryResult(e))
+				? this.queryManagementService.runQueryStatement(this.uri, input!.startLineNumber, input!.startColumn).then(() => this.handleSuccessRunQueryResult(), e => this.handleFailureRunQueryResult(e))
 				: this.queryManagementService.runQuery(this.uri, input, runOptions).then(() => this.handleSuccessRunQueryResult(), e => this.handleFailureRunQueryResult(e));
 		} else {
 			// Update internal state to show that we're executing the query
@@ -231,7 +246,9 @@ export default class QueryRunner extends Disposable {
 
 		this._batchSets.map(batch => {
 			if (batch.range) {
-				batch.range = new Range(batch.range.startLineNumber + this._resultLineOffset, batch.range.startColumn + this._resultColumnOffset, batch.range.endLineNumber + this._resultLineOffset, batch.range.endColumn + this._resultColumnOffset);
+				const columnOffset = (this._resultColumnOffset ?? 0);
+				const lineOffest = (this._resultLineOffset ?? 0);
+				batch.range = new Range(batch.range.startLineNumber + lineOffest, batch.range.startColumn + columnOffset, batch.range.endLineNumber + lineOffest, batch.range.endColumn + columnOffset);
 			}
 		});
 
@@ -255,7 +272,9 @@ export default class QueryRunner extends Disposable {
 	public handleBatchStart(batch: BatchStartSummary): void {
 		// Recalculate the start and end lines, relative to the result line offset
 		if (batch.range) {
-			batch.range = new Range(batch.range.startLineNumber + this._resultLineOffset, batch.range.startColumn + this._resultColumnOffset, batch.range.endLineNumber + this._resultLineOffset, batch.range.endColumn + this._resultColumnOffset);
+			const columnOffset = (this._resultColumnOffset ?? 0);
+			const lineOffest = (this._resultLineOffset ?? 0);
+			batch.range = new Range(batch.range.startLineNumber + lineOffest, batch.range.startColumn + columnOffset, batch.range.endLineNumber + lineOffest, batch.range.endColumn + columnOffset);
 		}
 
 		// Store the batch
@@ -304,6 +323,7 @@ export default class QueryRunner extends Disposable {
 					batchSet = <BatchSummary>{
 						id: 0,
 						range: undefined,
+						executionStart: Date.now().toString(),
 						hasError: false,
 						resultSetSummaries: []
 					};
@@ -314,7 +334,7 @@ export default class QueryRunner extends Disposable {
 			}
 			// handle getting queryPlanxml if we need too
 			// check if this result has show plan, this needs work, it won't work for any other provider
-			let hasShowPlan = !!find(resultSet.columnInfo, e => e.columnName === 'Microsoft SQL Server 2005 XML Showplan');
+			let hasShowPlan = !!resultSet.columnInfo.find(e => e.columnName === 'Microsoft SQL Server 2005 XML Showplan');
 			if (hasShowPlan && resultSet.rowCount > 0) {
 				this._isQueryPlan = true;
 
@@ -367,6 +387,16 @@ export default class QueryRunner extends Disposable {
 		}
 	}
 
+	public handleQueryPlan2Available(queryPlans: azdata.ExecutionPlanGraph[] | undefined) {
+		if (queryPlans) {
+			this._onQueryPlan2Available.fire({
+				providerId: mssqlProviderName,
+				fileUri: this.uri,
+				planGraphs: queryPlans
+			});
+		}
+	}
+
 	/**
 	 * Handle a Mssage from the service layer
 	 */
@@ -406,9 +436,15 @@ export default class QueryRunner extends Disposable {
 		this.dispose();
 	}
 
-	public dispose() {
+	public override dispose() {
+		this.logService.info(`Disposing the query runner of: '${this.uri}'', call stack: ${new Error().stack}`);
 		this._batchSets = undefined!;
 		super.dispose();
+		this._isDisposed = true;
+	}
+
+	public changeConnectionUri(oldUri: string, newUri: string): Promise<void> {
+		return this.queryManagementService.changeConnectionUri(oldUri, newUri);
 	}
 
 	get totalElapsedMilliseconds(): number {
@@ -442,7 +478,7 @@ export default class QueryRunner extends Disposable {
 
 	private sendBatchTimeMessage(batchId: number, executionTime: string): void {
 		// get config copyRemoveNewLine option from vscode config
-		let showBatchTime = this.configurationService.getValue<boolean>('sql.showBatchTime');
+		let showBatchTime = this.configurationService.getValue<IQueryEditorConfiguration>('queryEditor').messages.showBatchTime;
 		if (showBatchTime) {
 			let message: IQueryMessage = {
 				batchId: batchId,
@@ -493,18 +529,19 @@ export class QueryGridDataProvider implements IGridDataProvider {
 		return this.queryRunner.getQueryRows(rowStart, numberOfRows, this.batchId, this.resultSetId);
 	}
 
-	copyResults(selection: Slick.Range[], includeHeaders?: boolean): Promise<void> {
-		return this.copyResultsAsync(selection, includeHeaders);
+	copyResults(selection: Slick.Range[], includeHeaders?: boolean, tableView?: IDisposableDataProvider<Slick.SlickData>): Promise<void> {
+		return this.copyResultsAsync(selection, includeHeaders, tableView);
 	}
 
-	private async copyResultsAsync(selection: Slick.Range[], includeHeaders?: boolean): Promise<void> {
+	private async copyResultsAsync(selection: Slick.Range[], includeHeaders?: boolean, tableView?: IDisposableDataProvider<Slick.SlickData>): Promise<void> {
 		try {
-			let results = await getResultsString(this, selection, includeHeaders);
+			const results = await getResultsString(this, selection, includeHeaders, tableView);
 			await this._clipboardService.writeText(results);
 		} catch (error) {
 			this._notificationService.error(nls.localize('copyFailed', "Copy failed with error {0}", getErrorMessage(error)));
 		}
 	}
+
 	getEolString(): string {
 		return getEolString(this._textResourcePropertiesService, this.queryRunner.uri);
 	}
@@ -538,13 +575,13 @@ export function shouldIncludeHeaders(includeHeaders: boolean, configurationServi
 		return includeHeaders;
 	}
 	// else get config option from vscode config
-	includeHeaders = configurationService.getValue<boolean>('sql.copyIncludeHeaders');
+	includeHeaders = configurationService.getValue<IQueryEditorConfiguration>('queryEditor').results.copyIncludeHeaders;
 	return !!includeHeaders;
 }
 
 export function shouldRemoveNewLines(configurationService: IConfigurationService): boolean {
 	// get config copyRemoveNewLine option from vscode config
-	let removeNewLines = configurationService.getValue<boolean>('sql.copyRemoveNewLine');
+	let removeNewLines = configurationService.getValue<IQueryEditorConfiguration>('queryEditor').results.copyRemoveNewLine;
 	return !!removeNewLines;
 }
 

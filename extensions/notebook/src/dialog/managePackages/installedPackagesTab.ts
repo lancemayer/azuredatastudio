@@ -5,12 +5,14 @@
 
 import * as nls from 'vscode-nls';
 import * as azdata from 'azdata';
+import * as vscode from 'vscode';
 
 import { JupyterServerInstallation, PythonPkgDetails } from '../../jupyter/jupyterServerInstallation';
 import * as utils from '../../common/utils';
 import { ManagePackagesDialog } from './managePackagesDialog';
 import CodeAdapter from '../../prompts/adapter';
-import { QuestionTypes, IQuestion } from '../../prompts/question';
+import { IQuestion, QuestionTypes } from '../../prompts/question';
+import { IconPathHelper } from '../../common/iconHelper';
 
 const localize = nls.loadMessageBundle();
 
@@ -27,6 +29,7 @@ export class InstalledPackagesTab {
 	private uninstallPackageButton: azdata.ButtonComponent;
 	private view: azdata.ModelView | undefined;
 	private formBuilder: azdata.FormBuilder;
+	private disposables: vscode.Disposable[] = [];
 
 	constructor(private dialog: ManagePackagesDialog, private jupyterInstallation: JupyterServerInstallation) {
 		this.prompter = new CodeAdapter();
@@ -35,6 +38,13 @@ export class InstalledPackagesTab {
 
 		this.installedPkgTab.registerContent(async view => {
 			this.view = view;
+
+			// Dispose the resources
+			this.disposables.push(view.onClosed(() => {
+				this.disposables.forEach(d => {
+					try { d.dispose(); } catch { }
+				});
+			}));
 			let dropdownValues = this.dialog.model.getPackageTypes().map(x => {
 				return {
 					name: x.providerId,
@@ -42,9 +52,9 @@ export class InstalledPackagesTab {
 				};
 			});
 			let defaultPackageType = this.dialog.model.getDefaultPackageType();
-			this.packageTypeDropdown = view.modelBuilder.dropDown().withProperties({
+			this.packageTypeDropdown = view.modelBuilder.dropDown().withProps({
 				values: dropdownValues,
-				value: defaultPackageType
+				value: defaultPackageType.providerId
 			}).component();
 			this.dialog.changeProvider(defaultPackageType.providerId);
 			this.packageTypeDropdown.onValueChanged(async () => {
@@ -55,32 +65,50 @@ export class InstalledPackagesTab {
 				}
 				catch (err) {
 					this.dialog.showErrorMessage(utils.getErrorMessage(err));
-
 				}
 
 			});
 
-			this.installedPackageCount = view.modelBuilder.text().withProperties({
+			this.installedPackageCount = view.modelBuilder.text().withProps({
 				value: ''
 			}).component();
 
 			this.installedPackagesTable = view.modelBuilder.table()
-				.withProperties({
+				.withProps({
 					columns: [
-						localize('managePackages.pkgNameColumn', "Name"),
-						localize('managePackages.newPkgVersionColumn', "Version")
+						{
+							value: localize('managePackages.pkgNameColumn', "Name"),
+							type: azdata.ColumnType.text
+						},
+						{
+							value: localize('managePackages.newPkgVersionColumn', "Version"),
+							type: azdata.ColumnType.text
+						},
+						<azdata.ButtonColumn>
+						{
+							value: localize('managePackages.deleteColumn', "Delete"),
+							type: azdata.ColumnType.button,
+							icon: IconPathHelper.delete
+						}
 					],
 					data: [[]],
-					height: '600px',
+					height: '500px',
 					width: '400px'
 				}).component();
+			this.disposables.push(this.installedPackagesTable.onCellAction(async (rowState) => {
+				let buttonState = <azdata.ICellActionEventArgs>rowState;
+				if (buttonState) {
+					await this.doUninstallPackage([rowState.row]);
+				}
+			}));
 
 			this.uninstallPackageButton = view.modelBuilder.button()
-				.withProperties({
+				.withProps({
 					label: localize('managePackages.uninstallButtonText', "Uninstall selected packages"),
-					width: '200px'
+					width: '200px',
+					secondary: true
 				}).component();
-			this.uninstallPackageButton.onDidClick(() => this.doUninstallPackage());
+			this.uninstallPackageButton.onDidClick(() => this.doUninstallPackage(this.installedPackagesTable.selectedRows));
 
 			this.formBuilder = view.modelBuilder.formContainer()
 				.withFormItems([{
@@ -100,14 +128,14 @@ export class InstalledPackagesTab {
 
 			this.installedPackagesLoader = view.modelBuilder.loadingComponent()
 				.withItem(this.formBuilder.component())
-				.withProperties({
+				.withProps({
 					loading: true
 				}).component();
 
 			await view.initializeModel(this.installedPackagesLoader);
 
 			await this.loadInstalledPackagesInfo();
-			this.packageTypeDropdown.focus();
+			await this.packageTypeDropdown.focus();
 		});
 	}
 
@@ -136,21 +164,26 @@ export class InstalledPackagesTab {
 	 */
 	public static async getLocationComponent(view: azdata.ModelView, dialog: ManagePackagesDialog): Promise<azdata.Component> {
 		const locations = await dialog.model.getLocations();
+		let location: string;
 		let component: azdata.Component;
 		if (locations && locations.length === 1) {
-			component = view.modelBuilder.text().withProperties({
+			component = view.modelBuilder.text().withProps({
 				value: locations[0].displayName
 			}).component();
-		} else if (locations) {
+			location = locations[0].name;
+		} else if (locations && locations.length > 1) {
 			let dropdownValues = locations.map(x => {
 				return {
 					name: x.name,
 					displayName: x.displayName
 				};
 			});
-			let locationDropDown = view.modelBuilder.dropDown().withProperties({
+			const currentLocation = await dialog.model.getCurrentLocation();
+			const selectedLocation = dropdownValues.find(x => x.name === currentLocation);
+			location = currentLocation || locations[0].name;
+			let locationDropDown = view.modelBuilder.dropDown().withProps({
 				values: dropdownValues,
-				value: dropdownValues[0]
+				value: selectedLocation || dropdownValues[0]
 			}).component();
 
 			locationDropDown.onValueChanged(async () => {
@@ -164,11 +197,11 @@ export class InstalledPackagesTab {
 			});
 			component = locationDropDown;
 		} else {
-			component = view.modelBuilder.text().withProperties({
+			component = view.modelBuilder.text().withProps({
 			}).component();
 		}
-		if (locations && locations.length > 0) {
-			dialog.changeLocation(locations[0].name);
+		if (location) {
+			dialog.changeLocation(location);
 		}
 		return component;
 	}
@@ -194,7 +227,7 @@ export class InstalledPackagesTab {
 		let packageCount: number;
 		if (pythonPackages) {
 			packageCount = pythonPackages.length;
-			packageData = pythonPackages.map(pkg => [pkg.name, pkg.version]);
+			packageData = pythonPackages.map(pkg => [pkg.name, pkg.version, undefined]);
 		} else {
 			packageCount = 0;
 		}
@@ -214,13 +247,12 @@ export class InstalledPackagesTab {
 		}
 	}
 
-	private async doUninstallPackage(): Promise<void> {
-		let rowNums = this.installedPackagesTable.selectedRows;
+	private async doUninstallPackage(rowNums: number[]): Promise<void> {
 		if (!rowNums || rowNums.length === 0) {
 			return;
 		}
 
-		this.uninstallPackageButton.updateProperties({ enabled: false });
+		await this.uninstallPackageButton.updateProperties({ enabled: false });
 		let doUninstall = await this.prompter.promptSingle<boolean>(<IQuestion>{
 			type: QuestionTypes.confirm,
 			message: localize('managePackages.confirmUninstall', "Are you sure you want to uninstall the specified packages?"),
@@ -244,7 +276,7 @@ export class InstalledPackagesTab {
 					"Uninstalling {0}",
 					packagesStr);
 
-				this.jupyterInstallation.apiWrapper.startBackgroundOperation({
+				azdata.tasks.startBackgroundOperation({
 					displayName: taskName,
 					description: taskName,
 					isCancelable: false,
@@ -277,6 +309,6 @@ export class InstalledPackagesTab {
 			}
 		}
 
-		this.uninstallPackageButton.updateProperties({ enabled: true });
+		await this.uninstallPackageButton.updateProperties({ enabled: true });
 	}
 }

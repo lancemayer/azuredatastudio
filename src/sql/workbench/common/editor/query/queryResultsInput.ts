@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize } from 'vs/nls';
-import { EditorInput } from 'vs/workbench/common/editor';
+import { EditorInput } from 'vs/workbench/common/editor/editorInput';
 
 import { TopOperationsState } from 'sql/workbench/common/editor/query/topOperationsState';
 import { ChartState } from 'sql/workbench/common/editor/query/chartState';
@@ -12,6 +12,7 @@ import { QueryPlanState } from 'sql/workbench/common/editor/query/queryPlanState
 import { GridPanelState } from 'sql/workbench/common/editor/query/gridTableState';
 import { QueryModelViewState } from 'sql/workbench/common/editor/query/modelViewState';
 import { URI } from 'vs/base/common/uri';
+import { QueryPlan2State } from 'sql/workbench/common/editor/query/queryPlan2State';
 
 export class ResultsViewState {
 	public readonly gridPanelState: GridPanelState = new GridPanelState();
@@ -19,6 +20,7 @@ export class ResultsViewState {
 	public readonly queryPlanState: QueryPlanState = new QueryPlanState();
 	public readonly topOperationsState = new TopOperationsState();
 	public readonly dynamicModelViewTabsState: Map<string, QueryModelViewState> = new Map<string, QueryModelViewState>();
+	public readonly queryPlan2State: QueryPlan2State = new QueryPlan2State();
 
 	public activeTab?: string;
 	public readonly visibleTabs: Set<string> = new Set<string>();
@@ -27,6 +29,7 @@ export class ResultsViewState {
 		this.gridPanelState.dispose();
 		this.chartState.dispose();
 		this.queryPlanState.dispose();
+		this.queryPlan2State.clearQueryPlan2State();
 		this.dynamicModelViewTabsState.forEach((state: QueryModelViewState, identifier: string) => {
 			state.dispose();
 		});
@@ -40,33 +43,33 @@ export class ResultsViewState {
  */
 export class QueryResultsInput extends EditorInput {
 
-	private _state?= new ResultsViewState();
+	private _state = new ResultsViewState();
 
-	public get state(): ResultsViewState | undefined {
+	public get state(): ResultsViewState {
 		return this._state;
 	}
 
-	constructor(private _uri: string) {
+	constructor(public uri: string) {
 		super();
 	}
 
-	getTypeId(): string {
+	override get typeId(): string {
 		return QueryResultsInput.ID;
 	}
 
-	getName(): string {
+	override getName(): string {
 		return localize('extensionsInputName', "Extension");
 	}
 
-	matches(other: any): boolean {
+	override matches(other: any): boolean {
 		if (other instanceof QueryResultsInput) {
-			return (other._uri === this._uri);
+			return (other.uri === this.uri);
 		}
 
 		return false;
 	}
 
-	resolve(refresh?: boolean): Promise<any> {
+	override resolve(refresh?: boolean): Promise<any> {
 		return Promise.resolve(null);
 	}
 
@@ -74,7 +77,7 @@ export class QueryResultsInput extends EditorInput {
 		return false;
 	}
 
-	public dispose(): void {
+	public override dispose(): void {
 		super.dispose();
 	}
 
@@ -82,10 +85,6 @@ export class QueryResultsInput extends EditorInput {
 
 	static get ID() {
 		return 'workbench.query.queryResultsInput';
-	}
-
-	get uri(): string {
-		return this._uri;
 	}
 
 	get resource(): URI | undefined {

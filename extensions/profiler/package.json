@@ -1,11 +1,11 @@
 {
 	"name": "profiler",
-	"displayName": "SQL Server Profiler",
-	"description": "SQL Server Profiler for Azure Data Studio",
-	"version": "0.12.0",
+	"displayName": "%displayName%",
+	"description": "%description%",
+	"version": "0.12.1",
 	"publisher": "Microsoft",
 	"preview": true,
-	"license": "https://raw.githubusercontent.com/Microsoft/azuredatastudio/master/LICENSE.txt",
+	"license": "https://raw.githubusercontent.com/Microsoft/azuredatastudio/main/LICENSE.txt",
 	"icon": "images/extension.png",
 	"aiKey": "AIF-37eefaf0-8022-4671-a3fb-64752724682e",
 	"engines": {
@@ -14,7 +14,7 @@
 	"activationEvents": [
 		"*"
 	],
-	"main": "./client/out/main",
+	"main": "./out/main",
 	"scripts": {
 		"compile": "gulp compile-extension:profiler-client"
 	},
@@ -25,27 +25,33 @@
 	"extensionDependencies": [
 		"Microsoft.mssql"
 	],
+	"capabilities": {
+		"virtualWorkspaces": false,
+		"untrustedWorkspaces": {
+		  "supported": true
+		}
+	},
 	"contributes": {
 		"commands": [
 			{
 				"command": "profiler.newProfiler",
-				"title": "Launch Profiler",
-				"category": "Profiler"
+				"title": "%profiler.contributes.title.newProfler%",
+				"category": "%profiler.category%"
 			},
 			{
 				"command": "profiler.start",
-				"title": "Start",
-				"category": "Profiler"
+				"title": "profiler.contributes.title.start",
+				"category": "%profiler.category%"
 			},
 			{
 				"command": "profiler.stop",
-				"title": "Stop",
-				"category": "Profiler"
+				"title": "profiler.contributes.title.stop",
+				"category": "%profiler.category%"
 			},
 			{
 				"command": "profiler.openCreateSessionDialog",
-				"title": "Create Profiler Session",
-				"category": "Profiler"
+				"title": "profiler.contributes.title.openCreateSessionDialog",
+				"category": "%profiler.category%"
 			}
 		],
 		"menus": {
@@ -69,6 +75,13 @@
 					"when": "connectionProvider == MSSQL && nodeType && nodeType == Server && mssql:engineedition != 11",
 					"group": "profiler"
 				}
+			],
+			"dataExplorer/context": [
+				{
+					"command": "profiler.newProfiler",
+					"when": "connectionProvider == MSSQL && nodeType && nodeType == Server && mssql:engineedition != 11",
+					"group": "profiler"
+				}
 			]
 		},
 		"outputChannels": [
@@ -76,11 +89,9 @@
 		]
 	},
 	"dependencies": {
-		"vscode-nls": "^3.2.1"
+		"vscode-nls": "^4.1.2"
 	},
-	"devDependencies": {
-		"vscode": "1.0.1"
-	},
+	"devDependencies": { },
 	"__metadata": {
 		"id": "18",
 		"publisherDisplayName": "Microsoft",

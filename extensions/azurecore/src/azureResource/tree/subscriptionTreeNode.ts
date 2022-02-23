@@ -4,12 +4,12 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { TreeItem, TreeItemCollapsibleState } from 'vscode';
-import { Account, NodeInfo } from 'azdata';
+import { NodeInfo } from 'azdata';
 import { AppContext } from '../../appContext';
 import * as nls from 'vscode-nls';
 const localize = nls.loadMessageBundle();
 
-import { azureResource } from '../azure-resource';
+import { azureResource } from 'azureResource';
 import { TreeNode } from '../treeNode';
 import { IAzureResourceNodeWithProviderId } from '../interfaces';
 import { AzureResourceContainerTreeNodeBase } from './baseTreeNodes';
@@ -19,10 +19,11 @@ import { AzureResourceMessageTreeNode } from '../messageTreeNode';
 import { AzureResourceErrorMessageUtil } from '../utils';
 import { AzureResourceService } from '../resourceService';
 import { AzureResourceResourceTreeNode } from '../resourceTreeNode';
+import { AzureAccount } from 'azurecore';
 
 export class AzureResourceSubscriptionTreeNode extends AzureResourceContainerTreeNodeBase {
 	public constructor(
-		public readonly account: Account,
+		public readonly account: AzureAccount,
 		public readonly subscription: azureResource.AzureResourceSubscription,
 		public readonly tenatId: string,
 		appContext: AppContext,

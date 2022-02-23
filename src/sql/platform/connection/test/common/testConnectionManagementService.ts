@@ -24,7 +24,6 @@ export class TestConnectionManagementService implements IConnectionManagementSer
 	_serviceBrand: undefined;
 	onAddConnectionProfile = undefined!;
 	onDeleteConnectionProfile = undefined!;
-	onConnectionChanged = undefined!;
 	onLanguageFlavorChanged = undefined!;
 
 	public get onConnect(): Event<any> {
@@ -32,6 +31,10 @@ export class TestConnectionManagementService implements IConnectionManagementSer
 	}
 
 	public get onDisconnect(): Event<any> {
+		return Event.None;
+	}
+
+	public get onConnectionChanged(): Event<any> {
 		return Event.None;
 	}
 
@@ -44,6 +47,10 @@ export class TestConnectionManagementService implements IConnectionManagementSer
 	}
 
 	registerIconProvider(providerId: string, provider: azdata.IconProvider): void {
+
+	}
+
+	changeConnectionUri(newUri: string, oldUri: string): void {
 
 	}
 
@@ -259,12 +266,12 @@ export class TestConnectionManagementService implements IConnectionManagementSer
 		return undefined!;
 	}
 
-	getActiveConnectionCredentials(profileId: string): { [name: string]: string } {
-		return undefined!;
+	getConnectionCredentials(profileId: string): Promise<{ [name: string]: string }> {
+		return Promise.resolve(undefined!);
 	}
 
 	getServerInfo(profileId: string): azdata.ServerInfo {
-		return undefined!;
+		return undefined;
 	}
 
 	getConnectionString(connectionId: string): Thenable<string> {
@@ -287,6 +294,10 @@ export class TestConnectionManagementService implements IConnectionManagementSer
 		return undefined!;
 	}
 
+	getProviderLanguageMode(providerName?: string): string {
+		return undefined!;
+	}
+
 	getConnectionIconId(connectionId: string): string {
 		return undefined!;
 	}
@@ -295,11 +306,20 @@ export class TestConnectionManagementService implements IConnectionManagementSer
 		return undefined!;
 	}
 
+	getDefaultAuthenticationTypeId(): string {
+		return undefined!;
+	}
+
+
 	getConnections(activeConnectionsOnly?: boolean): ConnectionProfile[] {
 		return [];
 	}
 
 	getConnection(uri: string): ConnectionProfile {
 		return undefined!;
+	}
+
+	refreshAzureAccountTokenIfNecessary(uri: string): Promise<boolean> {
+		return undefined;
 	}
 }

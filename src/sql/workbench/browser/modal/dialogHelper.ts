@@ -5,22 +5,30 @@
 
 import { SelectBox } from 'sql/base/browser/ui/selectBox/selectBox';
 import { Button } from 'sql/base/browser/ui/button/button';
-import { append, $, addClass, addClasses } from 'vs/base/browser/dom';
+import { append, $ } from 'vs/base/browser/dom';
 
 import * as types from 'vs/base/common/types';
 
 import * as azdata from 'azdata';
 
-export function appendRow(container: HTMLElement, label: string, labelClass: string, cellContainerClass: string, rowContainerClass?: string | Array<string>): HTMLElement {
+export function appendRow(container: HTMLElement, label: string, labelClass: string, cellContainerClass: string, rowContainerClass?: string | Array<string>, showRequiredIndicator: boolean = false): HTMLElement {
 	let rowContainer = append(container, $('tr'));
 	if (rowContainerClass) {
 		if (types.isString(rowContainerClass)) {
-			addClass(rowContainer, rowContainerClass);
+			rowContainer.classList.add(rowContainerClass);
 		} else {
-			addClasses(rowContainer, ...rowContainerClass);
+			rowContainer.classList.add(...rowContainerClass);
 		}
 	}
-	append(append(rowContainer, $(`td.${labelClass}`)), $('div')).innerText = label;
+	const labelContainer = append(append(rowContainer, $(`td.${labelClass}`)), $('div.dialog-label-container'));
+	labelContainer.style.display = 'flex';
+	append(labelContainer, $('div')).innerText = label;
+	if (showRequiredIndicator) {
+		const indicator = append(labelContainer, $('span.required-indicator'));
+		indicator.innerText = '*';
+		indicator.style.color = 'red';
+		indicator.style.marginLeft = '5px';
+	}
 	let inputCellContainer = append(rowContainer, $(`td.${cellContainerClass}`));
 
 	return inputCellContainer;
@@ -49,8 +57,8 @@ export function getBooleanValueFromStringOrBoolean(value: any): boolean {
 	return false;
 }
 
-export function getCategoryDisplayName(categories: azdata.CategoryValue[], categoryName: string) {
-	let displayName: string;
+export function getCategoryDisplayName(categories: azdata.CategoryValue[], categoryName: string): string | undefined {
+	let displayName: string | undefined;
 	categories.forEach(c => {
 		if (c.name === categoryName) {
 			displayName = c.displayName;
@@ -59,8 +67,8 @@ export function getCategoryDisplayName(categories: azdata.CategoryValue[], categ
 	return displayName;
 }
 
-export function getCategoryName(categories: azdata.CategoryValue[], categoryDisplayName: string) {
-	let categoryName: string;
+export function getCategoryName(categories: azdata.CategoryValue[], categoryDisplayName: string): string | undefined {
+	let categoryName: string | undefined;
 	categories.forEach(c => {
 		if (c.displayName === categoryDisplayName) {
 			categoryName = c.name;

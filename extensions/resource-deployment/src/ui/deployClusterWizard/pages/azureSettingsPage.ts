@@ -7,20 +7,20 @@ import * as azdata from 'azdata';
 import * as vscode from 'vscode';
 import * as nls from 'vscode-nls';
 import { FieldType, LabelPosition, SectionInfo } from '../../../interfaces';
-import { createSection, getDropdownComponent, InputComponentInfo, InputComponents, setModelValues, Validator } from '../../modelViewUtils';
-import { WizardPageBase } from '../../wizardPageBase';
+import { createSection, getDropdownComponent, InputComponent, InputComponentInfo, InputComponents, setModelValues, Validator } from '../../modelViewUtils';
 import { AksName_VariableName, Location_VariableName, ResourceGroup_VariableName, SubscriptionId_VariableName, VMCount_VariableName, VMSize_VariableName } from '../constants';
-import { DeployClusterWizard } from '../deployClusterWizard';
-import { AzureRegion } from '../../../../../azurecore/src/azurecore';
+import { AzureRegion } from 'azurecore';
+import { DeployClusterWizardModel } from '../deployClusterWizardModel';
+import { ResourceTypePage } from '../../resourceTypePage';
 const localize = nls.loadMessageBundle();
 const MissingRequiredInformationErrorMessage = localize('deployCluster.MissingRequiredInfoError', "Please fill out the required fields marked with red asterisks.");
 
-export class AzureSettingsPage extends WizardPageBase<DeployClusterWizard> {
+export class AzureSettingsPage extends ResourceTypePage {
 	private inputComponents: InputComponents = {};
 
-	constructor(wizard: DeployClusterWizard) {
+	constructor(private _model: DeployClusterWizardModel) {
 		super(localize('deployCluster.AzureSettingsPageTitle', "Azure settings"),
-			localize('deployCluster.AzureSettingsPageDescription', "Configure the settings to create an Azure Kubernetes Service cluster"), wizard);
+			localize('deployCluster.AzureSettingsPageDescription', "Configure the settings to create an Azure Kubernetes Service cluster"), _model.wizard);
 	}
 
 	public initialize(): void {
@@ -125,21 +125,23 @@ export class AzureSettingsPage extends WizardPageBase<DeployClusterWizard> {
 				}]
 			}]
 		};
-		this.pageObject.registerContent((view: azdata.ModelView) => {
-			const azureGroup = createSection({
+		this.pageObject.registerContent(async (view: azdata.ModelView) => {
+			const azureGroup = await createSection({
 				sectionInfo: azureSection,
 				view: view,
 				onNewDisposableCreated: (disposable: vscode.Disposable): void => {
 					self.wizard.registerDisposable(disposable);
 				},
-				onNewInputComponentCreated: (name: string, inputComponentInfo: InputComponentInfo): void => {
-					this.inputComponents[name] = { component: inputComponentInfo.component };
+				onNewInputComponentCreated: (name: string, inputComponentInfo: InputComponentInfo<InputComponent>): void => {
+					self.inputComponents[name] = inputComponentInfo;
+					self._model.inputComponents[name] = inputComponentInfo;
 				},
 				onNewValidatorCreated: (validator: Validator): void => {
 					self.validators.push(validator);
 				},
 				container: this.wizard.wizardObject,
-				inputComponents: this.wizard.inputComponents
+				inputComponents: this._model.inputComponents,
+				toolsService: this.wizard.toolsService
 			});
 			const formBuilder = view.modelBuilder.formContainer().withFormItems(
 				[{
@@ -157,7 +159,7 @@ export class AzureSettingsPage extends WizardPageBase<DeployClusterWizard> {
 		});
 	}
 
-	public onEnter(): void {
+	public override async onEnter(): Promise<void> {
 		this.wizard.wizardObject.registerNavigationValidator((pcInfo) => {
 			this.wizard.wizardObject.message = { text: '' };
 			if (pcInfo.newPage > pcInfo.lastPage) {
@@ -175,11 +177,10 @@ export class AzureSettingsPage extends WizardPageBase<DeployClusterWizard> {
 		});
 	}
 
-	public onLeave(): void {
+	public override async onLeave(): Promise<void> {
 		this.wizard.wizardObject.registerNavigationValidator((pcInfo) => {
 			return true;
 		});
-		setModelValues(this.inputComponents, this.wizard.model);
-		Object.assign(this.wizard.inputComponents, this.inputComponents);
+		await setModelValues(this.inputComponents, this.wizard.model);
 	}
 }

@@ -5,12 +5,10 @@
 
 import * as azdata from 'azdata';
 import { ConfigurePythonModel, ConfigurePythonWizard } from './configurePythonWizard';
-import { ApiWrapper } from '../../common/apiWrapper';
 
 export abstract class BasePage {
 
-	constructor(protected readonly apiWrapper: ApiWrapper,
-		protected readonly instance: ConfigurePythonWizard,
+	constructor(protected readonly instance: ConfigurePythonWizard,
 		protected readonly wizardPage: azdata.window.WizardPage,
 		protected readonly model: ConfigurePythonModel,
 		protected readonly view: azdata.ModelView) {
@@ -19,15 +17,15 @@ export abstract class BasePage {
 	/**
 	 * This method constructs all the elements of the page.
 	 */
-	public async abstract initialize(): Promise<boolean>;
+	public abstract initialize(): Promise<boolean>;
 
 	/**
 	 * This method is called when the user is entering the page.
 	 */
-	public async abstract onPageEnter(): Promise<void>;
+	public abstract onPageEnter(): Promise<void>;
 
 	/**
 	 * This method is called when the user is leaving the page.
 	 */
-	public async abstract onPageLeave(): Promise<boolean>;
+	public abstract onPageLeave(): Promise<boolean>;
 }

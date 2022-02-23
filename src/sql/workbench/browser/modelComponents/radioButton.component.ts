@@ -14,16 +14,17 @@ import * as azdata from 'azdata';
 import { ComponentBase } from 'sql/workbench/browser/modelComponents/componentBase';
 import { RadioButton } from 'sql/base/browser/ui/radioButton/radioButton';
 import { IComponent, IComponentDescriptor, IModelStore, ComponentEventType } from 'sql/platform/dashboard/browser/interfaces';
+import { ILogService } from 'vs/platform/log/common/log';
 
 @Component({
 	selector: 'modelview-radioButton',
 	template: `
-		<div #input class="modelview-radiobutton-container">
+		<div #input [ngStyle]="CSSStyles" class="modelview-radiobutton-container">
 
 		</div>
 	`
 })
-export default class RadioButtonComponent extends ComponentBase implements IComponent, OnDestroy, AfterViewInit {
+export default class RadioButtonComponent extends ComponentBase<azdata.RadioButtonProperties> implements IComponent, OnDestroy, AfterViewInit {
 	@Input() descriptor: IComponentDescriptor;
 	@Input() modelStore: IModelStore;
 	private _input: RadioButton;
@@ -31,13 +32,9 @@ export default class RadioButtonComponent extends ComponentBase implements IComp
 	@ViewChild('input', { read: ElementRef }) private _inputContainer: ElementRef;
 	constructor(
 		@Inject(forwardRef(() => ChangeDetectorRef)) changeRef: ChangeDetectorRef,
-		@Inject(forwardRef(() => ElementRef)) el: ElementRef) {
-		super(changeRef, el);
-	}
-
-	ngOnInit(): void {
-		this.baseInit();
-
+		@Inject(forwardRef(() => ElementRef)) el: ElementRef,
+		@Inject(ILogService) logService: ILogService) {
+		super(changeRef, el, logService);
 	}
 
 	ngAfterViewInit(): void {
@@ -54,10 +51,19 @@ export default class RadioButtonComponent extends ComponentBase implements IComp
 					args: e
 				});
 			}));
+
+			this._register(this._input.onDidChangeCheckedState(e => {
+				this.checked = e;
+				this.fireEvent({
+					eventType: ComponentEventType.onDidChange,
+					args: e
+				});
+			}));
 		}
+		this.baseInit();
 	}
 
-	ngOnDestroy(): void {
+	override ngOnDestroy(): void {
 		this.baseDestroy();
 	}
 
@@ -68,7 +74,7 @@ export default class RadioButtonComponent extends ComponentBase implements IComp
 		this.layout();
 	}
 
-	public setProperties(properties: { [key: string]: any; }): void {
+	public override setProperties(properties: { [key: string]: any; }): void {
 		super.setProperties(properties);
 		this._input.name = this.name;
 		this._input.value = this.value;
@@ -80,19 +86,19 @@ export default class RadioButtonComponent extends ComponentBase implements IComp
 	// CSS-bound properties
 
 	public get checked(): boolean {
-		return this.getPropertyOrDefault<azdata.RadioButtonProperties, boolean>((props) => props.checked, false);
+		return this.getPropertyOrDefault<boolean>((props) => props.checked, false);
 	}
 
 	public set checked(newValue: boolean) {
-		this.setPropertyFromUI<azdata.RadioButtonProperties, boolean>((properties, value) => { properties.checked = value; }, newValue);
+		this.setPropertyFromUI<boolean>((properties, value) => { properties.checked = value; }, newValue);
 	}
 
 	public set value(newValue: string) {
-		this.setPropertyFromUI<azdata.RadioButtonProperties, string>((properties, value) => { properties.value = value; }, newValue);
+		this.setPropertyFromUI<string>((properties, value) => { properties.value = value; }, newValue);
 	}
 
 	public get value(): string {
-		return this.getPropertyOrDefault<azdata.RadioButtonProperties, string>((props) => props.value, '');
+		return this.getPropertyOrDefault<string>((props) => props.value, '');
 	}
 
 	public getLabel(): string {
@@ -100,22 +106,22 @@ export default class RadioButtonComponent extends ComponentBase implements IComp
 	}
 
 	public get label(): string {
-		return this.getPropertyOrDefault<azdata.RadioButtonProperties, string>((props) => props.label, '');
+		return this.getPropertyOrDefault<string>((props) => props.label, '');
 	}
 
 	public set label(newValue: string) {
-		this.setPropertyFromUI<azdata.RadioButtonProperties, string>((properties, label) => { properties.label = label; }, newValue);
+		this.setPropertyFromUI<string>((properties, label) => { properties.label = label; }, newValue);
 	}
 
 	public get name(): string {
-		return this.getPropertyOrDefault<azdata.RadioButtonProperties, string>((props) => props.name, '');
+		return this.getPropertyOrDefault<string>((props) => props.name, '');
 	}
 
 	public set name(newValue: string) {
-		this.setPropertyFromUI<azdata.RadioButtonProperties, string>((properties, label) => { properties.name = label; }, newValue);
+		this.setPropertyFromUI<string>((properties, label) => { properties.name = label; }, newValue);
 	}
 
-	public focus(): void {
+	public override focus(): void {
 		this._input.focus();
 	}
 

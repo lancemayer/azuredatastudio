@@ -1,0 +1,34 @@
+<!--
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the Source EULA. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+-->
+<ng-template #templateRef>
+	<div
+		*ngIf="visible"
+		class="grid-stack-item"
+		attr.data-cell-id="{{cell.cellGuid}}"
+		attr.gs-w="{{width}}"
+		attr.gs-h="{{height}}"
+		attr.gs-x="{{x}}"
+		attr.gs-y="{{y}}"
+		(click)="selectCell(cell, $event)"
+	>
+		<div
+			#item
+			class="grid-stack-item-content notebook-cell"
+			[class.active]="cell.active"
+		>
+			<div #actionbar [style.display]="showActionBar ? 'block' : 'none'" class="actionbar"></div>
+			<div class="grid-stack-content-wrapper">
+				<div class="grid-stack-content-wrapper-inner">
+					<views-code-cell-component *ngIf="cell.cellType === 'code'" [cellModel]="cell" [model]="model" [activeCellId]="activeCellId" [visible]="visible">
+					</views-code-cell-component>
+					<text-cell-component *ngIf="cell.cellType === 'markdown'" [cellModel]="cell" [model]="model" [activeCellId]="activeCellId">
+					</text-cell-component>
+				</div>
+			</div>
+		</div>
+	</div>
+</ng-template>

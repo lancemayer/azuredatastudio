@@ -8,9 +8,9 @@ import * as nls from 'vscode-nls';
 import { BdcDeploymentType } from '../../../interfaces';
 import { BigDataClusterDeploymentProfile } from '../../../services/bigDataClusterDeploymentProfile';
 import { createFlexContainer, createLabel } from '../../modelViewUtils';
-import { WizardPageBase } from '../../wizardPageBase';
+import { ResourceTypePage } from '../../resourceTypePage';
 import * as VariableNames from '../constants';
-import { DeployClusterWizard } from '../deployClusterWizard';
+import { DeployClusterWizardModel } from '../deployClusterWizardModel';
 const localize = nls.loadMessageBundle();
 
 const serviceScaleTableTitle = localize('deployCluster.serviceScaleTableTitle', "Service scale settings (Instances)");
@@ -19,23 +19,23 @@ const featureTableTitle = localize('deployCluster.featureTableTitle', "Features"
 const YesText = localize('deployCluster.yesText', "Yes");
 const NoText = localize('deployCluster.noText', "No");
 
-export class DeploymentProfilePage extends WizardPageBase<DeployClusterWizard> {
+export class DeploymentProfilePage extends ResourceTypePage {
 	private _loadingComponent: azdata.LoadingComponent | undefined;
 	private _container: azdata.FlexContainer | undefined;
 
-	constructor(wizard: DeployClusterWizard) {
+	constructor(private _model: DeployClusterWizardModel) {
 		super(localize('deployCluster.summaryPageTitle', "Deployment configuration profile"),
-			localize('deployCluster.summaryPageDescription', "Select the target configuration profile"), wizard);
+			localize('deployCluster.summaryPageDescription', "Select the target configuration profile"), _model.wizard);
 	}
 
 	public initialize(): void {
 		this.pageObject.registerContent(async (view: azdata.ModelView): Promise<void> => {
 			this._container = view.modelBuilder.flexContainer().withLayout({ flexFlow: 'column' }).component();
-			const hintText = view.modelBuilder.text().withProperties<azdata.TextComponentProperties>({
+			const hintText = view.modelBuilder.text().withProps({
 				value: localize('deployCluster.ProfileHintText', "Note: The settings of the deployment profile can be customized in later steps.")
 			}).component();
 			const container = createFlexContainer(view, [this._container, hintText], false);
-			this._loadingComponent = view.modelBuilder.loadingComponent().withItem(container).withProperties<azdata.LoadingComponentProperties>({
+			this._loadingComponent = view.modelBuilder.loadingComponent().withItem(container).withProps({
 				loading: true,
 				loadingText: localize('deployCluster.loadingProfiles', "Loading profiles"),
 				loadingCompletedText: localize('deployCluster.loadingProfilesCompleted', "Loading profiles completed"),
@@ -59,36 +59,36 @@ export class DeploymentProfilePage extends WizardPageBase<DeployClusterWizard> {
 	}
 
 	private setModelValuesByProfile(selectedProfile: BigDataClusterDeploymentProfile): void {
-		this.wizard.model.setPropertyValue(VariableNames.DeploymentProfile_VariableName, selectedProfile.profileName);
-		this.wizard.model.setPropertyValue(VariableNames.SparkPoolScale_VariableName, selectedProfile.sparkReplicas);
-		this.wizard.model.setPropertyValue(VariableNames.DataPoolScale_VariableName, selectedProfile.dataReplicas);
-		this.wizard.model.setPropertyValue(VariableNames.HDFSPoolScale_VariableName, selectedProfile.hdfsReplicas);
-		this.wizard.model.setPropertyValue(VariableNames.ComputePoolScale_VariableName, selectedProfile.computeReplicas);
-		this.wizard.model.setPropertyValue(VariableNames.HDFSNameNodeScale_VariableName, selectedProfile.hdfsNameNodeReplicas);
-		this.wizard.model.setPropertyValue(VariableNames.SQLServerScale_VariableName, selectedProfile.sqlServerReplicas);
-		this.wizard.model.setPropertyValue(VariableNames.SparkHeadScale_VariableName, selectedProfile.sparkHeadReplicas);
-		this.wizard.model.setPropertyValue(VariableNames.ZooKeeperScale_VariableName, selectedProfile.zooKeeperReplicas);
-		this.wizard.model.setPropertyValue(VariableNames.ControllerDataStorageSize_VariableName, selectedProfile.controllerDataStorageSize);
-		this.wizard.model.setPropertyValue(VariableNames.ControllerLogsStorageSize_VariableName, selectedProfile.controllerLogsStorageSize);
-		this.wizard.model.setPropertyValue(VariableNames.SQLServerPort_VariableName, selectedProfile.sqlServerPort);
-		this.wizard.model.setPropertyValue(VariableNames.GateWayPort_VariableName, selectedProfile.gatewayPort);
-		this.wizard.model.setPropertyValue(VariableNames.ControllerPort_VariableName, selectedProfile.controllerPort);
-		this.wizard.model.setPropertyValue(VariableNames.ServiceProxyPort_VariableName, selectedProfile.serviceProxyPort);
-		this.wizard.model.setPropertyValue(VariableNames.AppServiceProxyPort_VariableName, selectedProfile.appServiceProxyPort);
-		this.wizard.model.setPropertyValue(VariableNames.IncludeSpark_VariableName, selectedProfile.includeSpark);
-		this.wizard.model.setPropertyValue(VariableNames.ControllerDataStorageClassName_VariableName, selectedProfile.controllerDataStorageClass);
-		this.wizard.model.setPropertyValue(VariableNames.ControllerLogsStorageClassName_VariableName, selectedProfile.controllerLogsStorageClass);
-		this.wizard.model.setPropertyValue(VariableNames.ReadableSecondaryPort_VariableName, selectedProfile.sqlServerReadableSecondaryPort);
-		this.wizard.model.setPropertyValue(VariableNames.DockerRegistry_VariableName, selectedProfile.registry);
-		this.wizard.model.setPropertyValue(VariableNames.DockerRepository_VariableName, selectedProfile.repository);
-		this.wizard.model.setPropertyValue(VariableNames.DockerImageTag_VariableName, selectedProfile.imageTag);
-		this.wizard.model.adAuthSupported = selectedProfile.activeDirectorySupported;
-		this.wizard.model.selectedProfile = selectedProfile;
+		this._model.setPropertyValue(VariableNames.DeploymentProfile_VariableName, selectedProfile.profileName);
+		this._model.setPropertyValue(VariableNames.SparkPoolScale_VariableName, selectedProfile.sparkReplicas);
+		this._model.setPropertyValue(VariableNames.DataPoolScale_VariableName, selectedProfile.dataReplicas);
+		this._model.setPropertyValue(VariableNames.HDFSPoolScale_VariableName, selectedProfile.hdfsReplicas);
+		this._model.setPropertyValue(VariableNames.ComputePoolScale_VariableName, selectedProfile.computeReplicas);
+		this._model.setPropertyValue(VariableNames.HDFSNameNodeScale_VariableName, selectedProfile.hdfsNameNodeReplicas);
+		this._model.setPropertyValue(VariableNames.SQLServerScale_VariableName, selectedProfile.sqlServerReplicas);
+		this._model.setPropertyValue(VariableNames.SparkHeadScale_VariableName, selectedProfile.sparkHeadReplicas);
+		this._model.setPropertyValue(VariableNames.ZooKeeperScale_VariableName, selectedProfile.zooKeeperReplicas);
+		this._model.setPropertyValue(VariableNames.ControllerDataStorageSize_VariableName, selectedProfile.controllerDataStorageSize);
+		this._model.setPropertyValue(VariableNames.ControllerLogsStorageSize_VariableName, selectedProfile.controllerLogsStorageSize);
+		this._model.setPropertyValue(VariableNames.SQLServerPort_VariableName, selectedProfile.sqlServerPort);
+		this._model.setPropertyValue(VariableNames.GateWayPort_VariableName, selectedProfile.gatewayPort);
+		this._model.setPropertyValue(VariableNames.ControllerPort_VariableName, selectedProfile.controllerPort);
+		this._model.setPropertyValue(VariableNames.ServiceProxyPort_VariableName, selectedProfile.serviceProxyPort);
+		this._model.setPropertyValue(VariableNames.AppServiceProxyPort_VariableName, selectedProfile.appServiceProxyPort);
+		this._model.setPropertyValue(VariableNames.IncludeSpark_VariableName, selectedProfile.includeSpark);
+		this._model.setPropertyValue(VariableNames.ControllerDataStorageClassName_VariableName, selectedProfile.controllerDataStorageClass);
+		this._model.setPropertyValue(VariableNames.ControllerLogsStorageClassName_VariableName, selectedProfile.controllerLogsStorageClass);
+		this._model.setPropertyValue(VariableNames.ReadableSecondaryPort_VariableName, selectedProfile.sqlServerReadableSecondaryPort);
+		this._model.setPropertyValue(VariableNames.DockerRegistry_VariableName, selectedProfile.registry);
+		this._model.setPropertyValue(VariableNames.DockerRepository_VariableName, selectedProfile.repository);
+		this._model.setPropertyValue(VariableNames.DockerImageTag_VariableName, selectedProfile.imageTag);
+		this._model.adAuthSupported = selectedProfile.activeDirectorySupported;
+		this._model.selectedProfile = selectedProfile;
 	}
 
 	private async loadProfiles(view: azdata.ModelView): Promise<void> {
 		try {
-			const profiles = await this.wizard.azdataService.getDeploymentProfiles(this.wizard.deploymentType);
+			const profiles = await this.wizard.azdataService.getDeploymentProfiles(this._model.deploymentType);
 			const radioButtonGroup = this.createRadioButtonGroup(view, profiles);
 			const serviceScaleTable = this.createServiceScaleTable(view, profiles);
 			const storageTable = this.createStorageTable(view, profiles);
@@ -121,7 +121,7 @@ export class DeploymentProfilePage extends WizardPageBase<DeployClusterWizard> {
 		const groupName = 'profileGroup';
 		const radioButtons = profiles.map(profile => {
 			const checked = profile.profileName === defaultProfile;
-			const radioButton = view.modelBuilder.radioButton().withProperties<azdata.RadioButtonProperties>({
+			const radioButton = view.modelBuilder.radioButton().withProps({
 				label: profile.profileName,
 				checked: checked,
 				name: groupName
@@ -147,7 +147,7 @@ export class DeploymentProfilePage extends WizardPageBase<DeployClusterWizard> {
 			[localize('deployCluster.hdfsLabel', "HDFS + Spark"), ...profiles.map(profile => profile.hdfsReplicas.toString())]
 		];
 
-		return view.modelBuilder.table().withProperties<azdata.TableComponentProperties>({
+		return view.modelBuilder.table().withProps({
 			columns: [this.createDescriptionColumn(localize('deployCluster.ServiceName', "Service")), ...this.createProfileColumns(profiles)],
 			data: data,
 			title: serviceScaleTableTitle,
@@ -162,7 +162,7 @@ export class DeploymentProfilePage extends WizardPageBase<DeployClusterWizard> {
 			[localize('deployCluster.dataStorageType', "Data"), ...profiles.map(profile => profile.controllerDataStorageSize.toString())],
 			[localize('deployCluster.logsStorageType', "Logs"), ...profiles.map(profile => profile.controllerLogsStorageSize.toString())]
 		];
-		return view.modelBuilder.table().withProperties<azdata.TableComponentProperties>({
+		return view.modelBuilder.table().withProps({
 			columns: [this.createDescriptionColumn(localize('deployCluster.StorageType', "Storage type")), ...this.createProfileColumns(profiles)],
 			data: data,
 			title: storageTableTitle,
@@ -184,7 +184,7 @@ export class DeploymentProfilePage extends WizardPageBase<DeployClusterWizard> {
 			data.push([localize('deployCluster.hadr', "High Availability"), ...profiles.map(profile => profile.sqlServerReplicas > 1 ? YesText : NoText)]);
 		}
 
-		return view.modelBuilder.table().withProperties<azdata.TableComponentProperties>({
+		return view.modelBuilder.table().withProps({
 			columns: [this.createDescriptionColumn(localize('deployCluster.featureText', "Feature")), ...this.createProfileColumns(profiles)],
 			data: data,
 			title: featureTableTitle,
@@ -216,7 +216,7 @@ export class DeploymentProfilePage extends WizardPageBase<DeployClusterWizard> {
 			.component();
 	}
 
-	public onEnter() {
+	public override async onEnter(): Promise<void> {
 		this.wizard.wizardObject.registerNavigationValidator((pcInfo) => {
 			this.wizard.wizardObject.message = { text: '' };
 			if (pcInfo.newPage > pcInfo.lastPage) {
@@ -233,21 +233,25 @@ export class DeploymentProfilePage extends WizardPageBase<DeployClusterWizard> {
 		});
 	}
 
-	public onLeave() {
+	public override async onLeave(): Promise<void> {
 		this.wizard.wizardObject.registerNavigationValidator((pcInfo) => {
 			return true;
 		});
 	}
 
 	private getDefaultProfile(): string {
-		switch (this.wizard.deploymentType) {
+		switch (this._model.deploymentType) {
 			case BdcDeploymentType.NewAKS:
 			case BdcDeploymentType.ExistingAKS:
 				return 'aks-dev-test';
 			case BdcDeploymentType.ExistingKubeAdm:
 				return 'kubeadm-dev-test';
+			case BdcDeploymentType.ExistingARO:
+				return 'aro-dev-test';
+			case BdcDeploymentType.ExistingOpenShift:
+				return 'openshift-dev-test';
 			default:
-				throw new Error(`Unknown deployment type: ${this.wizard.deploymentType}`);
+				throw new Error(`Unknown deployment type: ${this._model.deploymentType}`);
 		}
 	}
 }

@@ -13,3 +13,12 @@
 	width : 100%;
 	display: flex;
 }
+
+.grid-panel .cell {
+	text-overflow: ellipsis;
+	overflow: hidden;
+}
+
+.grid-panel.action-bar.vertical .action-item .action-label {
+	padding: 0px;
+}

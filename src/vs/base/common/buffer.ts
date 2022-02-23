@@ -3,14 +3,11 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import * as strings from 'vs/base/common/strings';
 import * as streams from 'vs/base/common/stream';
 
 declare const Buffer: any;
 
 const hasBuffer = (typeof Buffer !== 'undefined');
-const hasTextEncoder = (typeof TextEncoder !== 'undefined');
-const hasTextDecoder = (typeof TextDecoder !== 'undefined');
 
 let textEncoder: TextEncoder | null;
 let textDecoder: TextDecoder | null;
@@ -34,16 +31,15 @@ export class VSBuffer {
 		return new VSBuffer(actual);
 	}
 
-	static fromString(source: string): VSBuffer {
-		if (hasBuffer) {
+	static fromString(source: string, options?: { dontUseNodeBuffer?: boolean; }): VSBuffer {
+		const dontUseNodeBuffer = options?.dontUseNodeBuffer || false;
+		if (!dontUseNodeBuffer && hasBuffer) {
 			return new VSBuffer(Buffer.from(source));
-		} else if (hasTextEncoder) {
+		} else {
 			if (!textEncoder) {
 				textEncoder = new TextEncoder();
 			}
 			return new VSBuffer(textEncoder.encode(source));
-		} else {
-			return new VSBuffer(strings.encodeUTF8(source));
 		}
 	}
 
@@ -77,21 +73,19 @@ export class VSBuffer {
 	toString(): string {
 		if (hasBuffer) {
 			return this.buffer.toString();
-		} else if (hasTextDecoder) {
+		} else {
 			if (!textDecoder) {
 				textDecoder = new TextDecoder();
 			}
 			return textDecoder.decode(this.buffer);
-		} else {
-			return strings.decodeUTF8(this.buffer);
 		}
 	}
 
 	slice(start?: number, end?: number): VSBuffer {
 		// IMPORTANT: use subarray instead of slice because TypedArray#slice
 		// creates shallow copy and NodeBuffer#slice doesn't. The use of subarray
-		// ensures the same, performant, behaviour.
-		return new VSBuffer(this.buffer.subarray(start!/*bad lib.d.ts*/, end));
+		// ensures the same, performance, behaviour.
+		return new VSBuffer(this.buffer.subarray(start, end));
 	}
 
 	set(array: VSBuffer, offset?: number): void;
@@ -194,6 +188,8 @@ export interface VSBufferReadableStream extends streams.ReadableStream<VSBuffer>
 
 export interface VSBufferWriteableStream extends streams.WriteableStream<VSBuffer> { }
 
+export interface VSBufferReadableBufferedStream extends streams.ReadableBufferedStream<VSBuffer> { }
+
 export function readableToBuffer(readable: VSBufferReadable): VSBuffer {
 	return streams.consumeReadable<VSBuffer>(readable, chunks => VSBuffer.concat(chunks));
 }
@@ -206,6 +202,21 @@ export function streamToBuffer(stream: streams.ReadableStream<VSBuffer>): Promis
 	return streams.consumeStream<VSBuffer>(stream, chunks => VSBuffer.concat(chunks));
 }
 
+export async function bufferedStreamToBuffer(bufferedStream: streams.ReadableBufferedStream<VSBuffer>): Promise<VSBuffer> {
+	if (bufferedStream.ended) {
+		return VSBuffer.concat(bufferedStream.buffer);
+	}
+
+	return VSBuffer.concat([
+
+		// Include already read chunks...
+		...bufferedStream.buffer,
+
+		// ...and all additional chunks
+		await streamToBuffer(bufferedStream.stream)
+	]);
+}
+
 export function bufferToStream(buffer: VSBuffer): streams.ReadableStream<VSBuffer> {
 	return streams.toStream<VSBuffer>(buffer, chunks => VSBuffer.concat(chunks));
 }
@@ -214,6 +225,14 @@ export function streamToBufferReadableStream(stream: streams.ReadableStreamEvent
 	return streams.transform<Uint8Array | string, VSBuffer>(stream, { data: data => typeof data === 'string' ? VSBuffer.fromString(data) : VSBuffer.wrap(data) }, chunks => VSBuffer.concat(chunks));
 }
 
-export function newWriteableBufferStream(): streams.WriteableStream<VSBuffer> {
-	return streams.newWriteableStream<VSBuffer>(chunks => VSBuffer.concat(chunks));
+export function newWriteableBufferStream(options?: streams.WriteableStreamOptions): streams.WriteableStream<VSBuffer> {
+	return streams.newWriteableStream<VSBuffer>(chunks => VSBuffer.concat(chunks), options);
+}
+
+export function prefixedBufferReadable(prefix: VSBuffer, readable: VSBufferReadable): VSBufferReadable {
+	return streams.prefixedReadable(prefix, readable, chunks => VSBuffer.concat(chunks));
+}
+
+export function prefixedBufferStream(prefix: VSBuffer, stream: VSBufferReadableStream): VSBufferReadableStream {
+	return streams.prefixedStream(prefix, stream, chunks => VSBuffer.concat(chunks));
 }

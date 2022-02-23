@@ -3,9 +3,13 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-import { EditorInput } from 'vs/workbench/common/editor';
+import { EditorInput } from 'vs/workbench/common/editor/editorInput';
 import { Emitter } from 'vs/base/common/event';
 import { URI } from 'vs/base/common/uri';
+
+export interface IGridPanel {
+	readonly onRefreshComplete: Promise<void>;
+}
 
 /**
  * Input for the EditDataResultsEditor. This input helps with logic for the viewing and editing of
@@ -25,6 +29,7 @@ export class EditDataResultsInput extends EditorInput {
 
 	public readonly onRestoreViewStateEmitter = new Emitter<void>();
 	public readonly onSaveViewStateEmitter = new Emitter<void>();
+	private _editDataGridPanel?: IGridPanel;
 
 	constructor(private _uri: string) {
 		super();
@@ -32,11 +37,19 @@ export class EditDataResultsInput extends EditorInput {
 		this._hasBootstrapped = false;
 	}
 
-	getTypeId(): string {
+	get editDataGridPanel(): IGridPanel | undefined {
+		return this._editDataGridPanel;
+	}
+
+	set editDataGridPanel(gridPanel: IGridPanel | undefined) {
+		this._editDataGridPanel = gridPanel;
+	}
+
+	override get typeId(): string {
 		return EditDataResultsInput.ID;
 	}
 
-	matches(other: any): boolean {
+	override matches(other: any): boolean {
 		if (other instanceof EditDataResultsInput) {
 			return (other._uri === this._uri);
 		}
@@ -44,7 +57,7 @@ export class EditDataResultsInput extends EditorInput {
 		return false;
 	}
 
-	resolve(refresh?: boolean): Promise<any> {
+	override resolve(refresh?: boolean): Promise<any> {
 		return Promise.resolve(null);
 	}
 
@@ -56,7 +69,7 @@ export class EditDataResultsInput extends EditorInput {
 		this._hasBootstrapped = true;
 	}
 
-	public dispose(): void {
+	public override dispose(): void {
 		this._disposeContainer();
 		super.dispose();
 	}

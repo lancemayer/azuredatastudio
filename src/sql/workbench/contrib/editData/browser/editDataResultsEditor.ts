@@ -5,13 +5,13 @@
 
 import * as DOM from 'vs/base/browser/dom';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
-import { EditorOptions } from 'vs/workbench/common/editor';
+import { IEditorOpenContext } from 'vs/workbench/common/editor';
 import { getZoomLevel } from 'vs/base/browser/browser';
 import { Configuration } from 'vs/editor/browser/config/configuration';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { IThemeService } from 'vs/platform/theme/common/themeService';
 import { IConfigurationService } from 'vs/platform/configuration/common/configuration';
-import { BaseEditor } from 'vs/workbench/browser/parts/editor/baseEditor';
+import { EditorPane } from 'vs/workbench/browser/parts/editor/editorPane';
 import * as types from 'vs/base/common/types';
 
 import { IQueryModelService } from 'sql/workbench/services/query/common/queryModel';
@@ -20,11 +20,12 @@ import { EditDataGridPanel } from 'sql/workbench/contrib/editData/browser/editDa
 import { EditDataResultsInput } from 'sql/workbench/browser/editData/editDataResultsInput';
 import { CancellationToken } from 'vs/base/common/cancellation';
 import { IStorageService } from 'vs/platform/storage/common/storage';
+import { IEditorOptions } from 'vs/platform/editor/common/editor';
 
-export class EditDataResultsEditor extends BaseEditor {
+export class EditDataResultsEditor extends EditorPane {
 
 	public static ID: string = 'workbench.editor.editDataResultsEditor';
-	protected _input: EditDataResultsInput;
+	protected override _input: EditDataResultsInput;
 	protected _rawOptions: BareResultsGridInfo;
 
 	private styleSheet = DOM.createStyleSheet();
@@ -47,7 +48,7 @@ export class EditDataResultsEditor extends BaseEditor {
 		});
 	}
 
-	public get input(): EditDataResultsInput {
+	public override get input(): EditDataResultsInput {
 		return this._input;
 	}
 
@@ -55,7 +56,7 @@ export class EditDataResultsEditor extends BaseEditor {
 		parent.appendChild(this.styleSheet);
 	}
 
-	public dispose(): void {
+	public override dispose(): void {
 		this.styleSheet = undefined;
 		super.dispose();
 	}
@@ -63,8 +64,8 @@ export class EditDataResultsEditor extends BaseEditor {
 	public layout(dimension: DOM.Dimension): void {
 	}
 
-	public setInput(input: EditDataResultsInput, options: EditorOptions): Promise<void> {
-		super.setInput(input, options, CancellationToken.None);
+	public override setInput(input: EditDataResultsInput, options: IEditorOptions, context: IEditorOpenContext): Promise<void> {
+		super.setInput(input, options, context, CancellationToken.None);
 		this._applySettings();
 		if (!input.hasBootstrapped) {
 			this.createGridPanel();
@@ -105,6 +106,7 @@ export class EditDataResultsEditor extends BaseEditor {
 		// to events from the backing data service
 		this._applySettings();
 		let editGridPanel = this._register(this._instantiationService.createInstance(EditDataGridPanel, dataService, input.onSaveViewStateEmitter.event, input.onRestoreViewStateEmitter.event));
+		input.editDataGridPanel = editGridPanel;
 		editGridPanel.render(this.getContainer());
 	}
 }

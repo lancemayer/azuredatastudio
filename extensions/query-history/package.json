@@ -5,7 +5,7 @@
 	"version": "0.2.0",
 	"publisher": "Microsoft",
 	"preview": true,
-	"license": "https://raw.githubusercontent.com/Microsoft/azuredatastudio/master/LICENSE.txt",
+	"license": "https://raw.githubusercontent.com/Microsoft/azuredatastudio/main/LICENSE.txt",
 	"icon": "images/extension.png",
 	"aiKey": "AIF-37eefaf0-8022-4671-a3fb-64752724682e",
 	"engines": {
@@ -19,6 +19,12 @@
 	"repository": {
 		"type": "git",
 		"url": "https://github.com/Microsoft/azuredatastudio.git"
+	},
+	"capabilities": {
+		"virtualWorkspaces": false,
+		"untrustedWorkspaces": {
+		  "supported": true
+		}
 	},
 	"extensionDependencies": [],
 	"contributes": {
@@ -46,9 +52,7 @@
 		}
 	},
 	"dependencies": {},
-	"devDependencies": {
-		"vscode": "1.0.1"
-	},
+	"devDependencies": { },
 	"__metadata": {
 		"id": "55",
 		"publisherDisplayName": "Microsoft",

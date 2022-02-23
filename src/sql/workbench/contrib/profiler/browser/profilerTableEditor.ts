@@ -20,7 +20,7 @@ import { IKeybindingService } from 'vs/platform/keybinding/common/keybinding';
 import { IEditorAction } from 'vs/editor/common/editorCommon';
 import { IOverlayWidget } from 'vs/editor/browser/editorBrowser';
 import { FindReplaceState, FindReplaceStateChangedEvent } from 'vs/editor/contrib/find/findState';
-import { BaseEditor } from 'vs/workbench/browser/parts/editor/baseEditor';
+import { EditorPane } from 'vs/workbench/browser/parts/editor/editorPane';
 import { ITelemetryService } from 'vs/platform/telemetry/common/telemetry';
 import { Event, Emitter } from 'vs/base/common/event';
 import { IInstantiationService } from 'vs/platform/instantiation/common/instantiation';
@@ -39,10 +39,10 @@ export interface ProfilerTableViewState {
 	scrollLeft: number;
 }
 
-export class ProfilerTableEditor extends BaseEditor implements IProfilerController, ITableController {
+export class ProfilerTableEditor extends EditorPane implements IProfilerController, ITableController {
 
 	public static ID: string = 'workbench.editor.profiler.table';
-	protected _input: ProfilerInput;
+	protected override _input: ProfilerInput;
 	private _profilerTable: Table<Slick.SlickData>;
 	private _columnListener: IDisposable;
 	private _stateListener: IDisposable;
@@ -121,7 +121,7 @@ export class ProfilerTableEditor extends BaseEditor implements IProfilerControll
 		);
 	}
 
-	public setInput(input: ProfilerInput): Promise<void> {
+	public override setInput(input: ProfilerInput): Promise<void> {
 		this._showStatusBarItem = true;
 		this._input = input;
 
@@ -169,7 +169,7 @@ export class ProfilerTableEditor extends BaseEditor implements IProfilerControll
 			this._updateFinderMatchState();
 		}, er => { });
 
-		this._input.onDispose(() => {
+		this._input.onWillDispose(() => {
 			this._disposeStatusbarItem();
 		});
 		return Promise.resolve(null);
@@ -219,7 +219,7 @@ export class ProfilerTableEditor extends BaseEditor implements IProfilerControll
 		return this._actionMap[id];
 	}
 
-	public focus(): void {
+	public override focus(): void {
 		this._profilerTable.focus();
 	}
 
@@ -288,7 +288,7 @@ export class ProfilerTableEditor extends BaseEditor implements IProfilerControll
 				: localize('ProfilerTableEditor.eventCount', "Events: {0}", this._input.data.getLength());
 
 			this._disposeStatusbarItem();
-			this._statusbarItem = this._statusbarService.addEntry({ text: message, ariaLabel: message }, 'status.eventCount', localize('status.eventCount', "Event Count"), StatusbarAlignment.RIGHT);
+			this._statusbarItem = this._statusbarService.addEntry({ name: localize('status.eventCount', "Event Count"), text: message, ariaLabel: message }, 'status.eventCount', StatusbarAlignment.RIGHT);
 		}
 	}
 

@@ -3,109 +3,154 @@
  *  Licensed under the Source EULA. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import { ControllerInfo, ResourceType } from 'arc';
+import * as azExt from 'az-ext';
 import * as vscode from 'vscode';
-import { Authentication } from '../controller/auth';
-import { EndpointsRouterApi, EndpointModel, RegistrationRouterApi, RegistrationResponse, TokenRouterApi, SqlInstanceRouterApi } from '../controller/generated/v1/api';
-import { ResourceType, parseEndpoint } from '../common/utils';
+import * as loc from '../localizedConstants';
+import { AzureArcTreeDataProvider } from '../ui/tree/azureArcTreeDataProvider';
 
-export interface Registration extends RegistrationResponse {
-	externalIp?: string;
-	externalPort?: string;
-}
+export type Registration = {
+	instanceName: string,
+	state: string,
+	instanceType: ResourceType,
+};
 
 export class ControllerModel {
-	private _endpointsRouter: EndpointsRouterApi;
-	private _tokenRouter: TokenRouterApi;
-	private _registrationRouter: RegistrationRouterApi;
-	private _sqlInstanceRouter: SqlInstanceRouterApi;
-	private _endpoints: EndpointModel[] = [];
-	private _namespace: string = '';
+	private readonly _azApi: azExt.IExtension;
+	private _endpoints: azExt.DcEndpointListResult[] = [];
 	private _registrations: Registration[] = [];
-	private _controllerRegistration: Registration | undefined = undefined;
+	private _controllerConfig: azExt.DcConfigShowResult | undefined = undefined;
 
-	private readonly _onEndpointsUpdated = new vscode.EventEmitter<EndpointModel[]>();
+	private readonly _onConfigUpdated = new vscode.EventEmitter<azExt.DcConfigShowResult | undefined>();
+	private readonly _onEndpointsUpdated = new vscode.EventEmitter<azExt.DcEndpointListResult[]>();
 	private readonly _onRegistrationsUpdated = new vscode.EventEmitter<Registration[]>();
+	private readonly _onInfoUpdated = new vscode.EventEmitter<ControllerInfo>();
+
+	public onConfigUpdated = this._onConfigUpdated.event;
 	public onEndpointsUpdated = this._onEndpointsUpdated.event;
 	public onRegistrationsUpdated = this._onRegistrationsUpdated.event;
+	public onInfoUpdated = this._onInfoUpdated.event;
+
+	public configLastUpdated?: Date;
 	public endpointsLastUpdated?: Date;
 	public registrationsLastUpdated?: Date;
 
-	constructor(controllerUrl: string, auth: Authentication) {
-		this._endpointsRouter = new EndpointsRouterApi(controllerUrl);
-		this._endpointsRouter.setDefaultAuthentication(auth);
-
-		this._tokenRouter = new TokenRouterApi(controllerUrl);
-		this._tokenRouter.setDefaultAuthentication(auth);
-
-		this._registrationRouter = new RegistrationRouterApi(controllerUrl);
-		this._registrationRouter.setDefaultAuthentication(auth);
-
-		this._sqlInstanceRouter = new SqlInstanceRouterApi(controllerUrl);
-		this._sqlInstanceRouter.setDefaultAuthentication(auth);
+	constructor(public treeDataProvider: AzureArcTreeDataProvider, private _info: ControllerInfo) {
+		this._azApi = <azExt.IExtension>vscode.extensions.getExtension(azExt.extension.name)?.exports;
 	}
 
-	public async refresh(): Promise<void> {
+	public get info(): ControllerInfo {
+		return this._info;
+	}
+
+	public set info(value: ControllerInfo) {
+		this._info = value;
+		this._onInfoUpdated.fire(this._info);
+	}
+
+	public get azAdditionalEnvVars(): azExt.AdditionalEnvVars {
+		return {
+			'KUBECONFIG': this.info.kubeConfigFilePath,
+			'KUBECTL_CONTEXT': this.info.kubeClusterContext
+		};
+	}
+
+	/**
+	 * Refreshes the Tree Node for this model. This will also result in the model being refreshed.
+	 */
+	public async refreshTreeNode(): Promise<void> {
+		const node = this.treeDataProvider.getControllerNode(this);
+		if (node) {
+			this.treeDataProvider.refreshNode(node);
+		} else {
+			await this.refresh(false, this.info.namespace);
+		}
+	}
+	public async refresh(showErrors: boolean = true, namespace: string): Promise<void> {
+		const newRegistrations: Registration[] = [];
 		await Promise.all([
-			this._endpointsRouter.apiV1BdcEndpointsGet().then(response => {
-				this._endpoints = response.body;
+			this._azApi.az.arcdata.dc.config.show(namespace, this.azAdditionalEnvVars).then(result => {
+				this._controllerConfig = result.stdout;
+				this.configLastUpdated = new Date();
+				this._onConfigUpdated.fire(this._controllerConfig);
+			}).catch(err => {
+				// If an error occurs show a message so the user knows something failed but still
+				// fire the event so callers hooking into this can handle the error (e.g. so dashboards don't show the
+				// loading icon forever)
+				if (showErrors) {
+					vscode.window.showErrorMessage(loc.fetchConfigFailed(this.info.name, err));
+				}
+				this._onConfigUpdated.fire(this._controllerConfig);
+				throw err;
+			}),
+			this._azApi.az.arcdata.dc.endpoint.list(namespace, this.azAdditionalEnvVars).then(result => {
+				this._endpoints = result.stdout;
 				this.endpointsLastUpdated = new Date();
 				this._onEndpointsUpdated.fire(this._endpoints);
+			}).catch(err => {
+				// If an error occurs show a message so the user knows something failed but still
+				// fire the event so callers can know to update (e.g. so dashboards don't show the
+				// loading icon forever)
+				if (showErrors) {
+					vscode.window.showErrorMessage(loc.fetchEndpointsFailed(this.info.name, err));
+				}
+				this._onEndpointsUpdated.fire(this._endpoints);
+				throw err;
 			}),
-			this._tokenRouter.apiV1TokenPost().then(async response => {
-				this._namespace = response.body.namespace!;
-				this._registrations = (await this._registrationRouter.apiV1RegistrationListResourcesNsGet(this._namespace)).body.map(mapRegistrationResponse);
-				this._controllerRegistration = this._registrations.find(r => r.instanceType === ResourceType.dataControllers);
+			Promise.all([
+				this._azApi.az.postgres.arcserver.list(namespace, this.azAdditionalEnvVars).then(result => {
+					newRegistrations.push(...result.stdout.map(r => {
+						return {
+							instanceName: r.name,
+							state: r.state,
+							instanceType: ResourceType.postgresInstances
+						};
+					}));
+				}),
+				this._azApi.az.sql.miarc.list(namespace, this.azAdditionalEnvVars).then(result => {
+					newRegistrations.push(...result.stdout.map(r => {
+						return {
+							instanceName: r.name,
+							state: r.state,
+							instanceType: ResourceType.sqlManagedInstances
+						};
+					}));
+
+				})
+			]).then(() => {
+				this._registrations = newRegistrations;
 				this.registrationsLastUpdated = new Date();
 				this._onRegistrationsUpdated.fire(this._registrations);
 			})
 		]);
 	}
 
-	public endpoints(): EndpointModel[] {
+	public get endpoints(): azExt.DcEndpointListResult[] {
 		return this._endpoints;
 	}
 
-	public endpoint(name: string): EndpointModel | undefined {
+	public getEndpoint(name: string): azExt.DcEndpointListResult | undefined {
 		return this._endpoints.find(e => e.name === name);
 	}
 
-	public namespace(): string {
-		return this._namespace;
-	}
-
-	public registrations(): Registration[] {
+	public get registrations(): Registration[] {
 		return this._registrations;
 	}
 
-	public get controllerRegistration(): Registration | undefined {
-		return this._controllerRegistration;
+	public get controllerConfig(): azExt.DcConfigShowResult | undefined {
+		return this._controllerConfig;
 	}
 
-	public getRegistration(type: string, namespace: string, name: string): Registration | undefined {
+	public getRegistration(type: ResourceType, name: string): Registration | undefined {
 		return this._registrations.find(r => {
-			// Resources deployed outside the controller's namespace are named in the format 'namespace_name'
-			let instanceName = r.instanceName!;
-			const parts: string[] = instanceName.split('_');
-			if (parts.length === 2) {
-				instanceName = parts[1];
-			}
-			else if (parts.length > 2) {
-				throw new Error(`Cannot parse resource '${instanceName}'. Acceptable formats are 'namespace_name' or 'name'.`);
-			}
-			return r.instanceType === type && r.instanceNamespace === namespace && instanceName === name;
+			return r.instanceType === type && r.instanceName === name;
 		});
 	}
 
-	public miaaDelete(name: string): void {
-		this._sqlInstanceRouter.apiV1HybridSqlNsNameDelete(this._namespace, name);
+	/**
+	 * property to for use a display label for this controller
+	 */
+	public get label(): string {
+		return `${this.info.name}`;
 	}
-}
-
-/**
- * Maps a RegistrationResponse to a Registration,
- * @param response The RegistrationResponse to map
- */
-function mapRegistrationResponse(response: RegistrationResponse): Registration {
-	const parsedEndpoint = parseEndpoint(response.externalEndpoint);
-	return { ...response, externalIp: parsedEndpoint.ip, externalPort: parsedEndpoint.port };
 }

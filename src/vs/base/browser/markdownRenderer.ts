@@ -4,32 +4,45 @@
  *--------------------------------------------------------------------------------------------*/
 
 import * as DOM from 'vs/base/browser/dom';
+import { DomEmitter } from 'vs/base/browser/event';
 import { createElement, FormattedTextRenderOptions } from 'vs/base/browser/formattedTextRenderer';
+import { StandardMouseEvent } from 'vs/base/browser/mouseEvent';
+import { renderLabelWithIcons } from 'vs/base/browser/ui/iconLabel/iconLabels';
 import { onUnexpectedError } from 'vs/base/common/errors';
+import { Event } from 'vs/base/common/event';
 import { IMarkdownString, parseHrefAndDimensions, removeMarkdownEscapes } from 'vs/base/common/htmlContent';
+import { markdownEscapeEscapedIcons } from 'vs/base/common/iconLabels';
 import { defaultGenerator } from 'vs/base/common/idGenerator';
+import { insane, InsaneOptions } from 'vs/base/common/insane/insane';
 import * as marked from 'vs/base/common/marked/marked';
-import { insane } from 'vs/base/common/insane/insane';
 import { parse } from 'vs/base/common/marshalling';
+import { FileAccess, Schemas } from 'vs/base/common/network';
 import { cloneAndChange } from 'vs/base/common/objects';
+import { resolvePath } from 'vs/base/common/resources';
 import { escape } from 'vs/base/common/strings';
 import { URI } from 'vs/base/common/uri';
-import { Schemas } from 'vs/base/common/network';
-import { renderCodicons, markdownEscapeEscapedCodicons } from 'vs/base/common/codicons';
-import { resolvePath } from 'vs/base/common/resources';
 
 export interface MarkedOptions extends marked.MarkedOptions {
 	baseUrl?: never;
 }
 
 export interface MarkdownRenderOptions extends FormattedTextRenderOptions {
-	codeBlockRenderer?: (modeId: string, value: string) => Promise<string>;
-	codeBlockRenderCallback?: () => void;
+	codeBlockRenderer?: (modeId: string, value: string) => Promise<HTMLElement>;
+	asyncRenderCallback?: () => void;
 	baseUrl?: URI;
 }
 
+const _ttpInsane = window.trustedTypes?.createPolicy('insane', {
+	createHTML(value, options: InsaneOptions): string {
+		return insane(value, options);
+	}
+});
+
 /**
- * Create html nodes for the given content element.
+ * Low-level way create a html element from a markdown string.
+ *
+ * **Note** that for most cases you should be using [`MarkdownRenderer`](./src/vs/editor/browser/core/markdownRenderer.ts)
+ * which comes with support for pretty code block rendering and which uses the default way of handling links.
  */
 export function renderMarkdown(markdown: IMarkdownString, options: MarkdownRenderOptions = {}, markedOptions: MarkedOptions = {}): HTMLElement {
 	const element = createElement(options);
@@ -60,15 +73,15 @@ export function renderMarkdown(markdown: IMarkdownString, options: MarkdownRende
 			return href; // no uri exists
 		}
 		let uri = URI.revive(data);
-		if (URI.parse(href).toString() === uri.toString()) {
-			return href; // no tranformation performed
-		}
 		if (isDomUri) {
 			// this URI will end up as "src"-attribute of a dom node
 			// and because of that special rewriting needs to be done
 			// so that the URI uses a protocol that's understood by
 			// browsers (like http or https)
-			return DOM.asDomUri(uri).toString(true);
+			return FileAccess.asBrowserUri(uri).toString(true);
+		}
+		if (URI.parse(href).toString() === uri.toString()) {
+			return href; // no transformation performed
 		}
 		if (uri.query) {
 			uri = uri.with({ query: _uriMassage(uri.query) });
@@ -88,9 +101,13 @@ export function renderMarkdown(markdown: IMarkdownString, options: MarkdownRende
 		if (href) {
 			({ href, dimensions } = parseHrefAndDimensions(href));
 			href = _href(href, true);
-			if (options.baseUrl) {
-				href = resolvePath(options.baseUrl, href).toString();
-			}
+			try {
+				const hrefAsUri = URI.parse(href);
+				if (options.baseUrl && hrefAsUri.scheme === Schemas.file) { // absolute or relative local path, or file: uri
+					href = resolvePath(options.baseUrl, href).toString();
+				}
+			} catch (err) { }
+
 			attributes.push(`src="${href}"`);
 		}
 		if (text) {
@@ -138,7 +155,11 @@ export function renderMarkdown(markdown: IMarkdownString, options: MarkdownRende
 		}
 	};
 	renderer.paragraph = (text): string => {
-		return `<p>${markdown.supportThemeIcons ? renderCodicons(text) : text}</p>`;
+		if (markdown.supportThemeIcons) {
+			const elements = renderLabelWithIcons(text);
+			text = elements.map(e => typeof e === 'string' ? e : e.outerHTML).join('');
+		}
+		return `<p>${text}</p>`;
 	};
 
 	if (options.codeBlockRenderer) {
@@ -147,42 +168,36 @@ export function renderMarkdown(markdown: IMarkdownString, options: MarkdownRende
 			// when code-block rendering is async we return sync
 			// but update the node with the real result later.
 			const id = defaultGenerator.nextId();
-
 			// {{SQL CARBON EDIT}} - Promise.all not returning the strValue properly in original code? @todo anthonydresser 4/12/19 investigate a better way to do this.
 			const promise = value.then(strValue => {
 				withInnerHTML.then(e => {
-					const span = element.querySelector(`div[data-code="${id}"]`);
+					const span = <HTMLDivElement>element.querySelector(`div[data-code="${id}"]`);
 					if (span) {
-						span.innerHTML = strValue;
+						DOM.reset(span, strValue);
 					}
 				}).catch(err => {
 					// ignore
 				});
 			});
 
-			// original VS Code source
-			// const promise = Promise.all([value, withInnerHTML]).then(values => {
-			// 	const strValue = values[0];
-			// 	const span = element.querySelector(`div[data-code="${id}"]`);
-			// 	if (span) {
-			// 		span.innerHTML = strValue;
-			// 	}
-			// }).catch(err => {
-			// 	// ignore
-			// });
-
-			if (options.codeBlockRenderCallback) {
-				promise.then(options.codeBlockRenderCallback);
+			if (options.asyncRenderCallback) {
+				promise.then(options.asyncRenderCallback);
 			}
 
 			return `<div class="code" data-code="${id}">${escape(code)}</div>`;
 		};
 	}
 
-	const actionHandler = options.actionHandler;
-	if (actionHandler) {
-		actionHandler.disposeables.add(DOM.addStandardDisposableListener(element, 'click', event => {
-			let target: HTMLElement | null = event.target;
+	if (options.actionHandler) {
+		const onClick = options.actionHandler.disposables.add(new DomEmitter(element, 'click'));
+		const onAuxClick = options.actionHandler.disposables.add(new DomEmitter(element, 'auxclick'));
+		options.actionHandler.disposables.add(Event.any(onClick.event, onAuxClick.event)(e => {
+			const mouseEvent = new StandardMouseEvent(e);
+			if (!mouseEvent.leftButton && !mouseEvent.middleButton) {
+				return;
+			}
+
+			let target: HTMLElement | null = mouseEvent.target;
 			if (target.tagName !== 'A') {
 				target = target.parentElement;
 				if (!target || target.tagName !== 'A') {
@@ -192,12 +207,12 @@ export function renderMarkdown(markdown: IMarkdownString, options: MarkdownRende
 			try {
 				const href = target.dataset['href'];
 				if (href) {
-					actionHandler.callback(href, event);
+					options.actionHandler!.callback(href, mouseEvent);
 				}
 			} catch (err) {
 				onUnexpectedError(err);
 			} finally {
-				event.preventDefault();
+				mouseEvent.preventDefault();
 			}
 		}));
 	}
@@ -205,41 +220,80 @@ export function renderMarkdown(markdown: IMarkdownString, options: MarkdownRende
 	// Use our own sanitizer so that we can let through only spans.
 	// Otherwise, we'd be letting all html be rendered.
 	// If we want to allow markdown permitted tags, then we can delete sanitizer and sanitize.
+	// We always pass the output through insane after this so that we don't rely on
+	// marked for sanitization.
 	markedOptions.sanitizer = (html: string): string => {
-		const match = markdown.isTrusted ? html.match(/^(<span[^<]+>)|(<\/\s*span>)$/) : undefined;
+		const match = markdown.isTrusted ? html.match(/^(<span[^>]+>)|(<\/\s*span>)$/) : undefined;
 		return match ? html : '';
 	};
 	markedOptions.sanitize = true;
+	markedOptions.silent = true;
+
 	markedOptions.renderer = renderer;
 
-	const allowedSchemes = [Schemas.http, Schemas.https, Schemas.mailto, Schemas.data, Schemas.file, Schemas.vscodeRemote, Schemas.vscodeRemoteResource];
-	if (markdown.isTrusted) {
+	// values that are too long will freeze the UI
+	let value = markdown.value ?? '';
+	if (value.length > 100_000) {
+		value = `${value.substr(0, 100_000)}…`;
+	}
+	// escape theme icons
+	if (markdown.supportThemeIcons) {
+		value = markdownEscapeEscapedIcons(value);
+	}
+
+	const renderedMarkdown = marked.parse(value, markedOptions);
+
+	// sanitize with insane
+	element.innerHTML = sanitizeRenderedMarkdown(markdown, renderedMarkdown) as string;
+
+	// signal that async code blocks can be now be inserted
+	signalInnerHTML!();
+
+	// signal size changes for image tags
+	if (options.asyncRenderCallback) {
+		for (const img of element.getElementsByTagName('img')) {
+			const listener = DOM.addDisposableListener(img, 'load', () => {
+				listener.dispose();
+				options.asyncRenderCallback!();
+			});
+		}
+	}
+
+
+	return element;
+}
+
+function sanitizeRenderedMarkdown(
+	options: { isTrusted?: boolean },
+	renderedMarkdown: string,
+): string | TrustedHTML {
+	const insaneOptions = getInsaneOptions(options);
+	return _ttpInsane?.createHTML(renderedMarkdown, insaneOptions) ?? insane(renderedMarkdown, insaneOptions);
+}
+
+function getInsaneOptions(options: { readonly isTrusted?: boolean }): InsaneOptions {
+	const allowedSchemes = [
+		Schemas.http,
+		Schemas.https,
+		Schemas.mailto,
+		Schemas.data,
+		Schemas.file,
+		Schemas.vscodeFileResource,
+		Schemas.vscodeRemote,
+		Schemas.vscodeRemoteResource,
+	];
+
+	if (options.isTrusted) {
 		allowedSchemes.push(Schemas.command);
 	}
 
-	const renderedMarkdown = marked.parse(
-		markdown.supportThemeIcons
-			? markdownEscapeEscapedCodicons(markdown.value || '')
-			: (markdown.value || ''),
-		markedOptions
-	);
-
-	function filter(token: { tag: string, attrs: { readonly [key: string]: string } }): boolean {
-		if (token.tag === 'span' && markdown.isTrusted) {
-			if (token.attrs['style'] && Object.keys(token.attrs).length === 1) {
-				return !!token.attrs['style'].match(/^(color\:#[0-9a-fA-F]+;)?(background-color\:#[0-9a-fA-F]+;)?$/);
-			}
-			return false;
-		}
-		return true;
-	}
-
-	element.innerHTML = insane(renderedMarkdown, {
+	return {
 		allowedSchemes,
 		// allowedTags should included everything that markdown renders to.
 		// Since we have our own sanitize function for marked, it's possible we missed some tag so let insane make sure.
 		// HTML tags that can result from markdown are from reading https://spec.commonmark.org/0.29/
-		allowedTags: ['ul', 'li', 'p', 'code', 'blockquote', 'ol', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'em', 'pre', 'table', 'tr', 'td', 'div', 'del', 'a', 'strong', 'br', 'img', 'span'],
+		// HTML table tags that can result from markdown are from https://github.github.com/gfm/#tables-extension-
+		allowedTags: ['ul', 'li', 'p', 'code', 'blockquote', 'ol', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'hr', 'em', 'pre', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'div', 'del', 'a', 'strong', 'br', 'img', 'span'],
 		allowedAttributes: {
 			'a': ['href', 'name', 'target', 'data-href'],
 			'img': ['src', 'title', 'alt', 'width', 'height'],
@@ -249,10 +303,111 @@ export function renderMarkdown(markdown: IMarkdownString, options: MarkdownRende
 			'th': ['align'],
 			'td': ['align']
 		},
-		filter
-	});
+		filter(token: { tag: string; attrs: { readonly [key: string]: string; }; }): boolean {
+			if (token.tag === 'span' && options.isTrusted) {
+				if (token.attrs['style'] && (Object.keys(token.attrs).length === 1)) {
+					return !!token.attrs['style'].match(/^(color\:#[0-9a-fA-F]+;)?(background-color\:#[0-9a-fA-F]+;)?$/);
+				} else if (token.attrs['class']) {
+					// The class should match codicon rendering in src\vs\base\common\codicons.ts
+					return !!token.attrs['class'].match(/^codicon codicon-[a-z\-]+( codicon-modifier-[a-z\-]+)?$/);
+				}
+				return false;
+			}
+			return true;
+		}
+	};
+}
 
-	signalInnerHTML!();
+/**
+ * Strips all markdown from `string`, if it's an IMarkdownString. For example
+ * `# Header` would be output as `Header`. If it's not, the string is returned.
+ */
+export function renderStringAsPlaintext(string: IMarkdownString | string) {
+	return typeof string === 'string' ? string : renderMarkdownAsPlaintext(string);
+}
 
-	return element;
+/**
+ * Strips all markdown from `markdown`. For example `# Header` would be output as `Header`.
+ */
+export function renderMarkdownAsPlaintext(markdown: IMarkdownString) {
+	const renderer = new marked.Renderer();
+
+	renderer.code = (code: string): string => {
+		return code;
+	};
+	renderer.blockquote = (quote: string): string => {
+		return quote;
+	};
+	renderer.html = (_html: string): string => {
+		return '';
+	};
+	renderer.heading = (text: string, _level: 1 | 2 | 3 | 4 | 5 | 6, _raw: string): string => {
+		return text + '\n';
+	};
+	renderer.hr = (): string => {
+		return '';
+	};
+	renderer.list = (body: string, _ordered: boolean): string => {
+		return body;
+	};
+	renderer.listitem = (text: string): string => {
+		return text + '\n';
+	};
+	renderer.paragraph = (text: string): string => {
+		return text + '\n';
+	};
+	renderer.table = (header: string, body: string): string => {
+		return header + body + '\n';
+	};
+	renderer.tablerow = (content: string): string => {
+		return content;
+	};
+	renderer.tablecell = (content: string, _flags: {
+		header: boolean;
+		align: 'center' | 'left' | 'right' | null;
+	}): string => {
+		return content + ' ';
+	};
+	renderer.strong = (text: string): string => {
+		return text;
+	};
+	renderer.em = (text: string): string => {
+		return text;
+	};
+	renderer.codespan = (code: string): string => {
+		return code;
+	};
+	renderer.br = (): string => {
+		return '\n';
+	};
+	renderer.del = (text: string): string => {
+		return text;
+	};
+	renderer.image = (_href: string, _title: string, _text: string): string => {
+		return '';
+	};
+	renderer.text = (text: string): string => {
+		return text;
+	};
+	renderer.link = (_href: string, _title: string, text: string): string => {
+		return text;
+	};
+	// values that are too long will freeze the UI
+	let value = markdown.value ?? '';
+	if (value.length > 100_000) {
+		value = `${value.substr(0, 100_000)}…`;
+	}
+
+	const unescapeInfo = new Map<string, string>([
+		['&quot;', '"'],
+		['&nbsp;', ' '],
+		['&amp;', '&'],
+		['&#39;', '\''],
+		['&lt;', '<'],
+		['&gt;', '>'],
+	]);
+
+	const html = marked.parse(value, { renderer }).replace(/&(#\d+|[a-zA-Z]+);/g, m => unescapeInfo.get(m) ?? m);
+
+	return sanitizeRenderedMarkdown({ isTrusted: false }, html).toString();
 }

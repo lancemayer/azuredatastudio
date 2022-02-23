@@ -7,22 +7,26 @@ import * as azdata from 'azdata';
 
 export abstract class Dashboard {
 
-	private dashboard!: azdata.window.ModelViewDashboard;
+	protected dashboard!: azdata.window.ModelViewDashboard;
 
-	constructor(protected title: string) { }
+	constructor(protected title: string, protected readonly name: string) { }
 
 	public async showDashboard(): Promise<void> {
 		this.dashboard = this.createDashboard();
 		await this.dashboard.open();
 	}
 
+	public async closeDashboard(): Promise<void> {
+		await this.dashboard.close();
+	}
+
 	protected createDashboard(): azdata.window.ModelViewDashboard {
-		const dashboard = azdata.window.createModelViewDashboard(this.title);
+		const dashboard = azdata.window.createModelViewDashboard(this.title, this.name);
 		dashboard.registerTabs(async modelView => {
 			return await this.registerTabs(modelView);
 		});
 		return dashboard;
 	}
 
-	protected abstract async registerTabs(modelView: azdata.ModelView): Promise<(azdata.DashboardTab | azdata.DashboardTabGroup)[]>;
+	protected abstract registerTabs(modelView: azdata.ModelView): Promise<(azdata.DashboardTab | azdata.DashboardTabGroup)[]>;
 }

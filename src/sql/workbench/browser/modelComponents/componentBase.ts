@@ -5,7 +5,7 @@
 import 'vs/css!./media/flexContainer';
 
 import {
-	ChangeDetectorRef, ViewChildren, ElementRef, OnDestroy, OnInit, QueryList
+	ChangeDetectorRef, ViewChildren, ElementRef, OnDestroy, QueryList, AfterViewInit
 } from '@angular/core';
 
 import * as types from 'vs/base/common/types';
@@ -14,21 +14,19 @@ import * as azdata from 'azdata';
 import { Emitter } from 'vs/base/common/event';
 import { IDisposable, Disposable } from 'vs/base/common/lifecycle';
 import { ModelComponentWrapper } from 'sql/workbench/browser/modelComponents/modelComponentWrapper.component';
-import { URI } from 'vs/base/common/uri';
 import * as nls from 'vs/nls';
 import { EventType, addDisposableListener } from 'vs/base/browser/dom';
 import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
-import { firstIndex } from 'vs/base/common/arrays';
 import { IComponentDescriptor, IComponent, IModelStore, IComponentEventArgs, ComponentEventType } from 'sql/platform/dashboard/browser/interfaces';
 import { convertSize } from 'sql/base/browser/dom';
-
-export type IUserFriendlyIcon = string | URI | { light: string | URI; dark: string | URI };
+import { onUnexpectedError } from 'vs/base/common/errors';
+import { ILogService } from 'vs/platform/log/common/log';
 
 export class ItemDescriptor<T> {
 	constructor(public descriptor: IComponentDescriptor, public config: T) { }
 }
 
-export abstract class ComponentBase extends Disposable implements IComponent, OnDestroy, OnInit {
+export abstract class ComponentBase<TPropertyBag extends azdata.ComponentProperties> extends Disposable implements IComponent, OnDestroy, AfterViewInit {
 	protected properties: { [key: string]: any; } = {};
 	private _valid: boolean = true;
 	protected _validations: (() => boolean | Thenable<boolean>)[] = [];
@@ -36,7 +34,8 @@ export abstract class ComponentBase extends Disposable implements IComponent, On
 
 	constructor(
 		protected _changeRef: ChangeDetectorRef,
-		protected _el: ElementRef) {
+		protected _el: ElementRef,
+		protected logService: ILogService) {
 		super();
 	}
 
@@ -57,9 +56,13 @@ export abstract class ComponentBase extends Disposable implements IComponent, On
 			this.modelStore.registerComponent(this);
 			this._validations.push(() => this.modelStore.validate(this));
 		}
+		this.fireEvent({
+			eventType: ComponentEventType.onComponentLoaded,
+			args: undefined
+		});
 	}
 
-	abstract ngOnInit(): void;
+	abstract ngAfterViewInit(): void;
 
 	protected baseDestroy(): void {
 		if (this.modelStore) {
@@ -84,47 +87,38 @@ export abstract class ComponentBase extends Disposable implements IComponent, On
 	public refreshDataProvider(item: any): void {
 	}
 
-	public updateStyles(): void {
-		const element = (<HTMLElement>this._el.nativeElement);
-		for (const style in this.CSSStyles) {
-			element.style[style] = this.CSSStyles[style];
-		}
-	}
-
 	public setProperties(properties: { [key: string]: any; }): void {
 		properties = properties || {};
 		this.properties = properties;
-		this.updateStyles();
 		this.layout();
-		this.validate();
+		this.validate().catch(onUnexpectedError);
 	}
 
 	// Helper Function to update single property
 	public updateProperty(key: string, value: any): void {
 		if (key) {
 			this.properties[key] = value;
-			this.updateStyles();
 			this.layout();
-			this.validate();
+			this.validate().catch(onUnexpectedError);
 		}
 	}
 
-	protected getProperties<TPropertyBag>(): TPropertyBag {
+	protected getProperties(): TPropertyBag {
 		return this.properties as TPropertyBag;
 	}
 
-	protected getPropertyOrDefault<TPropertyBag, TValue>(propertyGetter: (TPropertyBag) => TValue, defaultVal: TValue) {
-		let property = propertyGetter(this.getProperties<TPropertyBag>());
+	protected getPropertyOrDefault<TValue>(propertyGetter: (property: TPropertyBag) => TValue, defaultVal: TValue) {
+		let property = propertyGetter(this.getProperties());
 		return types.isUndefinedOrNull(property) ? defaultVal : property;
 	}
 
-	protected setPropertyFromUI<TPropertyBag, TValue>(propertySetter: (TPropertyBag, TValue) => void, value: TValue) {
-		propertySetter(this.getProperties<TPropertyBag>(), value);
+	protected setPropertyFromUI<TValue>(propertySetter: (TPropertyBag, TValue) => void, value: TValue) {
+		propertySetter(this.getProperties(), value);
 		this.fireEvent({
 			eventType: ComponentEventType.PropertiesChanged,
 			args: this.getProperties()
 		});
-		this.validate();
+		this.validate().catch(onUnexpectedError);
 	}
 
 	public get enabled(): boolean {
@@ -144,75 +138,75 @@ export abstract class ComponentBase extends Disposable implements IComponent, On
 	}
 
 	public get height(): number | string {
-		return this.getPropertyOrDefault<azdata.ComponentProperties, number | string>((props) => props.height, undefined);
+		return this.getPropertyOrDefault<number | string>((props) => props.height, undefined);
 	}
 
 	public set height(newValue: number | string) {
-		this.setPropertyFromUI<azdata.ComponentProperties, number | string>((props, value) => props.height = value, newValue);
+		this.setPropertyFromUI<number | string>((props, value) => props.height = value, newValue);
 	}
 
 	public get width(): number | string {
-		return this.getPropertyOrDefault<azdata.ComponentProperties, number | string>((props) => props.width, undefined);
+		return this.getPropertyOrDefault<number | string>((props) => props.width, undefined);
 	}
 
 	public set width(newValue: number | string) {
-		this.setPropertyFromUI<azdata.ComponentProperties, number | string>((props, value) => props.width = value, newValue);
+		this.setPropertyFromUI<number | string>((props, value) => props.width = value, newValue);
 	}
 
 	public get position(): string {
-		return this.getPropertyOrDefault<azdata.ComponentProperties, string>((props) => props.position, '');
+		return this.getPropertyOrDefault<string>((props) => props.position, '');
 	}
 
 	public set position(newValue: string) {
-		this.setPropertyFromUI<azdata.ComponentProperties, string>((properties, position) => { properties.position = position; }, newValue);
+		this.setPropertyFromUI<string>((properties, position) => { properties.position = position; }, newValue);
 	}
 
 	public get display(): azdata.DisplayType {
-		return this.getPropertyOrDefault<azdata.ComponentProperties, azdata.DisplayType>((props) => props.display, undefined);
+		return this.getPropertyOrDefault<azdata.DisplayType>((props) => props.display, undefined);
 	}
 
 	public set display(newValue: azdata.DisplayType) {
-		this.setPropertyFromUI<azdata.ComponentProperties, string>((properties, display) => { properties.display = display; }, newValue);
+		this.setPropertyFromUI<string>((properties, display) => { properties.display = display; }, newValue);
 	}
 
 	public get ariaLabel(): string {
-		return this.getPropertyOrDefault<azdata.ComponentProperties, string>((props) => props.ariaLabel, '');
+		return this.getPropertyOrDefault<string>((props) => props.ariaLabel, '');
 	}
 
 	public set ariaLabel(newValue: string) {
-		this.setPropertyFromUI<azdata.ComponentProperties, string>((props, value) => props.ariaLabel = value, newValue);
+		this.setPropertyFromUI<string>((props, value) => props.ariaLabel = value, newValue);
 	}
 
 	public get ariaRole(): string {
-		return this.getPropertyOrDefault<azdata.ComponentProperties, string>((props) => props.ariaRole, '');
+		return this.getPropertyOrDefault<string>((props) => props.ariaRole, '');
 	}
 
 	public set ariaRole(newValue: string) {
-		this.setPropertyFromUI<azdata.ComponentProperties, string>((props, value) => props.ariaRole = value, newValue);
+		this.setPropertyFromUI<string>((props, value) => props.ariaRole = value, newValue);
 	}
 
 	public get ariaSelected(): boolean {
-		return this.getPropertyOrDefault<azdata.ComponentProperties, boolean>((props) => props.ariaSelected, false);
+		return this.getPropertyOrDefault<boolean>((props) => props.ariaSelected, false);
 	}
 
 	public set ariaSelected(newValue: boolean) {
-		this.setPropertyFromUI<azdata.ComponentProperties, boolean>((props, value) => props.ariaSelected = value, newValue);
+		this.setPropertyFromUI<boolean>((props, value) => props.ariaSelected = value, newValue);
 	}
 
 	public get ariaHidden(): boolean {
-		return this.getPropertyOrDefault<azdata.ComponentProperties, boolean>((props) => props.ariaHidden, false);
+		return this.getPropertyOrDefault<boolean>((props) => props.ariaHidden, false);
 	}
 
 	public set ariaHidden(newValue: boolean) {
-		this.setPropertyFromUI<azdata.ComponentProperties, boolean>((props, value) => props.ariaHidden = value, newValue);
+		this.setPropertyFromUI<boolean>((props, value) => props.ariaHidden = value, newValue);
 	}
 
-	public get CSSStyles(): { [key: string]: string } {
-		return this.getPropertyOrDefault<azdata.ComponentProperties, { [key: string]: string }>((props) => props.CSSStyles, {});
+	public get CSSStyles(): azdata.CssStyles {
+		return this.getPropertyOrDefault<azdata.CssStyles>((props) => props.CSSStyles, {});
 	}
 
-	public set CSSStyles(newValue: { [key: string]: string }) {
-		this.setPropertyFromUI<azdata.ComponentProperties, { [key: string]: string }>((properties, CSSStyles) => { properties.CSSStyles = CSSStyles; }, newValue);
+	public set CSSStyles(newValue: azdata.CssStyles) {
+		this.setPropertyFromUI<azdata.CssStyles>((properties, CSSStyles) => { properties.CSSStyles = CSSStyles; }, newValue);
 	}
 
 	protected getWidth(): string {
@@ -245,19 +239,18 @@ export abstract class ComponentBase extends Disposable implements IComponent, On
 		}
 	}
 
-	public validate(): Thenable<boolean> {
+	public async validate(): Promise<boolean> {
 		let validations = this._validations.map(validation => Promise.resolve(validation()));
-		return Promise.all(validations).then(values => {
-			let isValid = values.every(value => value === true);
-			if (this._valid !== isValid) {
-				this._valid = isValid;
-				this.fireEvent({
-					eventType: ComponentEventType.validityChanged,
-					args: this._valid
-				});
-			}
-			return isValid;
-		});
+		const validationResults = await Promise.all(validations);
+		const isValid = validationResults.every(value => value === true);
+		if (this._valid !== isValid) {
+			this._valid = isValid;
+			this.fireEvent({
+				eventType: ComponentEventType.validityChanged,
+				args: this._valid
+			});
+		}
+		return isValid;
 	}
 
 	public focus(): void {
@@ -273,43 +266,69 @@ export abstract class ComponentBase extends Disposable implements IComponent, On
 	protected onkeydown(domNode: HTMLElement, listener: (e: StandardKeyboardEvent) => void): void {
 		this._register(addDisposableListener(domNode, EventType.KEY_DOWN, (e: KeyboardEvent) => listener(new StandardKeyboardEvent(e))));
 	}
+
+	protected mergeCss(...styles: azdata.CssStyles[]): azdata.CssStyles {
+		const x = styles.reduce((previous, current) => {
+			if (current) {
+				return Object.assign(previous, current);
+			}
+			return previous;
+		}, {});
+
+		return x;
+	}
 }
 
-export abstract class ContainerBase<T> extends ComponentBase {
+export abstract class ContainerBase<T, TPropertyBag extends azdata.ComponentProperties = azdata.ComponentProperties> extends ComponentBase<TPropertyBag> {
 	protected items: ItemDescriptor<T>[];
 
 	@ViewChildren(ModelComponentWrapper) protected _componentWrappers: QueryList<ModelComponentWrapper>;
 	constructor(
 		_changeRef: ChangeDetectorRef,
-		_el: ElementRef
+		_el: ElementRef,
+		logService: ILogService
 	) {
-		super(_changeRef, _el);
+		super(_changeRef, _el, logService);
 		this.items = [];
-		this._validations.push(() => this.items.every(item => {
-			return this.modelStore.getComponent(item.descriptor.id).valid;
-		}));
+		this._validations.push(() => {
+			this.logService.debug(`Running container validation on component ${this.descriptor.id} to check validity of all child items`);
+			return this.items.every(item => {
+				const valid = this.modelStore.getComponent(item.descriptor.id)?.valid;
+				this.logService.debug(`Child item ${item.descriptor.id} validity is ${valid}`);
+				return valid || false;
+			});
+		});
 	}
 
 	/// IComponent container-related implementation
-	public addToContainer(componentDescriptor: IComponentDescriptor, config: any, index?: number): void {
-		if (!componentDescriptor) {
-			return;
-		}
-		if (this.items.some(item => item.descriptor.id === componentDescriptor.id && item.descriptor.type === componentDescriptor.type)) {
-			return;
-		}
-		if (index !== undefined && index !== null && index >= 0 && index <= this.items.length) {
-			this.items.splice(index, 0, new ItemDescriptor(componentDescriptor, config));
-		} else if (!index) {
-			this.items.push(new ItemDescriptor(componentDescriptor, config));
-		} else {
-			throw new Error(nls.localize('invalidIndex', "The index {0} is invalid.", index));
-		}
-		this.modelStore.eventuallyRunOnComponent(componentDescriptor.id, component => component.registerEventHandler(event => {
-			if (event.eventType === ComponentEventType.validityChanged) {
-				this.validate();
+	public addToContainer(items: { componentDescriptor: IComponentDescriptor, config: any, index?: number }[]): void {
+		items.forEach(newItem => {
+			this.logService.debug(`Adding component ${newItem.componentDescriptor.id} to container ${this.descriptor.id}`);
+			if (!newItem.componentDescriptor) {
+				return;
 			}
-		}));
+			if (this.items.some(item => item.descriptor.id === newItem.componentDescriptor.id && item.descriptor.type === newItem.componentDescriptor.type)) {
+				return;
+			}
+			if (newItem.index !== undefined && newItem.index !== null && newItem.index >= 0 && newItem.index <= this.items.length) {
+				this.items.splice(newItem.index, 0, new ItemDescriptor(newItem.componentDescriptor, newItem.config));
+			} else if (!newItem.index) {
+				this.items.push(new ItemDescriptor(newItem.componentDescriptor, newItem.config));
+			} else {
+				throw new Error(nls.localize('invalidIndex', "The index {0} is invalid.", newItem.index));
+			}
+
+			this.logService.debug(`Queueing up action to register validation event handler on component ${newItem.componentDescriptor.id} in container ${this.descriptor.id}`);
+			this.modelStore.eventuallyRunOnComponent(newItem.componentDescriptor.id, component => {
+				this.logService.debug(`Registering validation event handler on component ${newItem.componentDescriptor.id} in container ${this.descriptor.id}`);
+				component.registerEventHandler(async event => {
+					if (event.eventType === ComponentEventType.validityChanged) {
+						this.logService.debug(`Running validation on container ${this.descriptor.id} because validity of child component ${newItem.componentDescriptor.id} changed`);
+						this.validate().catch(onUnexpectedError);
+					}
+				});
+			}, true);
+		});
 		this._changeRef.detectChanges();
 		this.onItemsUpdated();
 		return;
@@ -319,7 +338,7 @@ export abstract class ContainerBase<T> extends ComponentBase {
 		if (!componentDescriptor) {
 			return false;
 		}
-		let index = firstIndex(this.items, item => item.descriptor.id === componentDescriptor.id && item.descriptor.type === componentDescriptor.type);
+		let index = this.items.findIndex(item => item.descriptor.id === componentDescriptor.id && item.descriptor.type === componentDescriptor.type);
 		if (index >= 0) {
 			this.items.splice(index, 1);
 			this._changeRef.detectChanges();
@@ -333,29 +352,28 @@ export abstract class ContainerBase<T> extends ComponentBase {
 		this.items = [];
 		this.onItemsUpdated();
 		this._changeRef.detectChanges();
-		this.validate();
+		this.validate().catch(onUnexpectedError);
 	}
 
-	public setProperties(properties: { [key: string]: any; }): void {
+	public override setProperties(properties: { [key: string]: any; }): void {
 		super.setProperties(properties);
 		this.items.forEach(item => {
 			let component = this.modelStore.getComponent(item.descriptor.id);
-			if (component) {
+			// Let child components control their own enabled status if we don't have one specifically set
+			if (component && properties.enabled !== undefined) {
 				component.enabled = this.enabled;
 			}
 		});
 	}
 
-	public layout(): void {
+	public override layout(): void {
+		super.layout();
 		if (this._componentWrappers) {
 			this._componentWrappers.forEach(wrapper => {
 				wrapper.layout();
 			});
 		}
-		super.layout();
 	}
-
-	abstract setLayout(layout: any): void;
 
 	public setItemLayout(componentDescriptor: IComponentDescriptor, config: any): void {
 		if (!componentDescriptor) {

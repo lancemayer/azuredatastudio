@@ -1,7 +1,7 @@
 # Azure Data Studio
 
 [![Join the chat at https://gitter.im/Microsoft/sqlopsstudio](https://badges.gitter.im/Microsoft/sqlopsstudio.svg)](https://gitter.im/Microsoft/sqlopsstudio?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
-[![Build Status](https://dev.azure.com/azuredatastudio/azuredatastudio/_apis/build/status/Azure%20Data%20Studio%20CI?branchName=master)](https://dev.azure.com/azuredatastudio/azuredatastudio/_build/latest?definitionId=4&branchName=master)
+[![Build Status](https://dev.azure.com/azuredatastudio/azuredatastudio/_apis/build/status/Azure%20Data%20Studio%20CI?branchName=main)](https://dev.azure.com/azuredatastudio/azuredatastudio/_build/latest?definitionId=4&branchName=main)
 [![Twitter Follow](https://img.shields.io/twitter/follow/azuredatastudio?style=social)](https://twitter.com/azuredatastudio)
 
 Azure Data Studio is a data management tool that enables you to work with SQL Server, Azure SQL DB and SQL DW from Windows, macOS and Linux.
@@ -19,16 +19,18 @@ Azure Data Studio is a data management tool that enables you to work with SQL Se
 | [Linux DEB][linux-deb]									|
 
 
-Go to our [download page](https://aka.ms/azuredatastudio) for more specific instructions.
+Go to our [download page](https://aka.ms/getazuredatastudio) for more specific instructions.
 
-## Try out the latest insiders build from `master`:
+## Try out the latest insiders build from `main`:
 - [Windows User Installer - **Insiders build**](https://azuredatastudio-update.azurewebsites.net/latest/win32-x64-user/insider)
 - [Windows System Installer - **Insiders build**](https://azuredatastudio-update.azurewebsites.net/latest/win32-x64/insider)
 - [Windows ZIP - **Insiders build**](https://azuredatastudio-update.azurewebsites.net/latest/win32-x64-archive/insider)
 - [macOS ZIP - **Insiders build**](https://azuredatastudio-update.azurewebsites.net/latest/darwin/insider)
 - [Linux TAR.GZ - **Insiders build**](https://azuredatastudio-update.azurewebsites.net/latest/linux-x64/insider)
 
-See the [change log](https://github.com/Microsoft/azuredatastudio/blob/master/CHANGELOG.md) for additional details of what's in this release.
+See the [change log](https://github.com/Microsoft/azuredatastudio/blob/main/CHANGELOG.md) for additional details of what's in this release.
+Go to our [download page](https://aka.ms/getazuredatastudio) for more specific instructions.
+
 
 ## **Feature Highlights**
 
@@ -47,7 +49,7 @@ See the [change log](https://github.com/Microsoft/azuredatastudio/blob/master/CH
 
 Here are some of these features in action.
 
-<img src='https://github.com/Microsoft/azuredatastudio/blob/master/docs/overview_screen.jpg' width='800px'>
+<img src='https://github.com/Microsoft/azuredatastudio/blob/main/docs/overview_screen.jpg' width='800px'>
 
 ## Contributing
 If you are interested in fixing issues and contributing directly to the code base,
@@ -63,7 +65,7 @@ This project has adopted the [Microsoft Open Source Code of Conduct](https://ope
 Azure Data Studio is localized into 10 languages: French, Italian, German, Spanish, Simplified Chinese, Traditional Chinese, Japanese, Korean, Russian, and Portuguese (Brazil). The language packs are available in the Extension Manager marketplace. Simply, search for the specific language using the extension marketplace and install. Once you install the selected language, Azure Data Studio will prompt you to restart with the new language.
 
 ## Privacy Statement
-The [Microsoft Enterprise and Developer Privacy Statement](https://privacy.microsoft.com/en-us/privacystatement) describes the privacy statement of this software.
+The [Microsoft Enterprise and Developer Privacy Statement](https://privacy.microsoft.com/privacystatement) describes the privacy statement of this software.
 
 ## Contributions and "Thank You"
 We would like to thank all our users who raised issues, and in particular the following users who helped contribute fixes:
@@ -121,7 +123,7 @@ We would like to thank all our users who raised issues, and in particular the fo
 * olljanat for `Implemented npm version check (#314)`
 * Adam Machanic for helping with the `whoisactive` extension
 
-And of course, we'd like to thank the authors of all upstream dependencies.  Please see a full list in the [ThirdPartyNotices.txt](https://raw.githubusercontent.com/Microsoft/azuredatastudio/master/ThirdPartyNotices.txt)
+And of course, we'd like to thank the authors of all upstream dependencies.  Please see a full list in the [ThirdPartyNotices.txt](https://raw.githubusercontent.com/Microsoft/azuredatastudio/main/ThirdPartyNotices.txt)
 
 ## License
 
@@ -129,10 +131,10 @@ Copyright (c) Microsoft Corporation. All rights reserved.
 
 Licensed under the [Source EULA](LICENSE.txt).
 
-[win-user]: https://go.microsoft.com/fwlink/?linkid=2127522
-[win-system]: https://go.microsoft.com/fwlink/?linkid=2127432
-[win-zip]: https://go.microsoft.com/fwlink/?linkid=2127716
-[osx-zip]: https://go.microsoft.com/fwlink/?linkid=2127431
-[linux-zip]: https://go.microsoft.com/fwlink/?linkid=2127523
-[linux-rpm]: https://go.microsoft.com/fwlink/?linkid=2127433
-[linux-deb]: https://go.microsoft.com/fwlink/?linkid=2127524
+[win-user]: https://go.microsoft.com/fwlink/?linkid=2183280
+[win-system]: https://go.microsoft.com/fwlink/?linkid=2183423
+[win-zip]: https://go.microsoft.com/fwlink/?linkid=2183190
+[osx-zip]: https://go.microsoft.com/fwlink/?linkid=2183189
+[linux-zip]: https://go.microsoft.com/fwlink/?linkid=2183277
+[linux-rpm]: https://go.microsoft.com/fwlink/?linkid=2183342
+[linux-deb]: https://go.microsoft.com/fwlink/?linkid=2183341

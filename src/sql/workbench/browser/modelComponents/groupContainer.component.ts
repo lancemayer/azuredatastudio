@@ -9,14 +9,14 @@ import {
 	ElementRef, OnDestroy, AfterViewInit
 } from '@angular/core';
 
-import { GroupLayout, GroupContainerProperties } from 'azdata';
+import { GroupLayout, GroupContainerProperties, CssStyles } from 'azdata';
 
 import { ContainerBase } from 'sql/workbench/browser/modelComponents/componentBase';
-import { endsWith } from 'vs/base/common/strings';
 import { StandardKeyboardEvent } from 'vs/base/browser/keyboardEvent';
 import { KeyCode } from 'vs/base/common/keyCodes';
 import * as DOM from 'vs/base/browser/dom';
 import { IComponent, IComponentDescriptor, IModelStore } from 'sql/platform/dashboard/browser/interfaces';
+import { ILogService } from 'vs/platform/log/common/log';
 
 @Component({
 	selector: 'modelview-groupContainer',
@@ -24,19 +24,22 @@ import { IComponent, IComponentDescriptor, IModelStore } from 'sql/platform/dash
 		<div *ngIf="hasHeader()" [class]="getHeaderClass()" (click)="changeState()" (keydown)="onKeyDown($event)" [tabindex]="isCollapsible()? 0 : -1" [attr.role]="isCollapsible() ? 'button' : null" [attr.aria-expanded]="isCollapsible() ? !collapsed : null">
 				{{_containerLayout.header}}
 		</div>
-		<div #container *ngIf="items" class="modelview-group-container" [style.width]="getContainerWidth()" [style.display]="getContainerDisplayStyle()">
-			<ng-container *ngFor="let item of items">
-			<div class="modelview-group-row" >
-				<div  class="modelview-group-cell">
-				<model-component-wrapper  [descriptor]="item.descriptor" [modelStore]="modelStore" >
-				</model-component-wrapper>
+		<!-- This extra div is needed so that the expanded state of the header is updated correctly. See https://github.com/microsoft/azuredatastudio/pull/16499 for more details -->
+		<div>
+			<div #container *ngIf="items" class="modelview-group-container" [ngStyle]="CSSStyles">
+				<ng-container *ngFor="let item of items">
+				<div class="modelview-group-row" >
+					<div  class="modelview-group-cell">
+					<model-component-wrapper  [descriptor]="item.descriptor" [modelStore]="modelStore" >
+					</model-component-wrapper>
+					</div>
 				</div>
+				</ng-container>
 			</div>
-			</ng-container>
 		</div>
 	`
 })
-export default class GroupContainer extends ContainerBase<GroupLayout> implements IComponent, OnDestroy, AfterViewInit {
+export default class GroupContainer extends ContainerBase<GroupLayout, GroupContainerProperties> implements IComponent, OnDestroy, AfterViewInit {
 	@Input() descriptor: IComponentDescriptor;
 	@Input() modelStore: IModelStore;
 
@@ -44,20 +47,17 @@ export default class GroupContainer extends ContainerBase<GroupLayout> implement
 
 	constructor(
 		@Inject(forwardRef(() => ChangeDetectorRef)) changeRef: ChangeDetectorRef,
-		@Inject(forwardRef(() => ElementRef)) el: ElementRef) {
-		super(changeRef, el);
-		this.collapsed = false;
-	}
-
-	ngOnInit(): void {
-		this.baseInit();
-	}
-
-	ngOnDestroy(): void {
-		this.baseDestroy();
+		@Inject(forwardRef(() => ElementRef)) el: ElementRef,
+		@Inject(ILogService) logService: ILogService) {
+		super(changeRef, el, logService);
 	}
 
 	ngAfterViewInit(): void {
+		this.baseInit();
+	}
+
+	override ngOnDestroy(): void {
+		this.baseDestroy();
 	}
 
 	onKeyDown(event: KeyboardEvent): void {
@@ -88,11 +88,11 @@ export default class GroupContainer extends ContainerBase<GroupLayout> implement
 	}
 
 	public set collapsed(newValue: boolean) {
-		this.setPropertyFromUI<GroupContainerProperties, boolean>((properties, value) => { properties.collapsed = value; }, newValue);
+		this.setPropertyFromUI<boolean>((properties, value) => { properties.collapsed = value; }, newValue);
 	}
 
 	public get collapsed(): boolean {
-		return this.getPropertyOrDefault<GroupContainerProperties, boolean>((props) => props.collapsed, false);
+		return this.getPropertyOrDefault<boolean>((props) => props.collapsed, false);
 	}
 
 	private hasHeader(): boolean {
@@ -106,7 +106,7 @@ export default class GroupContainer extends ContainerBase<GroupLayout> implement
 	public getContainerWidth(): string {
 		if (this._containerLayout && this._containerLayout.width) {
 			let width: string = this._containerLayout.width.toString();
-			if (!endsWith(width, '%') && !endsWith(width.toLowerCase(), 'px')) {
+			if (!width.endsWith('%') && !width.toLowerCase().endsWith('px')) {
 				width = width + 'px';
 			}
 			return width;
@@ -133,5 +133,12 @@ export default class GroupContainer extends ContainerBase<GroupLayout> implement
 			this.collapsed = !this.collapsed;
 			this._changeRef.detectChanges();
 		}
+	}
+
+	public override get CSSStyles(): CssStyles {
+		return this.mergeCss(super.CSSStyles, {
+			'display': this.getContainerDisplayStyle(),
+			'width': this.getContainerWidth(),
+		});
 	}
 }

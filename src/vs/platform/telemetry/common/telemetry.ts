@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
-import { ClassifiedEvent, StrictPropertyCheck, GDPRClassification } from 'vs/platform/telemetry/common/gdprTypings';
+import { ClassifiedEvent, GDPRClassification, StrictPropertyCheck } from 'vs/platform/telemetry/common/gdprTypings';
 
 export const ITelemetryService = createDecorator<ITelemetryService>('telemetryService');
 
@@ -12,6 +12,7 @@ export interface ITelemetryInfo {
 	sessionId: string;
 	machineId: string;
 	instanceId: string;
+	firstSessionDate: string;
 	msftInternal?: boolean;
 }
 
@@ -28,7 +29,7 @@ export interface ITelemetryService {
 	 */
 	readonly sendErrorTelemetry: boolean;
 
-	_serviceBrand: undefined;
+	readonly _serviceBrand: undefined;
 
 	/**
 	 * Sends a telemetry event that has been privacy approved.
@@ -46,7 +47,24 @@ export interface ITelemetryService {
 
 	getTelemetryInfo(): Promise<ITelemetryInfo>;
 
+	setExperimentProperty(name: string, value: string): void;
+
 	isOptedIn: boolean;
+}
+
+export interface ITelemetryEndpoint {
+	id: string;
+	aiKey: string;
+	sendErrorTelemetry: boolean;
+}
+
+export const ICustomEndpointTelemetryService = createDecorator<ICustomEndpointTelemetryService>('customEndpointTelemetryService');
+
+export interface ICustomEndpointTelemetryService {
+	readonly _serviceBrand: undefined;
+
+	publicLog(endpoint: ITelemetryEndpoint, eventName: string, data?: ITelemetryData): Promise<void>;
+	publicLogError(endpoint: ITelemetryEndpoint, errorEventName: string, data?: ITelemetryData): Promise<void>;
 }
 
 // Keys
@@ -55,5 +73,3 @@ export const currentSessionDateStorageKey = 'telemetry.currentSessionDate';
 export const firstSessionDateStorageKey = 'telemetry.firstSessionDate';
 export const lastSessionDateStorageKey = 'telemetry.lastSessionDate';
 export const machineIdKey = 'telemetry.machineId';
-export const trueMachineIdKey = 'telemetry.trueMachineId';
-export const crashReporterIdStorageKey = 'crashReporter.guid';

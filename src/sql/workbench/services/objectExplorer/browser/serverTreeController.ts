@@ -30,31 +30,31 @@ export class ServerTreeController extends treedefaults.DefaultController {
 		});
 	}
 
-	public onClick(tree: ITree, element: any, event: IMouseEvent): boolean {
+	public override onClick(tree: ITree, element: any, event: IMouseEvent): boolean {
 		return super.onClick(tree, element, event);
 	}
 
-	protected onLeftClick(tree: ITree, element: any, event: IMouseEvent, origin: string = 'mouse'): boolean {
+	protected override onLeftClick(tree: ITree, element: any, event: IMouseEvent, origin: string = 'mouse'): boolean {
 		return super.onLeftClick(tree, element, event, origin);
 	}
 
 	// Do not allow left / right to expand and collapse groups #7848
-	protected onLeft(tree: ITree, event: IKeyboardEvent): boolean {
+	protected override onLeft(tree: ITree, event: IKeyboardEvent): boolean {
 		return true;
 	}
 
-	protected onRight(tree: ITree, event: IKeyboardEvent): boolean {
+	protected override onRight(tree: ITree, event: IKeyboardEvent): boolean {
 		return true;
 	}
 
-	protected onEnter(tree: ITree, event: IKeyboardEvent): boolean {
+	protected override onEnter(tree: ITree, event: IKeyboardEvent): boolean {
 		return super.onEnter(tree, event);
 	}
 
 	/**
 	 * Return actions in the context menu
 	 */
-	public onContextMenu(tree: ITree, element: any, event: ContextMenuEvent): boolean {
+	public override onContextMenu(tree: ITree, element: any, event: ContextMenuEvent): boolean {
 		if (event.target && event.target.tagName && event.target.tagName.toLowerCase() === 'input') {
 			return false;
 		}
@@ -74,7 +74,7 @@ export class ServerTreeController extends treedefaults.DefaultController {
 			context.nodeInfo = element.toNodeInfo();
 			// Note: getting DB name before, but intentionally not using treeUpdateUtils.getConnectionProfile as it replaces
 			// the connection ID with a new one. This breaks a number of internal tasks
-			context.connectionProfile = element.getConnectionProfile().toIConnectionProfile();
+			context.connectionProfile = element.getConnectionProfile()!.toIConnectionProfile();
 			context.connectionProfile.databaseName = element.getDatabaseName();
 			actionContext = context;
 		} else if (element instanceof ConnectionProfile) {

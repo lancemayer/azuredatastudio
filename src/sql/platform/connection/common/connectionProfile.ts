@@ -7,13 +7,18 @@ import { ConnectionProfileGroup } from 'sql/platform/connection/common/connectio
 import * as azdata from 'azdata';
 import { ProviderConnectionInfo } from 'sql/platform/connection/common/providerConnectionInfo';
 import * as interfaces from 'sql/platform/connection/common/interfaces';
-import { equalsIgnoreCase } from 'vs/base/common/strings';
 import { generateUuid } from 'vs/base/common/uuid';
 import { ICapabilitiesService } from 'sql/platform/capabilities/common/capabilitiesService';
 import { isString } from 'vs/base/common/types';
 import { deepClone } from 'vs/base/common/objects';
 import * as Constants from 'sql/platform/connection/common/constants';
-import { find } from 'vs/base/common/arrays';
+import { URI } from 'vs/base/common/uri';
+
+export interface IconPath {
+	light: URI;
+	dark: URI;
+}
+
 
 // Concrete implementation of the IConnectionProfile interface
 
@@ -29,11 +34,13 @@ export class ConnectionProfile extends ProviderConnectionInfo implements interfa
 	public groupId?: string;
 	public saveProfile: boolean;
 
+	public iconPath?: IconPath;
+
 	public isDisconnecting: boolean = false;
 
 	public constructor(
 		capabilitiesService: ICapabilitiesService,
-		model: string | azdata.IConnectionProfile) {
+		model: string | azdata.IConnectionProfile | undefined) {
 		super(capabilitiesService, model);
 		if (model && !isString(model)) {
 			this.groupId = model.groupId;
@@ -49,7 +56,7 @@ export class ConnectionProfile extends ProviderConnectionInfo implements interfa
 				let capabilities = this.capabilitiesService.getCapabilities(model.providerName);
 				if (capabilities && capabilities.connection && capabilities.connection.connectionOptions) {
 					const options = capabilities.connection.connectionOptions;
-					let appNameOption = find(options, option => option.specialValueType === interfaces.ConnectionOptionSpecialType.appName);
+					let appNameOption = options.find(option => option.specialValueType === interfaces.ConnectionOptionSpecialType.appName);
 					if (appNameOption) {
 						let appNameKey = appNameOption.name;
 						this.options[appNameKey] = Constants.applicationName;
@@ -58,6 +65,13 @@ export class ConnectionProfile extends ProviderConnectionInfo implements interfa
 				if (model.options.registeredServerDescription) {
 					this.registeredServerDescription = model.options.registeredServerDescription;
 				}
+				const expiry = model.options.expiresOn;
+				if (typeof expiry === 'number' && !Number.isNaN(expiry)) {
+					this.options.expiresOn = model.options.expiresOn;
+				}
+			}
+			if (model.options?.originalDatabase) {
+				this.originalDatabase = model.options.originalDatabase;
 			}
 		} else {
 			//Default for a new connection
@@ -71,25 +85,13 @@ export class ConnectionProfile extends ProviderConnectionInfo implements interfa
 		this.options['databaseDisplayName'] = this.databaseName;
 	}
 
-	public static matchesProfile(a: interfaces.IConnectionProfile, b: interfaces.IConnectionProfile): boolean {
-		return a && b
-			&& a.providerName === b.providerName
-			&& ConnectionProfile.nullCheckEqualsIgnoreCase(a.serverName, b.serverName)
-			&& ConnectionProfile.nullCheckEqualsIgnoreCase(a.databaseName, b.databaseName)
-			&& ConnectionProfile.nullCheckEqualsIgnoreCase(a.userName, b.userName)
-			&& ConnectionProfile.nullCheckEqualsIgnoreCase(a.options['databaseDisplayName'], b.options['databaseDisplayName'])
-			&& a.authenticationType === b.authenticationType
-			&& a.groupId === b.groupId;
+	public static matchesProfile(a: interfaces.IConnectionProfile | undefined, b: interfaces.IConnectionProfile | undefined): boolean {
+		return a && b && a.getOptionsKey() === b.getOptionsKey();
 	}
 
 	public matches(other: interfaces.IConnectionProfile): boolean {
 		return ConnectionProfile.matchesProfile(this, other);
 
-	}
-
-	private static nullCheckEqualsIgnoreCase(a: string, b: string) {
-		let bothNull: boolean = !a && !b;
-		return bothNull ? bothNull : equalsIgnoreCase(a, b);
 	}
 
 	public generateNewId() {
@@ -143,6 +145,19 @@ export class ConnectionProfile extends ProviderConnectionInfo implements interfa
 		this.options['azureResourceId'] = value;
 	}
 
+	/**
+	 * Database of server specified before connection.
+	 * Some providers will modify the database field of the connection once a connection is made
+	 * so that it reflects the actual database that was connected to.
+	 */
+	public get originalDatabase() {
+		return this.options['originalDatabase'];
+	}
+
+	public set originalDatabase(value: string | undefined) {
+		this.options['originalDatabase'] = value;
+	}
+
 	public get registeredServerDescription(): string {
 		return this.options['registeredServerDescription'];
 	}
@@ -163,7 +178,7 @@ export class ConnectionProfile extends ProviderConnectionInfo implements interfa
 		return (this._groupName === ConnectionProfile.RootGroupName);
 	}
 
-	public clone(): ConnectionProfile {
+	public override clone(): ConnectionProfile {
 		let instance = new ConnectionProfile(this.capabilitiesService, this);
 		return instance;
 	}
@@ -177,6 +192,7 @@ export class ConnectionProfile extends ProviderConnectionInfo implements interfa
 	public cloneWithDatabase(databaseName: string): ConnectionProfile {
 		let instance = this.cloneWithNewId();
 		instance.databaseName = databaseName;
+		instance.originalDatabase = databaseName;
 		return instance;
 	}
 
@@ -193,7 +209,7 @@ export class ConnectionProfile extends ProviderConnectionInfo implements interfa
 	 * This key uniquely identifies a connection in a group
 	 * Example: "providerName:MSSQL|authenticationType:|databaseName:database|serverName:server3|userName:user|group:testid"
 	 */
-	public getOptionsKey(): string {
+	public override getOptionsKey(): string {
 		let id = super.getOptionsKey();
 		let databaseDisplayName: string = this.options['databaseDisplayName'];
 		if (databaseDisplayName) {
